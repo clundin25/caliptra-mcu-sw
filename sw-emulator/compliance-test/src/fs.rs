@@ -35,39 +35,10 @@ pub fn read<P: AsRef<Path> + Debug>(path: P) -> std::io::Result<Vec<u8>> {
         .map_err(|err| annotate_error(err, &format!("while reading from file {:?}", path)))
 }
 
-pub struct TempFile {
-    path: PathBuf,
-}
-impl TempFile {
-    #[allow(dead_code)]
-    pub fn new() -> std::io::Result<Self> {
-        Ok(Self {
-            path: Path::join(&std::env::temp_dir(), rand_str()?),
-        })
-    }
-    pub fn with_extension(ext: &str) -> std::io::Result<Self> {
-        Ok(Self {
-            path: Path::join(&std::env::temp_dir(), rand_str()? + ext),
-        })
-    }
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-impl Debug for TempFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.path, f)
-    }
-}
-impl AsRef<Path> for TempFile {
-    fn as_ref(&self) -> &Path {
-        &self.path
-    }
-}
-impl Drop for TempFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(self.path());
-    }
+/// Same as [`std::fs::read`] but with more informative errors.
+pub fn read_to_string<P: AsRef<Path> + Debug>(path: P) -> std::io::Result<String> {
+    std::fs::read_to_string(&path)
+        .map_err(|err| annotate_error(err, &format!("while reading from file {:?}", path)))
 }
 
 /// A temporary directory that will be deleted (best-effort) when the
