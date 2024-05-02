@@ -35,10 +35,46 @@ pub fn read<P: AsRef<Path> + Debug>(path: P) -> std::io::Result<Vec<u8>> {
         .map_err(|err| annotate_error(err, &format!("while reading from file {:?}", path)))
 }
 
-/// Same as [`std::fs::read`] but with more informative errors.
+/// Same as [`std::fs::read_to_string`] but with more informative errors.
 pub fn read_to_string<P: AsRef<Path> + Debug>(path: P) -> std::io::Result<String> {
     std::fs::read_to_string(&path)
         .map_err(|err| annotate_error(err, &format!("while reading from file {:?}", path)))
+}
+
+pub struct TempFile {
+    path: PathBuf,
+}
+impl TempFile {
+    #[allow(dead_code)]
+    pub fn new() -> std::io::Result<Self> {
+        Ok(Self {
+            path: Path::join(&std::env::temp_dir(), rand_str()?),
+        })
+    }
+    pub fn with_extension(ext: &str) -> std::io::Result<Self> {
+        Ok(Self {
+            path: Path::join(&std::env::temp_dir(), rand_str()? + ext),
+        })
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+}
+impl Debug for TempFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.path, f)
+    }
+}
+impl AsRef<Path> for TempFile {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(self.path());
+    }
 }
 
 /// A temporary directory that will be deleted (best-effort) when the
@@ -128,6 +164,8 @@ mod tests {
         // Read-and-write success case
         write(&tmp_file, "Hello world").unwrap();
         assert_eq!(read(&tmp_file).unwrap(), b"Hello world");
+
+        assert_eq!(&read_to_string(&tmp_file).unwrap(), "Hello world");
     }
 
     #[test]
@@ -135,6 +173,14 @@ mod tests {
         let tmp_file = TempFile::with_extension(".txt").unwrap();
 
         let result = read(&tmp_file);
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+        assert!(err
+            .to_string()
+            .contains(&format!("while reading from file {:?}", tmp_file.path())));
+
+        let result = read_to_string(&tmp_file);
         assert!(result.is_err());
         let err = result.err().unwrap();
         assert_eq!(err.kind(), ErrorKind::NotFound);
