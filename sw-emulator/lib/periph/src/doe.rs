@@ -63,7 +63,7 @@ register_bitfields! [
 #[update_reset_fn(update_reset)]
 pub struct Doe {
     /// Initialization Vector
-    #[peripheral(offset = 0x0000_0000, mask = 0x0000_000f)]
+    #[peripheral(offset = 0x0000_0000, len = 0xf)]
     iv: ReadWriteMemory<DOE_IV_SIZE>,
 
     /// Control Register

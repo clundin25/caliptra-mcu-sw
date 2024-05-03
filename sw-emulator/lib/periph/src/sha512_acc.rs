@@ -39,7 +39,6 @@ const SHA512_HASH_SIZE: usize = 64;
 
 #[cfg(test)]
 const SHA384_HASH_SIZE: usize = 48;
-const SHA512_HASH_HALF_SIZE: usize = SHA512_HASH_SIZE / 2;
 
 register_bitfields! [
     u32,
@@ -119,11 +118,8 @@ pub struct Sha512AcceleratorRegs {
     status: ReadOnlyRegister<u32, Status::Register>,
 
     /// SHA512 Hash Memory
-    #[peripheral(offset = 0x0000_0020, mask = 0x0000_001F)]
-    hash_lower: ReadOnlyMemory<SHA512_HASH_HALF_SIZE>,
-
-    #[peripheral(offset = 0x0000_0040, mask = 0x0000_001F)]
-    hash_upper: ReadOnlyMemory<SHA512_HASH_HALF_SIZE>,
+    #[peripheral(offset = 0x0000_0020, len = 0x3f)]
+    hash: ReadOnlyMemory<SHA512_HASH_SIZE>,
 
     /// Control register
     #[register(offset = 0x0000_0060, write_fn = on_write_control)]
@@ -149,8 +145,7 @@ impl Sha512AcceleratorRegs {
     pub fn new(clock: &Clock, mailbox_ram: MailboxRam) -> Self {
         let mut result = Self {
             status: ReadOnlyRegister::new(Status::VALID::CLEAR.value),
-            hash_lower: ReadOnlyMemory::new(),
-            hash_upper: ReadOnlyMemory::new(),
+            hash: ReadOnlyMemory::new(),
             mailbox_ram,
             timer: Timer::new(clock),
             _lock: ReadWriteRegister::new(0),
@@ -450,13 +445,9 @@ impl Sha512AcceleratorRegs {
         sha.copy_hash(&mut hash);
 
         // Place the hash in the DIGEST registers.
-        self.hash_lower
+        self.hash
             .data_mut()
-            .copy_from_slice(&hash[..SHA512_HASH_HALF_SIZE]);
-
-        self.hash_upper
-            .data_mut()
-            .copy_from_slice(&hash[SHA512_HASH_HALF_SIZE..]);
+            .copy_from_slice(&hash[..]);
     }
 
     fn finalize_stream_hash(&mut self) {
@@ -466,13 +457,9 @@ impl Sha512AcceleratorRegs {
         self.sha_stream.copy_hash(&mut hash);
 
         // Place the hash in the DIGEST registers.
-        self.hash_lower
+        self.hash
             .data_mut()
-            .copy_from_slice(&hash[..SHA512_HASH_HALF_SIZE]);
-
-        self.hash_upper
-            .data_mut()
-            .copy_from_slice(&hash[SHA512_HASH_HALF_SIZE..]);
+            .copy_from_slice(&hash[..]);
 
         self.op_complete();
     }
@@ -518,9 +505,7 @@ impl Sha512AcceleratorRegs {
     pub fn copy_hash(&self, hash_out: &mut [u8]) {
         let mut hash = [0u8; SHA512_HASH_SIZE];
 
-        hash[..SHA512_HASH_HALF_SIZE].copy_from_slice(&self.hash_lower.data()[..]);
-        hash[SHA512_HASH_HALF_SIZE..].copy_from_slice(&self.hash_upper.data()[..]);
-
+        hash.copy_from_slice(&self.hash.data()[..]);
         hash.iter()
             .flat_map(|i| i.to_be_bytes())
             .take(self.hash_len())
@@ -529,8 +514,7 @@ impl Sha512AcceleratorRegs {
     }
 
     fn zeroize(&mut self) {
-        self.hash_lower.data_mut().fill(0);
-        self.hash_upper.data_mut().fill(0);
+        self.hash.data_mut().fill(0);
     }
 }
 

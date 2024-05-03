@@ -243,7 +243,7 @@ register_bitfields! [
 struct PicImplRegs {
     // External interrupt priority level register. Irq id #1 starts at
     // meipl[1] (address 0x0004); meipl[0] is reserved.
-    #[peripheral(offset = 0x0000, mask = 0x0fff)]
+    #[peripheral(offset = 0x0000, len = 0x80)]
     meipl: ReadWriteRegisterArray<u32, 32, Meipl::Register>,
 
     // External Interrupt Pending. Irq id #1 starts at meip[1]; meip[0] is
@@ -253,7 +253,7 @@ struct PicImplRegs {
 
     // External Interrupt Enabled. Irq id #1 starts at meie[1] (address 0x2004);
     // meie[0] is reserved.
-    #[peripheral(offset = 0x2000, mask = 0x0fff)]
+    #[peripheral(offset = 0x2000, len = 0x80)]
     meie: ReadWriteRegisterArray<u32, 32, Meie::Register>,
 
     #[register(offset = 0x3000)]
@@ -261,7 +261,7 @@ struct PicImplRegs {
 
     // External Interrupt Gateway Configuration. Irq id #1 starts at
     // meigwctrl[1] (address 0x4004); meigwctrl[0] is reserved.
-    #[peripheral(offset = 0x4000, mask = 0x0fff)]
+    #[peripheral(offset = 0x4000, len = 0x80)]
     meigwctrl: ReadWriteRegisterArray<u32, 32, Meigwctrl::Register>,
 }
 impl PicImplRegs {

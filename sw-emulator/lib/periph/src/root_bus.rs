@@ -244,55 +244,55 @@ impl Default for CaliptraRootBusArgs {
 
 #[derive(Bus)]
 pub struct CaliptraRootBus {
-    #[peripheral(offset = 0x0000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x0000_0000, len = 0xc000)]
     pub rom: Rom,
 
-    #[peripheral(offset = 0x1000_0000, mask = 0x0000_7fff)]
+    #[peripheral(offset = 0x1000_0000, len = 0x18)]
     pub doe: Doe,
 
-    #[peripheral(offset = 0x1000_8000, mask = 0x0000_7fff)]
+    #[peripheral(offset = 0x1000_8000, len = 0x6a4)]
     pub ecc384: AsymEcc384,
 
-    #[peripheral(offset = 0x1001_0000, mask = 0x0000_07ff)]
+    #[peripheral(offset = 0x1001_0000, len = 0x614)]
     pub hmac: HmacSha384,
 
-    #[peripheral(offset = 0x1001_8000, mask = 0x0000_7fff)]
+    #[peripheral(offset = 0x1001_8000, len = 0x44c0)]
     pub key_vault: KeyVault,
 
-    #[peripheral(offset = 0x1002_0000, mask = 0x0000_7fff)]
+    #[peripheral(offset = 0x1002_0000, len = 0x66c)]
     pub sha512: HashSha512,
 
-    #[peripheral(offset = 0x1002_8000, mask = 0x0000_7fff)]
+    #[peripheral(offset = 0x1002_8000, len = 0x120)]
     pub sha256: HashSha256,
 
-    #[peripheral(offset = 0x4000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x4000_0000, len = 0x20000)]
     pub iccm: Iccm,
 
-    #[peripheral(offset = 0x2000_1000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x2000_1000, len = 0x34)]
     pub uart: Uart,
 
-    #[peripheral(offset = 0x2000_2000, mask = 0x0000_1fff)]
+    #[peripheral(offset = 0x2000_2000, len = 0x10e4)]
     pub csrng: Csrng,
 
-    #[peripheral(offset = 0x2000_f000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x2000_f000, len = 0x1)]
     pub ctrl: EmuCtrl,
 
-    #[peripheral(offset = 0x3000_0000, mask = 0x0001_ffff)]
+    #[peripheral(offset = 0x3000_0000, len = 0x1fff)]
     pub mailbox_sram: MailboxRam,
 
-    #[peripheral(offset = 0x3002_0000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x3002_0000, len = 0x24)]
     pub mailbox: MailboxInternal,
 
-    #[peripheral(offset = 0x3002_1000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x3002_1000, len = 0x60)]
     pub sha512_acc: Sha512Accelerator,
 
-    #[peripheral(offset = 0x3003_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0x3003_0000, len = 0x820)]
     pub soc_reg: SocRegistersInternal,
 
-    #[peripheral(offset = 0x5000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x5000_0000, len = 0x20000)]
     pub dccm: Ram,
 
-    #[peripheral(offset = 0x6000_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0x6000_0000, len = 0x507c)]
     pub pic_regs: PicMmioRegisters,
 }
 
@@ -350,13 +350,13 @@ impl CaliptraRootBus {
 
 #[derive(Bus)]
 pub struct SocToCaliptraBus {
-    #[peripheral(offset = 0x3002_0000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x3002_0000, len = 0xfff)]
     mailbox: MailboxExternal,
 
-    #[peripheral(offset = 0x3002_1000, mask = 0x0000_0fff)]
+    #[peripheral(offset = 0x3002_1000, len = 0x60)]
     sha512_acc: Sha512Accelerator,
 
-    #[peripheral(offset = 0x3003_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0x3003_0000, len = 0xfff)]
     soc_ifc: SocRegistersExternal,
 }
 

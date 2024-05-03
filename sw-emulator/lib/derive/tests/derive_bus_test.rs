@@ -27,34 +27,34 @@ impl From<MyCustomField> for RvData {
 struct MyBus {
     pub log: Log,
 
-    #[peripheral(offset = 0x0000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x0000_0000, len = 0x0fff_ffff)]
     pub rom: Ram,
 
-    #[peripheral(offset = 0x1000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x1000_0000, len = 0x0fff_ffff)]
     pub sram: Ram,
 
-    #[peripheral(offset = 0x2000_0000, mask = 0x0fff_ffff)]
+    #[peripheral(offset = 0x2000_0000, len = 0x0fff_ffff)]
     pub dram: Ram,
 
-    #[peripheral(offset = 0xaa00_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0xaa00_0000, len = 0x34)]
     pub uart0: Ram,
 
-    #[peripheral(offset = 0xaa01_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0xaa01_0000, len = 0x34)]
     pub uart1: Ram,
 
-    #[peripheral(offset = 0xaa02_0000, mask = 0x0000_00ff)]
+    #[peripheral(offset = 0xaa02_0000, len = 0x80)]
     pub i2c0: Ram,
 
-    #[peripheral(offset = 0xaa02_0400, mask = 0x0000_00ff)]
+    #[peripheral(offset = 0xaa02_0400, len = 0x80)]
     pub i2c1: Ram,
 
-    #[peripheral(offset = 0xaa02_0800, mask = 0x0000_00ff)]
+    #[peripheral(offset = 0xaa02_0800, len = 0x80)]
     pub i2c2: Ram,
 
-    #[peripheral(offset = 0xbb42_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0xbb42_0000, len = 0x10000)]
     pub spi0: Ram,
 
-    #[peripheral(offset = 0xaa05_0000, mask = 0x0000_ffff)]
+    #[peripheral(offset = 0xaa05_0000, len = 0x10000)]
     pub fake: FakeBus,
 
     #[register(offset = 0xcafe_f0d0)]
