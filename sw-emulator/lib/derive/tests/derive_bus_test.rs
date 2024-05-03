@@ -36,10 +36,10 @@ struct MyBus {
     #[peripheral(offset = 0x2000_0000, len = 0x0fff_ffff)]
     pub dram: Ram,
 
-    #[peripheral(offset = 0xaa00_0000, len = 0x34)]
+    #[peripheral(offset = 0xaa00_0000, len = 0x80)]
     pub uart0: Ram,
 
-    #[peripheral(offset = 0xaa01_0000, len = 0x34)]
+    #[peripheral(offset = 0xaa01_0000, len = 0x80)]
     pub uart1: Ram,
 
     #[peripheral(offset = 0xaa02_0000, len = 0x80)]
