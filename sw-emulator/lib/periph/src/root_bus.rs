@@ -277,7 +277,7 @@ pub struct CaliptraRootBus {
     #[peripheral(offset = 0x2000_f000, len = 0x1)]
     pub ctrl: EmuCtrl,
 
-    #[peripheral(offset = 0x3000_0000, len = 0x1fff)]
+    #[peripheral(offset = 0x3000_0000, len = 0x1ffff)]
     pub mailbox_sram: MailboxRam,
 
     #[peripheral(offset = 0x3002_0000, len = 0x24)]

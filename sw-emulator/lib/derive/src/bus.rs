@@ -300,34 +300,13 @@ fn gen_bus_match_tokens(offset_matches: &LengthMatchBlock, access_type: AccessTy
             AccessType::Read => {
                 let field_name = Ident::new(&m.body, Span::call_site());
                 quote! {
-                    #offset..=#offset_len => {
-                        eprint!("read\t");
-                        eprint!("addr: {:#010x}\t", addr as usize as u32);
-                        eprint!("size: {:#010x}\t", size as usize as u32);
-                        let result = caliptra_emu_bus::Bus::read(&mut self.#field_name, size, addr - #offset);
-                        match result {
-                            Ok(v) => eprintln!("value: {:#010x}", v),
-                            Err(e) => eprintln!("error: {e:?}"),
-                        }
-                        return result;
-                    }
+                    #offset..=#offset_len => return caliptra_emu_bus::Bus::read(&mut self.#field_name, size, addr - #offset),
                 }
             },
             AccessType::Write => {
                 let field_name = Ident::new(&m.body, Span::call_site());
                 quote! {
-                    #offset..=#offset_len => {
-                        eprint!("write\t");
-                        eprint!("addr: {:#010x}\t", addr - #offset as usize as u32);
-                        eprint!("size: {:#010x}\t", size as usize as u32);
-                        eprint!("value: {:#010x}", val as usize as u32);
-                        let result = caliptra_emu_bus::Bus::write(&mut self.#field_name, size, addr - #offset, val);
-                        match result {
-                            Ok(_) => eprintln!(),
-                            Err(e) => eprintln!("\terror: {e:?}"),
-                        }
-                        return result;
-                    }
+                    #offset..=#offset_len => return caliptra_emu_bus::Bus::write(&mut self.#field_name, size, addr - #offset, val),
                 }
             },
         }
