@@ -118,7 +118,7 @@ pub struct Sha512AcceleratorRegs {
     status: ReadOnlyRegister<u32, Status::Register>,
 
     /// SHA512 Hash Memory
-    #[peripheral(offset = 0x0000_0020, len = 0x3f)]
+    #[peripheral(offset = 0x0000_0020, len = 0x40)]
     hash: ReadOnlyMemory<SHA512_HASH_SIZE>,
 
     /// Control register

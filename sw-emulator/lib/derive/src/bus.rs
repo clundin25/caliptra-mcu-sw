@@ -295,7 +295,11 @@ enum AccessType {
 fn gen_bus_match_tokens(offset_matches: &LengthMatchBlock, access_type: AccessType) -> TokenStream {
     let match_arms = offset_matches.iter().map(|m| {
         let offset = hex_literal_u32(m.offset);
-        let offset_len = hex_literal_u32(m.offset + m.len);
+        let offset_len = if m.len > 0 {
+            hex_literal_u32(m.offset + (m.len - 1))
+        } else {
+            hex_literal_u32(m.offset)
+        };
         match access_type {
             AccessType::Read => {
                 let field_name = Ident::new(&m.body, Span::call_site());
