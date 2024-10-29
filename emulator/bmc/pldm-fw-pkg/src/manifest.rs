@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crc::{Crc, CRC_32_ISO_HDLC};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FirmwareManifest {
     pub package_header_information: PackageHeaderInformation,
     pub firmware_device_id_records: Vec<FirmwareDeviceIdRecord>,
@@ -27,7 +27,7 @@ pub struct FirmwareManifest {
     pub component_image_information: Vec<ComponentImageInformation>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageHeaderInformation {
     pub package_header_identifier: Uuid,
     pub package_header_format_revision: u8,
@@ -38,7 +38,7 @@ pub struct PackageHeaderInformation {
     pub package_header_size: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FirmwareDeviceIdRecord {
     pub firmware_device_package_data: Option<Vec<u8>>,
     pub device_update_option_flags: u32,
@@ -50,7 +50,7 @@ pub struct FirmwareDeviceIdRecord {
     pub reference_manifest_data: Option<Vec<u8>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DownstreamDeviceIdRecord {
     pub update_option_flags: u32, // bitfield32
     pub self_contained_activation_min_version_string_type: StringType,
@@ -62,7 +62,7 @@ pub struct DownstreamDeviceIdRecord {
     pub reference_manifest_data: Option<Vec<u8>>, // Optional reference manifest
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ComponentImageInformation {
     pub image_location: String,
     pub classification: u16,
@@ -230,7 +230,7 @@ impl<'de> Deserialize<'de> for DescriptorType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Descriptor {
     pub descriptor_type: DescriptorType,
     pub descriptor_data: Vec<u8>, // Variable length payload

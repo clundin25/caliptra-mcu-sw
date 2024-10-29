@@ -1,0 +1,80 @@
+[package_header_information]
+package_header_identifier = "f018878c-cb7d-4943-9800-a02f059aca02"
+package_header_format_revision = 1
+package_release_date_time = "2024-10-09T14:51:35Z"
+package_version_string_type = "ASCII"
+package_version_string = "145.02.01.01"
+
+[[firmware_device_id_records]]
+device_update_option_flags = 1
+component_image_set_version_string_type = "ASCII"
+component_image_set_version_string = "145.02.01.01"
+applicable_components = [1, 2]
+
+[firmware_device_id_records.initial_descriptor]
+descriptor_type = "PCI_VENDOR_ID"
+descriptor_data = [0, 16]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_DEVICE_ID"
+descriptor_data = [178, 0]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_SUBSYSTEM_ID"
+descriptor_data = [120, 0]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_SUBSYSTEM_VENDOR_ID"
+descriptor_data = [45, 21]
+
+[[firmware_device_id_records]]
+device_update_option_flags = 1
+component_image_set_version_string_type = "ASCII"
+component_image_set_version_string = "156.056.08.02"
+applicable_components = [0, 3, 4, 50]
+
+[firmware_device_id_records.initial_descriptor]
+descriptor_type = "PCI_VENDOR_ID"
+descriptor_data = [0, 16]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_DEVICE_ID"
+descriptor_data = [178, 0]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_SUBSYSTEM_ID"
+descriptor_data = [120, 0]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_SUBSYSTEM_VENDOR_ID"
+descriptor_data = [45, 8]
+
+[[component_image_information]]
+image_location = "./img_00.bin"
+classification = 10
+identifier = 16
+comparison_stamp = 4294967295
+options = 1
+requested_activation_method = 56
+version_string_type = "ASCII"
+version_string = "12.032.01.01"
+
+[[component_image_information]]
+image_location = "./img_01.bin"
+classification = 10
+identifier = 61471
+comparison_stamp = 4294967295
+options = 1
+requested_activation_method = 4
+version_string_type = "ASCII"
+version_string = "106.08.08.02"
+
+[[component_image_information]]
+image_location = "./img_02.bin"
+classification = 2
+identifier = 40991
+comparison_stamp = 4294967295
+options = 1
+requested_activation_method = 34
+version_string_type = "ASCII"
+version_string = "156.056.08.02"

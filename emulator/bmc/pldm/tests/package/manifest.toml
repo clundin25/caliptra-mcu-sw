@@ -1,0 +1,81 @@
+[package_header_information]
+package_header_identifier = "7b291c99-6db6-4208-801b-02026e463c78"
+package_header_format_revision = 1
+package_release_date_time = "2023-05-17T05:09:22Z"
+package_version_string_type = "ASCII"
+package_version_string = "HGX-H100x8_0002_230517.3.0"
+
+[[firmware_device_id_records]]
+firmware_device_package_data = [170, 187, 204, 221]
+device_update_option_flags = 1
+component_image_set_version_string_type = "ASCII"
+component_image_set_version_string = "Firmware v1"
+applicable_components = [0, 1]
+reference_manifest_data = [238, 255]
+
+[firmware_device_id_records.initial_descriptor]
+descriptor_type = "PCI_VENDOR_ID"
+descriptor_data = [1, 2, 3, 4]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_DEVICE_ID"
+descriptor_data = [16, 32]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "PCI_SUBSYSTEM_ID"
+descriptor_data = [48, 64]
+
+[[firmware_device_id_records]]
+firmware_device_package_data = [153, 136, 119, 102]
+device_update_option_flags = 0
+component_image_set_version_string_type = "ASCII"
+component_image_set_version_string = "Firmware v2"
+applicable_components = [1]
+reference_manifest_data = [85, 68]
+
+[firmware_device_id_records.initial_descriptor]
+descriptor_type = "UUID"
+descriptor_data = [5, 6, 7, 8]
+
+[[firmware_device_id_records.additional_descriptors]]
+descriptor_type = "ACPI_VENDOR_ID"
+descriptor_data = [21, 37, 53]
+
+[[downstream_device_id_records]]
+update_option_flags = 1
+self_contained_activation_min_version_string_type = "ASCII"
+applicable_components = [1]
+self_contained_activation_min_version_string = "MinVersion 1.0"
+self_contained_activation_min_version_comparison_stamp = 12345678
+package_data = [136, 119, 102, 85]
+reference_manifest_data = [68, 51]
+
+[[downstream_device_id_records.record_descriptors]]
+descriptor_type = "UUID"
+descriptor_data = [5, 6, 7, 8]
+
+[[downstream_device_id_records.record_descriptors]]
+descriptor_type = "IANA_ENTERPRISE_ID"
+descriptor_data = [21, 37, 53]
+
+[[component_image_information]]
+image_location = "tests/package/img_00.bin"
+classification = 1
+identifier = 16
+comparison_stamp = 12345
+options = 3
+requested_activation_method = 7
+version_string_type = "ASCII"
+version_string = "v1.0.0"
+opaque_data = [170, 187, 204, 221]
+
+[[component_image_information]]
+image_location = "tests/package/img_01.bin"
+classification = 65535
+identifier = 32
+comparison_stamp = 54321
+options = 1
+requested_activation_method = 3
+version_string_type = "ASCII"
+version_string = "v2.3.4"
+opaque_data = [17, 34, 51, 68]

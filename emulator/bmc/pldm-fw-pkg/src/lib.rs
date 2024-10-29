@@ -1,2 +1,2 @@
 pub mod manifest;
-pub use manifest::FirmwareManifest;
+pub use manifest::{Descriptor, DescriptorType, FirmwareManifest};
