@@ -20,7 +20,6 @@ use emulator_cpu::{Pic, PicMmioRegisters};
 use emulator_derive::Bus;
 use std::{
     cell::RefCell,
-    path::PathBuf,
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -31,7 +30,6 @@ pub struct CaliptraRootBusArgs {
     pub pic: Rc<Pic>,
     pub clock: Rc<Clock>,
     pub rom: Vec<u8>,
-    pub log_dir: PathBuf,
     pub uart_output: Option<Rc<RefCell<Vec<u8>>>>,
     pub uart_rx: Option<Arc<Mutex<Option<u8>>>>,
 }

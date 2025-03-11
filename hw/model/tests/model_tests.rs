@@ -1,0 +1,238 @@
+// Licensed under the Apache-2.0 license
+
+use caliptra_api::SocManager;
+use caliptra_builder::firmware;
+use caliptra_hw_model_types::ErrorInjectionMode;
+use caliptra_test_harness_types as harness;
+use mcu_hw_model::{BootParams, DefaultHwModel, InitParams, McuHwModel};
+
+#[cfg(feature = "fpga_realtime")]
+use std::process::{Child, Command};
+#[cfg(feature = "fpga_realtime")]
+use std::thread;
+#[cfg(feature = "fpga_realtime")]
+use std::time::{Duration, Instant};
+
+#[cfg(feature = "fpga_realtime")]
+fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<i32> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code(),
+            Ok(None) => thread::sleep(Duration::from_millis(100)), // Check every 100ms
+            Err(_) => return None,
+        }
+    }
+    let _ = child.kill();
+    None
+}
+
+fn run_fw_elf(elf: &[u8]) -> DefaultHwModel {
+    let rom = caliptra_builder::elf2rom(elf).unwrap();
+    let model = mcu_hw_model::new(
+        InitParams {
+            caliptra_rom: &rom,
+            random_sram_puf: false,
+            ..Default::default()
+        },
+        BootParams::default(),
+    )
+    .unwrap();
+    model
+}
+
+fn run_fw_elf_with_rand_puf(elf: &[u8]) -> DefaultHwModel {
+    let rom = caliptra_builder::elf2rom(elf).unwrap();
+    let model = mcu_hw_model::new(
+        InitParams {
+            caliptra_rom: &rom,
+            ..Default::default()
+        },
+        BootParams::default(),
+    )
+    .unwrap();
+    model
+}
+
+#[test]
+fn test_iccm_byte_write_nmi_failure() {
+    let elf = caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_ICCM_BYTE_WRITE)
+        .unwrap();
+    let symbols = caliptra_builder::elf_symbols(&elf).unwrap();
+    let main_symbol = symbols.iter().find(|s| s.name == "main").unwrap();
+    let main_addr = main_symbol.value as u32;
+
+    let mut model = run_fw_elf(&elf);
+    model.step_until_exit_success().unwrap_err();
+
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_NMI
+    );
+    let nmi_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+
+    // Exactly where the PC is when the NMI fires is a bit fuzzy...
+    assert!(nmi_info.mepc >= main_addr + 4 && nmi_info.mepc <= main_addr + 24);
+    assert_eq!(nmi_info.mcause, harness::NMI_CAUSE_DBUS_STORE_ERROR);
+}
+
+#[test]
+fn test_iccm_unaligned_write_nmi_failure() {
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_ICCM_UNALIGNED_WRITE)
+            .unwrap();
+    let symbols = caliptra_builder::elf_symbols(&elf).unwrap();
+    let main_symbol = symbols.iter().find(|s| s.name == "main").unwrap();
+    let main_addr = main_symbol.value as u32;
+
+    let mut model = run_fw_elf(&elf);
+    model.step_until_exit_success().unwrap_err();
+
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_NMI
+    );
+    let ext_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+
+    // Exactly where the PC is when the NMI fires is a bit fuzzy...
+    assert!(ext_info.mepc >= main_addr + 4 && ext_info.mepc <= main_addr + 24);
+    assert_eq!(ext_info.mcause, harness::NMI_CAUSE_DBUS_STORE_ERROR);
+}
+
+#[test]
+fn test_iccm_write_locked_nmi_failure() {
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_ICCM_WRITE_LOCKED)
+            .unwrap();
+
+    let mut model = run_fw_elf(&elf);
+    model.step_until_exit_success().unwrap_err();
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_NMI
+    );
+    let ext_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+    assert_eq!(ext_info.mcause, harness::NMI_CAUSE_DBUS_STORE_ERROR);
+}
+
+#[test]
+fn test_invalid_instruction_exception_failure() {
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_INVALID_INSTRUCTION)
+            .unwrap();
+
+    let mut model = run_fw_elf(&elf);
+    model.step_until_exit_success().unwrap_err();
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_EXCEPTION
+    );
+    let ext_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+    assert_eq!(
+        ext_info.mcause,
+        harness::EXCEPTION_CAUSE_ILLEGAL_INSTRUCTION_ERROR
+    );
+}
+
+#[test]
+fn test_write_to_rom() {
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_WRITE_TO_ROM).unwrap();
+    let mut model = run_fw_elf(&elf);
+    model.step_until_exit_success().unwrap_err();
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_EXCEPTION
+    );
+}
+
+#[test]
+fn test_iccm_double_bit_ecc_nmi_failure() {
+    // FPGA realtime model doesn't support ecc error injection
+    #![cfg_attr(feature = "fpga_realtime", ignore)]
+
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_ICCM_DOUBLE_BIT_ECC)
+            .unwrap();
+
+    let mut model = run_fw_elf(&elf);
+
+    model.ecc_error_injection(ErrorInjectionMode::IccmDoubleBitEcc);
+
+    model.step_until_exit_success().unwrap_err();
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_EXCEPTION
+    );
+    let ext_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+    assert_eq!(
+        ext_info.mcause,
+        harness::EXCEPTION_CAUSE_INSTRUCTION_ACCESS_FAULT
+    );
+}
+
+#[test]
+fn test_dccm_double_bit_ecc_nmi_failure() {
+    // FPGA realtime model doesn't support ecc error injection
+    #![cfg_attr(feature = "fpga_realtime", ignore)]
+
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_DCCM_DOUBLE_BIT_ECC)
+            .unwrap();
+
+    let mut model = run_fw_elf(&elf);
+
+    model.ecc_error_injection(ErrorInjectionMode::DccmDoubleBitEcc);
+
+    model.step_until_exit_success().unwrap_err();
+    let soc_ifc: caliptra_registers::soc_ifc::RegisterBlock<_> = model.soc_ifc();
+    assert_eq!(
+        soc_ifc.cptra_fw_error_non_fatal().read(),
+        harness::ERROR_EXCEPTION
+    );
+    let ext_info = harness::ExtErrorInfo::from(soc_ifc.cptra_fw_extended_error_info().read());
+    assert_eq!(ext_info.mcause, harness::EXCEPTION_CAUSE_LOAD_ACCESS_FAULT);
+}
+
+#[test]
+fn test_pcr_extend() {
+    let elf =
+        caliptra_builder::build_firmware_elf(&firmware::hw_model_tests::TEST_PCR_EXTEND).unwrap();
+
+    let mut model = run_fw_elf(&elf);
+
+    model.step_until_exit_success().unwrap();
+}
+
+#[test]
+#[cfg(feature = "fpga_realtime")]
+fn test_mbox_pauser_sigbus() {
+    fn find_binary_path() -> Option<&'static str> {
+        // Use this path when running on github.
+        const TEST_BIN_PATH_SQUASHFS:&str = "/tmp/caliptra-test-binaries/target/aarch64-unknown-linux-gnu/release/fpga_realtime_mbox_pauser";
+
+        const TEST_BIN_PATH: &str = env!("CARGO_BIN_EXE_fpga_realtime_mbox_pauser");
+        if std::path::Path::new(TEST_BIN_PATH_SQUASHFS).exists() {
+            Some(TEST_BIN_PATH_SQUASHFS)
+        } else if std::path::Path::new(TEST_BIN_PATH).exists() {
+            Some(TEST_BIN_PATH)
+        } else {
+            None
+        }
+    }
+
+    let mut child = Command::new(find_binary_path().unwrap())
+        .spawn()
+        .expect("Failed to start mbox_pauser test utility");
+
+    let exit_code = wait_with_timeout(&mut child, Duration::from_secs(120));
+
+    // Check if the exit code is 42
+    assert_eq!(exit_code, Some(42));
+}

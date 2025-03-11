@@ -7,5 +7,20 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+fpga_realtime = []
+
 [dependencies]
+caliptra-api-types.workspace = true
+caliptra-api.workspace = true
+caliptra-builder.workspace = true
+caliptra-drivers.workspace = true
+caliptra-hw-model-types.workspace = true
+caliptra-image-types.workspace = true
+caliptra-test.workspace = true
 mcu-builder.workspace = true
+mcu-hw-model.workspace = true
+openssl.workspace = true
+regex.workspace = true
+zerocopy.workspace = true

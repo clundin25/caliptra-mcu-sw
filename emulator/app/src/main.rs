@@ -382,7 +382,6 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
 
     let bus_args = CaliptraRootBusArgs {
         rom: rom_buffer,
-        log_dir: args_log_dir.clone(),
         uart_output: uart_output.clone(),
         uart_rx: stdin_uart.clone(),
         pic: pic.clone(),
