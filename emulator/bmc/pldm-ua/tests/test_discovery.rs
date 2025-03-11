@@ -55,6 +55,7 @@ fn test_discovery() {
             is_fw_update_started: false,
         },
         fd_tid: DEVICE_TID,
+        auto_start: true,
     });
 
     // TID to be assigned to the device

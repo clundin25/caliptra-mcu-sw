@@ -17,6 +17,9 @@ use libtockasync::TockSubscribe;
 #[cfg(feature = "test-pldm-request-response")]
 mod test_pldm_request_response;
 
+#[cfg(feature = "test-pldm-fw-update-inventory")]
+mod test_pldm_fw_update_inventory;
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
@@ -149,6 +152,13 @@ pub(crate) async fn async_main<S: Syscalls>() {
     #[cfg(feature = "test-pldm-request-response")]
     {
         test_pldm_request_response::test::test_pldm_request_response::<S>().await;
+    }
+    #[cfg(feature = "test-pldm-fw-update-inventory")]
+    {
+        test_pldm_fw_update_inventory::test::test_pldm_fw_update_inventory::<S>(
+            &mut console_writer,
+        )
+        .await;
     }
     writeln!(console_writer, "app finished").unwrap();
 }

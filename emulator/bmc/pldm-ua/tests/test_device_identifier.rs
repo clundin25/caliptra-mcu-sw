@@ -65,6 +65,7 @@ fn test_valid_device_identifier_one_descriptor() {
         discovery_sm_actions: common::CustomDiscoverySm {},
         update_sm_actions: update_sm::DefaultActions {},
         fd_tid: 0x02,
+        auto_start: true,
     });
 
     // Receive QueryDeviceIdentifiers request
@@ -114,6 +115,7 @@ fn test_valid_device_identifier_not_matched() {
         discovery_sm_actions: common::CustomDiscoverySm {},
         update_sm_actions: update_sm::DefaultActions {},
         fd_tid: 0x02,
+        auto_start: true,
     });
 
     // Receive QueryDeviceIdentifiers request
@@ -179,6 +181,7 @@ fn test_multiple_device_identifiers() {
         discovery_sm_actions: common::CustomDiscoverySm {},
         update_sm_actions: update_sm::DefaultActions {},
         fd_tid: 0x02,
+        auto_start: true,
     });
 
     // Receive QueryDeviceIdentifiers request
@@ -254,6 +257,7 @@ fn test_send_get_fw_parameter_after_response() {
         discovery_sm_actions: common::CustomDiscoverySm {},
         update_sm_actions: UpdateSmIgnoreFirmwareParamsResponse {},
         fd_tid: 0x02,
+        auto_start: true,
     });
 
     // Receive QueryDeviceIdentifiers request

@@ -37,8 +37,10 @@ use emulator_registers_generated::root_bus::AutoRootBus;
 use emulator_registers_generated::soc::SocPeripheral;
 use gdb::gdb_state;
 use gdb::gdb_target::GdbTarget;
+use log::LevelFilter;
 use mctp_transport::MctpTransport;
 use pldm_ua::transport::{EndpointId, PldmTransport};
+use simple_logger::SimpleLogger;
 use std::cell::RefCell;
 use std::fs::File;
 use std::io;
@@ -48,6 +50,7 @@ use std::process::exit;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
+use tests::pldm_fw_update_inventory_test::PldmFwUpdateInventoryTest;
 use tests::pldm_request_response_test::PldmRequestResponseTest;
 
 #[derive(Parser)]
@@ -292,6 +295,8 @@ fn read_binary(path: &PathBuf, expect_load_addr: u32) -> io::Result<Vec<u8>> {
 }
 
 fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
+    let _ = SimpleLogger::new().with_level(LevelFilter::Debug).init();
+
     // exit cleanly on Ctrl-C so that we save any state.
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -470,6 +475,17 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             .create_socket(EndpointId(0), EndpointId(1))
             .unwrap();
         PldmRequestResponseTest::run(pldm_socket, running.clone());
+    }
+
+    if cfg!(feature = "test-pldm-fw-update-inventory") {
+        println!("Emulator: Starting test-pldm-fw-update-inventory");
+        i3c_controller.start();
+        let pldm_transport =
+            MctpTransport::new(cli.i3c_port.unwrap(), i3c.get_dynamic_address().unwrap());
+        let pldm_socket = pldm_transport
+            .create_socket(EndpointId(0), EndpointId(1))
+            .unwrap();
+        PldmFwUpdateInventoryTest::run(pldm_socket, running.clone());
     }
 
     let create_flash_controller = |default_path: &str, error_irq: u8, event_irq: u8| {

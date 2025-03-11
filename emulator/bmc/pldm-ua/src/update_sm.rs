@@ -43,12 +43,12 @@ statemachine! {
         Download + RequestFirmwareData / on_request_firmware = Download,
         Download + TransferCompleteFail / on_transfer_fail = Idle,
         Download + TransferCompletePass / on_transfer_success = Verify,
-        Download + CancelUpdate  / on_stop_update = Idle,
+
 
         Verify + GetStatus / on_get_status = Verify,
         Verify + VerifyCompletePass / on_verify_success = Apply,
         Verify + VerifyCompleteFail / on_verify_fail = Idle,
-        Verify + CancelUpdate  / on_stop_update = Idle,
+
 
         Apply + GetStatus / on_get_status = Apply,
         Apply + ApplyCompleteFail / on_apply_fail = Idle,
@@ -58,8 +58,8 @@ statemachine! {
         Activate + GetStatus / on_get_status = Activate,
         Activate + GetMetaData / on_get_metadata = Activate,
         Activate + ActivateFirmware / on_activate_firmware = Idle,
-        Activate + CancelUpdate  / on_stop_update = Idle,
 
+        _ + Cancel(pldm_packet::request_cancel::CancelUpdateRequest) / on_cancel_update = Done,
         _ + StopUpdate / on_stop_update = Done
     }
 }
@@ -261,6 +261,17 @@ pub trait StateMachineActions {
             error!("Cannot send RequestUpdate request, no device id found");
             Err(())
         }
+    }
+
+    fn on_cancel_update(
+        &mut self,
+        ctx: &mut InnerContext<impl PldmSocket>,
+        _request: pldm_packet::request_cancel::CancelUpdateRequest,
+    ) -> Result<(), ()> {
+        ctx.event_queue
+            .send(PldmEvents::Update(Events::StopUpdate))
+            .map_err(|_| ())?;
+        Ok(())
     }
 
     fn find_component_in_package(
@@ -486,6 +497,7 @@ pub fn process_packet(packet: &RxPacket) -> Result<PldmEvents, ()> {
             FwUpdateCmd::PassComponentTable => {
                 packet_to_event(&header, packet, true, Events::PassComponentResponse)
             }
+            FwUpdateCmd::CancelUpdate => packet_to_event(&header, packet, false, Events::Cancel),
             _ => {
                 debug!("Unknown firmware update command");
                 Err(())
@@ -583,6 +595,7 @@ impl<T: StateMachineActions, S: PldmSocket> StateMachineContext for Context<T, S
         on_apply_fail() -> Result<(),()>,
         on_activate_firmware() -> Result<(),()>,
         on_get_metadata() -> Result<(),()>,
+        on_cancel_update(request : pldm_packet::request_cancel::CancelUpdateRequest) -> Result<(),()>,
     }
 
     // Guards

@@ -10,9 +10,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 pub const PLDM_FWUP_COMPONENT_RELEASE_DATA_LEN: usize = 8;
 pub const PLDM_FWUP_BASELINE_TRANSFER_SIZE: usize = 32;
 pub const PLDM_FWUP_MAX_PADDING_SIZE: usize = PLDM_FWUP_BASELINE_TRANSFER_SIZE;
-pub const PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN: usize = 255;
+pub const PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN: usize = 64;
 pub const DESCRIPTOR_DATA_MAX_LEN: usize = 64; // Arbitrary limit for static storage
-pub const MAX_COMPONENT_COUNT: usize = 8; // Arbitrary limit, change as needed
+pub const MAX_COMPONENT_COUNT: usize = 2; // Arbitrary limit, change as needed
 
 #[repr(u8)]
 pub enum FwUpdateCmd {

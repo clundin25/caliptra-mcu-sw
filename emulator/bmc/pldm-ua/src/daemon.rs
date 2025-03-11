@@ -21,7 +21,9 @@ pub struct PldmDaemon<
 > {
     event_loop_handle: Option<JoinHandle<()>>,
     event_queue_tx: Option<Sender<PldmEvents>>,
-    update_sm: Arc<Mutex<update_sm::StateMachine<update_sm::Context<U, S>>>>,
+    pub update_sm: Arc<Mutex<update_sm::StateMachine<update_sm::Context<U, S>>>>,
+    discovery_sm: Arc<Mutex<discovery_sm::StateMachine<discovery_sm::Context<D, S>>>>,
+    socket: S,
     _phantom: std::marker::PhantomData<D>,
 }
 
@@ -59,6 +61,7 @@ impl<
         let event_queue_tx_clone3 = event_queue_tx.clone();
         let event_queue_tx_clone4 = event_queue_tx.clone();
         let socket_clone1 = socket.clone();
+        let socket_clone2 = socket.clone();
 
         let discovery_sm = Arc::new(Mutex::new(discovery_sm::StateMachine::new(
             discovery_sm::Context::new(
@@ -79,22 +82,34 @@ impl<
         )));
 
         let update_sm_clone = update_sm.clone();
+        let discovery_sm_clone = discovery_sm.clone();
         let running = Arc::new(AtomicBool::new(true));
 
         std::thread::spawn(move || {
             let _ = PldmDaemon::<S, D, U>::rx_loop(socket_clone1, event_queue_tx_clone3);
         });
 
-        event_queue_tx.send(PldmEvents::Start).unwrap();
-
         let event_handle = std::thread::spawn(move || {
-            let _ = PldmDaemon::event_loop(event_queue_rx, discovery_sm, update_sm_clone, running);
+            let _ = PldmDaemon::event_loop(
+                event_queue_rx,
+                discovery_sm_clone,
+                update_sm_clone,
+                running,
+            );
         });
+
+        if opts.auto_start {
+            event_queue_tx_clone2
+                .send(PldmEvents::Start)
+                .map_err(|_| ())?;
+        }
 
         Ok(Self {
             event_loop_handle: Some(event_handle),
             event_queue_tx: Some(event_queue_tx_clone2),
             update_sm,
+            discovery_sm,
+            socket: socket_clone2,
             _phantom: std::marker::PhantomData,
         })
     }
@@ -176,12 +191,14 @@ impl<
                     }
                     PldmEvents::Stop => {
                         running.store(false, Ordering::Relaxed);
+                        debug!("Stopping PLDM daemon");
                         break;
                     }
                 }
+                debug!("Event Loop finished processing event",);
             }
         }
-
+        debug!("Event Loop exiting");
         Ok(())
     }
 
@@ -192,6 +209,7 @@ impl<
             return Ok(event);
         }
         let event = update_sm::process_packet(packet);
+        debug!("Update state machine event: {:?}", event);
         if let Ok(event) = event {
             return Ok(event);
         }
@@ -208,6 +226,37 @@ impl<
         let update_sm = &*self.update_sm.lock().unwrap();
         update_sm.context().inner_ctx.device_id.clone()
     }
+    pub fn restart(&self, opts: Option<Options<D, U>>) {
+        if let Some(opts) = opts {
+            info!("Restarting PLDM daemon with new options");
+            let discovery_sm = discovery_sm::StateMachine::new(discovery_sm::Context::new(
+                opts.discovery_sm_actions,
+                self.socket.clone(),
+                opts.fd_tid,
+                self.event_queue_tx.clone().unwrap(),
+            ));
+
+            let update_sm = update_sm::StateMachine::new(update_sm::Context::new(
+                opts.update_sm_actions,
+                self.socket.clone(),
+                opts.pldm_fw_pkg.unwrap(),
+                self.event_queue_tx.clone().unwrap(),
+            ));
+
+            // Replace the old state machines with the new ones
+            let mut update_sm_lock = self.update_sm.lock().unwrap();
+            let mut discovery_sm_lock = self.discovery_sm.lock().unwrap();
+            *update_sm_lock = update_sm;
+            *discovery_sm_lock = discovery_sm;
+        }
+
+        // Send start event
+        if let Some(event_queue_tx) = self.event_queue_tx.as_ref() {
+            event_queue_tx.send(PldmEvents::Start).unwrap();
+        } else {
+            error!("Event queue is not initialized");
+        }
+    }
 }
 
 pub struct Options<D: discovery_sm::StateMachineActions, U: update_sm::StateMachineActions> {
@@ -220,6 +269,7 @@ pub struct Options<D: discovery_sm::StateMachineActions, U: update_sm::StateMach
     // Actions for the update state machine that can be customized as needed
     pub update_sm_actions: U,
     pub pldm_fw_pkg: Option<FirmwareManifest>,
+    pub auto_start: bool,
 }
 
 impl Default for Options<discovery_sm::DefaultActions, update_sm::DefaultActions> {
@@ -229,6 +279,7 @@ impl Default for Options<discovery_sm::DefaultActions, update_sm::DefaultActions
             update_sm_actions: update_sm::DefaultActions {},
             pldm_fw_pkg: None,
             fd_tid: 0,
+            auto_start: true,
         }
     }
 }

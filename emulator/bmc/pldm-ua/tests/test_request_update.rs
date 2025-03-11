@@ -132,6 +132,7 @@ fn test_request_update_receive_ok() {
         discovery_sm_actions: CustomDiscoverySm {},
         update_sm_actions: UpdateSmBypassed {},
         fd_tid: 0x01,
+        auto_start: true,
     });
 
     // Receive RequestUpdate request
@@ -169,6 +170,7 @@ fn test_request_update_receive_fail() {
         discovery_sm_actions: CustomDiscoverySm {},
         update_sm_actions: UpdateSmBypassed {},
         fd_tid: 0x01,
+        auto_start: true,
     });
 
     // Receive RequestUpdate request
