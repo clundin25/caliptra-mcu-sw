@@ -46,17 +46,11 @@ int init_module(void)
     uio_info.mem[2].size = 0x00018000;
     uio_info.mem[2].memtype = UIO_MEM_PHYS;
 
-    // SS Wrapper
-    uio_info.mem[3].name = "ss_wrapper";
-    uio_info.mem[3].addr = 0xA4020000;
+    // I3C
+    uio_info.mem[3].name = "ss_i3c";
+    uio_info.mem[3].addr = 0xA4030000;
     uio_info.mem[3].size = 0x00010000;
     uio_info.mem[3].memtype = UIO_MEM_PHYS;
-
-    // I3C
-    uio_info.mem[4].name = "ss_i3c";
-    uio_info.mem[4].addr = 0xA4030000;
-    uio_info.mem[4].size = 0x00010000;
-    uio_info.mem[4].memtype = UIO_MEM_PHYS;
 
     // Register device
     if (uio_register_device(&uio_dev, &uio_info) < 0)
