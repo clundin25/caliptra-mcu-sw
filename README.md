@@ -40,7 +40,6 @@ cargo xtask runtime --active-mode
 
 This uses the full [active, or subsystem, mode boot flow](https://chipsalliance.github.io/caliptra-mcu-sw/rom.html#cold-boot-flow).
 
-
 ## Documentation
 
 The specification is published [here](https://chipsalliance.github.io/caliptra-mcu-sw/).
