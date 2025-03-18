@@ -751,3 +751,74 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use uio::UioDevice;
+
+    use crate::model_fpga_realtime::FifoData;
+
+    #[test]
+    fn test_rom_backdoor() {
+        let dev0 = UioDevice::new(0).unwrap();
+        let dev1 = UioDevice::new(1).unwrap();
+        let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
+
+        println!("Check FPGA version");
+        println!("FPGA version: {:x}", unsafe {
+            core::ptr::read_volatile(wrapper.offset(0x44 / 4))
+        });
+        let rom_backdoor = dev1.map_mapping(1).unwrap() as *mut u8;
+        let mci = dev1.map_mapping(3).unwrap() as *mut u32;
+        unsafe {
+            // bring out of reset
+            println!("Bring SS out of reset");
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
+            println!("Write PAUSER");
+            // write pauser that is used for all accesses (this behavior will need to change in the future)
+            core::ptr::write_volatile(wrapper.offset(0x38 / 4), 0xAAAAAAAA);
+            println!("Write SOC user");
+            // echo write soc user so that the MCI sees we have elevated permissions
+            // core::ptr::write_volatile(wrapper.offset(0x54 / 4), 0xAAAAAAAA);
+            println!("Read HW_REG_ID");
+            // Read MCI HW_REG_ID, expect 0x1000
+            let x = core::ptr::read_volatile(mci.offset(0xC / 4));
+            println!("HW_REG_ID: {:x}", x);
+        }
+
+        println!("SS is out of reset");
+
+        let mut rom_data =
+            std::fs::read("../../target/riscv32imc-unknown-none-elf/release/rom.bin").unwrap();
+        while rom_data.len() % 8 != 0 {
+            rom_data.push(0);
+        }
+        println!("Writing ROM {}", rom_data.len());
+
+        let rom_slice = unsafe { core::slice::from_raw_parts_mut(rom_backdoor, rom_data.len()) };
+        rom_slice.copy_from_slice(&rom_data);
+
+        println!("Written to ROM");
+
+        println!(
+            "ROM bytes {:x?}",
+            rom_slice[0..4].iter().collect::<Vec<_>>()
+        );
+
+        const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
+
+        loop {
+            let fifodata = unsafe {
+                FifoData(
+                    wrapper
+                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET)
+                        .read_volatile(),
+                )
+            };
+            if fifodata.log_fifo_valid() == 0 {
+                break;
+            }
+            println!("Got fifo data {:x}", fifodata);
+        }
+    }
+}
