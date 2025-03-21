@@ -30,6 +30,7 @@ use zerocopy::{FromBytes, FromZeros, IntoBytes, Ref, Unalign};
 
 mod bus_logger;
 mod bus_logger_mcu;
+mod i3c_controller;
 pub mod mmio;
 mod model_emulated;
 #[cfg(feature = "fpga_realtime")]
