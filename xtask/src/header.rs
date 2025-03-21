@@ -27,6 +27,7 @@ const IGNORED_DIRS: &[&str] = &[
     "libtock",
     "out",
     "target",
+    "xi3c",
 ];
 
 pub(crate) fn fix() -> Result<()> {

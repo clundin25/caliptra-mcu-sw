@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::xi3c;
 use crate::EtrngResponse;
 use crate::ModelError;
 use crate::Output;
@@ -7,8 +8,6 @@ use crate::{McuHwModel, SecurityState, SocManager, TrngMode};
 use bitfield::bitfield;
 use caliptra_emu_bus::{Bus, BusError, BusMmio, Event};
 use caliptra_emu_types::{RvAddr, RvData, RvSize};
-use libc;
-use nix;
 use std::io::{BufRead, BufReader, Write};
 use std::marker::PhantomData;
 use std::process::{Child, Command, Stdio};
@@ -128,8 +127,10 @@ pub struct ModelFpgaRealtime {
     trng_mode: TrngMode,
     openocd: Option<Child>,
 
+    #[allow(dead_code)]
     i3c_mmio: *mut u32,
     recovery_images: Arc<Mutex<Vec<Vec<u8>>>>,
+    i3c_controller: xi3c::Controller,
 }
 
 impl ModelFpgaRealtime {
@@ -340,7 +341,7 @@ impl ModelFpgaRealtime {
         let map_size = self.dev.map_size(mapping).unwrap();
 
         unsafe {
-            nix::sys::mman::munmap(addr as *mut libc::c_void, map_size.into()).unwrap();
+            nix::sys::mman::munmap(addr as *mut libc::c_void, map_size).unwrap();
         }
     }
 
@@ -354,6 +355,7 @@ impl ModelFpgaRealtime {
 }
 
 // simple recovery flow implementation
+#[allow(dead_code)]
 struct RecoveryFlow {
     i3c_mmio: *mut u32,
     images: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -415,6 +417,24 @@ impl McuHwModel for ModelFpgaRealtime {
         let caliptra_mmio = dev.map_mapping(CALIPTRA_MAPPING).map_err(fmt_uio_error)? as *mut u32;
         let i3c_mmio = dev.map_mapping(I3C_MAPPING).map_err(fmt_uio_error)? as *mut u32;
         let recovery_images = Arc::new(Mutex::new(vec![]));
+        let i3c_controller_ptr = dev.map_mapping(4).map_err(fmt_uio_error)? as *mut u32;
+        let mut i3c_controller = xi3c::Controller::new(i3c_controller_ptr);
+
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: i3c_controller_ptr,
+            // TODO: validate these parameters
+            input_clock_hz: 199_999_000,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: true,
+            hj_capable: false,
+        };
+
+        i3c_controller.set_s_clk(12_500_000, 1);
+        i3c_controller.cfg_initialize(&xi3c_config, i3c_controller_ptr as u32);
+        i3c_controller.bus_init();
 
         let realtime_thread_exit_flag = Arc::new(AtomicBool::new(false));
         let realtime_thread_exit_flag2 = realtime_thread_exit_flag.clone();
@@ -469,6 +489,7 @@ impl McuHwModel for ModelFpgaRealtime {
             openocd: None,
             i3c_mmio,
             recovery_images,
+            i3c_controller,
         };
 
         // Set pwrgood and rst_b to 0 to boot from scratch
@@ -569,6 +590,8 @@ impl McuHwModel for ModelFpgaRealtime {
         self.set_cptra_pwrgood(false);
         self.set_cptra_pwrgood(true);
         self.set_cptra_rst_b(true);
+        self.i3c_controller.reset();
+        self.i3c_controller.reset_fifos();
         // Wait for ready_for_fuses
         while !self.is_ready_for_fuses() {}
     }
@@ -682,9 +705,8 @@ impl Drop for ModelFpgaRealtime {
         self.unmap_mapping(self.mmio, CALIPTRA_MAPPING);
 
         // Close openocd
-        match &mut self.openocd {
-            Some(ref mut cmd) => cmd.kill().expect("Failed to close openocd"),
-            _ => (),
+        if let Some(ref mut cmd) = &mut self.openocd {
+            cmd.kill().expect("Failed to close openocd")
         }
     }
 }

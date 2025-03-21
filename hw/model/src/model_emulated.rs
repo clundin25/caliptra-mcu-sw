@@ -23,8 +23,8 @@ use emulator_bus::BusConverter;
 use emulator_bus::Clock as McuClock;
 use emulator_cpu::{Cpu as McuCpu, InstrTracer as McuInstrTracer, Pic};
 use emulator_periph::{
-    CaliptraRootBus as McuRootBus, CaliptraRootBusArgs as McuRootBusArgs, DummyFlashCtrl, I3c,
-    I3cController, Mci, Otp,
+    CaliptraRootBus as McuRootBus, CaliptraRootBusArgs as McuRootBusArgs, I3c, I3cController, Mci,
+    Otp,
 };
 use emulator_registers_generated::root_bus::AutoRootBus;
 use std::cell::Cell;
@@ -199,7 +199,7 @@ impl McuHwModel for ModelEmulated {
         let image_tag = hasher.finish();
 
         // this just immediately exits
-        let mcu_firmware = vec![0xb7, 0xf6, 0x00, 0x20, 0x94, 0xc2];
+        let _mcu_firmware = [0xb7, 0xf6, 0x00, 0x20, 0x94, 0xc2];
 
         let clock = Rc::new(McuClock::new());
         let pic = Rc::new(Pic::new());
@@ -209,7 +209,7 @@ impl McuHwModel for ModelEmulated {
             clock: clock.clone(),
             ..Default::default()
         };
-        let mut mcu_root_bus = McuRootBus::new(bus_args).unwrap();
+        let mcu_root_bus = McuRootBus::new(bus_args).unwrap();
         let mut i3c_controller = I3cController::default();
         let i3c_error_irq = pic.register_irq(McuRootBus::I3C_ERROR_IRQ);
         let i3c_notif_irq = pic.register_irq(McuRootBus::I3C_NOTIF_IRQ);
@@ -227,7 +227,7 @@ impl McuHwModel for ModelEmulated {
             Box::new(BusConverter::new(Box::new(soc_to_caliptra_bus2))),
         ];
 
-        let mut auto_root_bus = AutoRootBus::new(
+        let auto_root_bus = AutoRootBus::new(
             delegates,
             Some(Box::new(i3c)),
             None,

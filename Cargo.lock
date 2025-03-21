@@ -2249,6 +2249,7 @@ dependencies = [
  "nix 0.26.4",
  "rand",
  "sha2",
+ "tock-registers",
  "uio",
  "ureg",
  "zerocopy 0.8.23",

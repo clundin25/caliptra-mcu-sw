@@ -30,13 +30,13 @@ use zerocopy::{FromBytes, FromZeros, IntoBytes, Ref, Unalign};
 
 mod bus_logger;
 mod bus_logger_mcu;
-mod i3c_controller;
 pub mod mmio;
 mod model_emulated;
 #[cfg(feature = "fpga_realtime")]
 mod model_fpga_realtime;
 mod output;
 mod rv32_builder;
+mod xi3c;
 pub use api::mailbox::mbox_write_fifo;
 pub use api_types::{DbgManufServiceRegReq, DeviceLifecycle, Fuses, SecurityState, U4};
 pub use caliptra_emu_bus::BusMmio;
@@ -78,21 +78,21 @@ pub const DEFAULT_APB_PAUSER: u32 = 0x01;
 /// should use [`new`] instead.
 pub fn new_unbooted(params: InitParams) -> Result<DefaultHwModel, Box<dyn Error>> {
     let summary = params.summary();
-    DefaultHwModel::new_unbooted(params).map(|hw| {
+    DefaultHwModel::new_unbooted(params).inspect(|hw| {
         println!(
             "Using hardware-model {} trng={:?}",
             hw.type_name(),
             hw.trng_mode()
         );
         println!("{summary:#?}");
-        hw
     })
 }
 
 /// Constructs an HwModel based on the cargo features and environment variables,
-/// and boot it to the point where CPU execution can occur. This includes
-/// programming the fuses, initializing the boot_fsm state machine, and
-/// (optionally) uploading firmware. Most test cases that need to construct a
+/// and boot it to the point where CPU execution can occur.
+///
+/// This includes programming the fuses, initializing the boot_fsm state machine,
+/// and (optionally) uploading firmware. Most test cases that need to construct a
 /// qModel should use this function over [`HwModel::new()`] and
 /// [`crate::new_unbooted`].
 pub fn new(

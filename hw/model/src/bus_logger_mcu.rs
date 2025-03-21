@@ -13,6 +13,7 @@ use std::{
 #[derive(Clone)]
 pub struct LogFile(Rc<RefCell<BufWriter<File>>>);
 impl LogFile {
+    #[allow(dead_code)]
     pub fn open(path: &Path) -> std::io::Result<Self> {
         Ok(Self(Rc::new(RefCell::new(BufWriter::new(File::create(
             path,
