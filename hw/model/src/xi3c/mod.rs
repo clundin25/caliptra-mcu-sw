@@ -7,4 +7,5 @@
 mod xi3c;
 mod xi3c_master;
 
-pub use xi3c::{Config, Controller};
+#[allow(unused)]
+pub use xi3c::{Command, Config, Controller, XI3c};

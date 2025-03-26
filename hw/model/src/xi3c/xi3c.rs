@@ -54,7 +54,7 @@ pub struct Config {
     pub hj_capable: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct Command {
     pub cmd_type: u8,
     pub no_repeated_start: u8,
@@ -75,7 +75,7 @@ pub struct TargetInfo {
 pub struct Controller {
     pub config: Config,
     pub ready: bool,
-    pub send_buffer_ptr: *mut u8,
+    pub send_buffer_ptr: *const u8,
     pub recv_buffer_ptr: *mut u8,
     pub send_byte_count: u16,
     pub recv_byte_count: u16,
@@ -129,7 +129,7 @@ impl Controller {
         unsafe { &*(self.config.base_address as *const XI3c) }
     }
 
-    pub fn bus_init(&mut self) {
+    pub fn bus_init(&mut self) -> Result<(), i32> {
         let mut cmd: Command = Command {
             cmd_type: 0,
             no_repeated_start: 0,
@@ -144,31 +144,25 @@ impl Controller {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        let mut status = self.send_transfer_cmd(&mut cmd, 0x1);
-        if status as i64 != 0 {
-            return;
-        }
+        self.send_transfer_cmd(&mut cmd, 0x1)?;
         cmd.target_addr = 0x7e;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        status = self.send_transfer_cmd(&mut cmd, 0);
-        if status as i64 != 0 {
-            return;
-        }
+        self.send_transfer_cmd(&mut cmd, 0)?;
         cmd.target_addr = 0x7e;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        status = self.send_transfer_cmd(&mut cmd, 0x6);
-        if status as i64 != 0 {}
+        self.send_transfer_cmd(&mut cmd, 0x6)?;
+        Ok(())
     }
 
-    pub fn cfg_initialize(&mut self, config: &Config, effective_addr: usize) -> i32 {
+    pub fn cfg_initialize(&mut self, config: &Config, effective_addr: usize) -> Result<(), i32> {
         if self.ready {
-            return 5;
+            return Err(5);
         }
         self.config.device_id = config.device_id;
         self.config.base_address = effective_addr as *mut u32;
@@ -189,15 +183,15 @@ impl Controller {
             self.enable_hotjoin();
         }
         self.enable(1);
-        self.bus_init();
+        self.bus_init()?;
         if self.config.ibi_capable && self.config.device_count as i32 != 0 {
-            self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count);
+            self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count)?;
             self.config_ibi(self.config.device_count);
         }
         if self.config.hj_capable {
             self.regs().intr_re.set(self.regs().intr_re.get() | 0x100);
         }
-        0
+        Ok(())
     }
 
     pub fn fill_cmd_fifo(&mut self, cmd: &Command) {
@@ -264,7 +258,7 @@ impl Controller {
         };
     }
 
-    pub fn dyna_addr_assign(&mut self, dyna_addr: &[u8], dev_count: u8) -> i32 {
+    pub fn dyna_addr_assign(&mut self, dyna_addr: &[u8], dev_count: u8) -> Result<(), i32> {
         let mut recv_buffer: [u8; 8] = [0; 8];
         let mut cmd: Command = Command {
             cmd_type: 0,
@@ -281,10 +275,7 @@ impl Controller {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        let mut status = self.send_transfer_cmd(&mut cmd, 0x7);
-        if status as i64 != 0 {
-            return status;
-        }
+        self.send_transfer_cmd(&mut cmd, 0x7)?;
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {
             let mut addr = (((dyna_addr[index as usize]) as i32) << 1
@@ -303,10 +294,7 @@ impl Controller {
             cmd.pec = 0;
             cmd.cmd_type = 1;
             unsafe {
-                status = self.master_recv_polled(&mut cmd, recv_buffer.as_mut_ptr(), 9);
-            }
-            if status as i64 != 0 {
-                return status;
+                self.master_recv_polled(&mut cmd, recv_buffer.as_mut_ptr(), 9)?;
             }
             self.target_info_table[self.cur_device_count as usize].id = (recv_buffer[0] as u64)
                 << 40
@@ -322,7 +310,7 @@ impl Controller {
             self.cur_device_count = (self.cur_device_count).wrapping_add(1);
             index = index.wrapping_add(1);
         }
-        0
+        Ok(())
     }
 
     pub fn config_ibi(&mut self, dev_count: u8) {

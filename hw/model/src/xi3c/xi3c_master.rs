@@ -96,13 +96,14 @@ impl Controller {
     fn get_response(&mut self) -> i32 {
         let happened = self.wait_for_event(0x10, 0x10, 2000000);
         if !happened {
+            println!("Event failed to happen");
             return 31;
         }
         let response_data = self.regs().resp_status_fifo.get();
         ((response_data & 0x1e0) >> 5) as i32
     }
 
-    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, mut data: u8) -> i32 {
+    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, mut data: u8) -> Result<(), i32> {
         assert!(self.ready);
 
         self.send_buffer_ptr = &mut data;
@@ -112,10 +113,11 @@ impl Controller {
         cmd.rw = 0;
         cmd.byte_count = 1;
         self.fill_cmd_fifo(cmd);
+        println!("Send transfer waiting for response");
         if self.get_response() != 0 {
-            return 28;
+            return Err(28);
         }
-        0
+        Ok(())
     }
 
     pub unsafe fn master_send(
@@ -174,14 +176,14 @@ impl Controller {
     pub unsafe fn master_send_polled(
         &mut self,
         cmd: &mut Command,
-        msg_ptr: *mut u8,
+        msg_ptr: *const u8,
         byte_count: u16,
-    ) -> i32 {
+    ) -> Result<(), i32> {
         if msg_ptr.is_null() {
-            return 13;
+            return Err(13);
         }
-        if byte_count as i32 > 4095 {
-            return 28;
+        if byte_count > 4095 {
+            return Err(28);
         }
         self.send_buffer_ptr = msg_ptr;
         self.send_byte_count = byte_count;
@@ -198,9 +200,9 @@ impl Controller {
             }
         }
         if self.get_response() != 0 {
-            28
+            Err(28)
         } else {
-            0
+            Ok(())
         }
     }
 
@@ -209,12 +211,12 @@ impl Controller {
         cmd: &mut Command,
         msg_ptr: *mut u8,
         byte_count: u16,
-    ) -> i32 {
+    ) -> Result<(), i32> {
         if msg_ptr.is_null() {
-            return 13;
+            return Err(13);
         }
         if byte_count as i32 > 4095 {
-            return 27;
+            return Err(27);
         }
         self.recv_buffer_ptr = msg_ptr;
         if cmd.target_addr as i32 == 0x7e {
@@ -236,9 +238,9 @@ impl Controller {
             }
         }
         if self.get_response() != 0 {
-            27
+            Err(27)
         } else {
-            0
+            Ok(())
         }
     }
     fn ibi_read_rx_fifo(&mut self) {
@@ -257,7 +259,7 @@ impl Controller {
         self.status_handler = Some(handler);
     }
 
-    pub fn master_interrupt_handler(&mut self) {
+    pub fn master_interrupt_handler(&mut self) -> Result<(), i32> {
         let mut data_index: u16;
         let mut rx_data_available: u16;
         let mut dyna_addr: [u8; 1] = [0; 1];
@@ -266,7 +268,7 @@ impl Controller {
         if intr_status_reg & 0x100 != 0 {
             if self.cur_device_count as i32 <= 108 {
                 dyna_addr[0] = DYNA_ADDR_LIST[self.cur_device_count as usize];
-                self.dyna_addr_assign(&dyna_addr, 1);
+                self.dyna_addr_assign(&dyna_addr, 1)?;
                 self.update_addr_bcr((self.cur_device_count as i32 - 1) as u16);
             }
             self.reset_fifos();
@@ -324,6 +326,7 @@ impl Controller {
                 handler.handle_error(self.error as u32);
             }
         }
+        Ok(())
     }
 
     pub unsafe fn ibi_recv(&mut self, msg_ptr: *mut u8) -> i32 {
