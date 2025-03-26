@@ -417,7 +417,7 @@ impl McuHwModel for ModelFpgaRealtime {
         let caliptra_mmio = dev.map_mapping(CALIPTRA_MAPPING).map_err(fmt_uio_error)? as *mut u32;
         let i3c_mmio = dev.map_mapping(I3C_MAPPING).map_err(fmt_uio_error)? as *mut u32;
         let recovery_images = Arc::new(Mutex::new(vec![]));
-        let i3c_controller_ptr = dev.map_mapping(4).map_err(fmt_uio_error)? as *mut u32;
+        let i3c_controller_ptr = dev.map_mapping(3).map_err(fmt_uio_error)? as *mut u32;
         let mut i3c_controller = xi3c::Controller::new(i3c_controller_ptr);
 
         let xi3c_config = xi3c::Config {

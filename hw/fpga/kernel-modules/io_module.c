@@ -59,6 +59,12 @@ int init_module(void)
     uio_info0.mem[2].size = 0x00018000;
     uio_info0.mem[2].memtype = UIO_MEM_PHYS;
 
+    // I3C controller
+    uio_info1.mem[2].name = "i3c_controller";
+    uio_info1.mem[2].addr = 0xA4080000;
+    uio_info1.mem[2].size = 0x00010000;
+    uio_info1.mem[2].memtype = UIO_MEM_PHYS;
+
     // Register device
     if (uio_register_device(&uio_dev0, &uio_info0) < 0)
     {
