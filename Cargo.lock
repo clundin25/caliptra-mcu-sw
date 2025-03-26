@@ -2248,6 +2248,7 @@ dependencies = [
  "libc",
  "nix 0.26.4",
  "rand",
+ "registers-generated",
  "sha2",
  "tock-registers",
  "uio",

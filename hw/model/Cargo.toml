@@ -31,6 +31,7 @@ libc.workspace = true
 nix.workspace = true
 rand.workspace = true
 emulator-registers-generated.workspace = true
+registers-generated.workspace = true
 sha2.workspace = true
 tock-registers.workspace = true
 uio = { workspace = true, optional = true }

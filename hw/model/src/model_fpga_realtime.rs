@@ -757,18 +757,86 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 mod test {
     use crate::model_fpga_realtime::FifoData;
     use crate::xi3c;
+    use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
+    use registers_generated::i3c::bits::{
+        QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
+        StbyCrDeviceAddr, TtiQueueThldCtrl,
+    };
+    use registers_generated::i3c::regs::I3c;
     use std::time::Duration;
-    use tock_registers::interfaces::Readable;
+    use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
     use uio::UioDevice;
+
+    fn configure_i3c_target(regs: &I3c) {
+        println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
+        if !regs
+            .stdby_ctrl_mode_stby_cr_capabilities
+            .is_set(StbyCrCapabilities::TargetXactSupport)
+        {
+            panic!("I3C target transaction support is not enabled");
+        }
+
+        // Evaluate RING_HEADERS_SECTION_OFFSET, the SECTION_OFFSET should read 0x0 as this controller doesn’t support the DMA mode
+        println!("Check ring headers section offset");
+        let rhso = regs
+            .i3c_base_ring_headers_section_offset
+            .read(RingHeadersSectionOffset::SectionOffset);
+        if rhso != 0 {
+            panic!("RING_HEADERS_SECTION_OFFSET is not 0");
+        }
+
+        // initialize timing registers
+        println!("Initialize timing registers");
+        regs.soc_mgmt_if_t_r_reg.set(0x2);
+        regs.soc_mgmt_if_t_hd_dat_reg.set(0xa);
+        regs.soc_mgmt_if_t_su_dat_reg.set(0xa);
+
+        // Setup the threshold for the HCI queues (in the internal/private software data structures):
+        println!("Setup HCI queue thresholds");
+        regs.piocontrol_queue_thld_ctrl.modify(
+            QueueThldCtrl::CmdEmptyBufThld.val(0)
+                + QueueThldCtrl::RespBufThld.val(1)
+                + QueueThldCtrl::IbiStatusThld.val(1),
+        );
+
+        println!("Enable the target transaction interface");
+        regs.stdby_ctrl_mode_stby_cr_control.modify(
+            StbyCrControl::StbyCrEnableInit::SET // enable the standby controller
+                + StbyCrControl::TargetXactEnable::SET // enable Target Transaction Interface
+                + StbyCrControl::DaaEntdaaEnable::SET // enable dynamic address assignment
+                + StbyCrControl::BastCccIbiRing.val(0) // Set the IBI to use ring buffer 0
+                + StbyCrControl::PrimeAcceptGetacccr::CLEAR // // don't auto-accept primary controller role
+                + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
+        );
+
+        println!("Set TTI queue thresholds");
+        // set TTI queue thresholds
+        regs.tti_tti_queue_thld_ctrl.modify(
+            TtiQueueThldCtrl::IbiThld.val(1)
+                + TtiQueueThldCtrl::RxDescThld.val(1)
+                + TtiQueueThldCtrl::TxDescThld.val(1),
+        );
+
+        println!("Enable PHY to the bus");
+        // enable the PHY connection to the bus
+        regs.i3c_base_hc_control
+            .modify(ModeSelector::SET + BusEnable::CLEAR); // clear is enabled, set is suspended
+    }
 
     #[test]
     fn test_xi3c() {
         let dev0 = UioDevice::blocking_new(0).unwrap();
+        let dev1 = UioDevice::blocking_new(1).unwrap();
         let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
+        let i3c_target_raw = dev1.map_mapping(2).unwrap();
+        let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
+
         println!("Bring SS out of reset");
         unsafe {
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
         }
+        println!("Configuring I3C target");
+        configure_i3c_target(i3c_target);
 
         let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
         let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
@@ -791,6 +859,32 @@ mod test {
             .unwrap();
         i3c_controller.set_s_clk(12_500_000, 1);
         i3c_controller.bus_init().unwrap();
+
+        // check I3C target address
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::DynamicAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target dynamic address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::DynamicAddr) as u8,
+            );
+        }
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::StaticAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target static address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::StaticAddr) as u8,
+            );
+        }
 
         const I3C_DATALEN: u16 = 90;
         let max_len = I3C_DATALEN.to_be_bytes();
