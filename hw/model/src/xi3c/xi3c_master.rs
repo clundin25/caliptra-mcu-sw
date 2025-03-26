@@ -23,7 +23,7 @@ impl Controller {
             >> 1;
         let t_low = t_high;
         let mut t_hold = t_low.wrapping_mul(4).wrapping_div(10);
-        let core_period_ns = 1000000000_u32
+        let core_period_ns = 1_000_000_000_u32
             .wrapping_add(self.config.input_clock_hz)
             .wrapping_sub(1)
             .wrapping_div(self.config.input_clock_hz);

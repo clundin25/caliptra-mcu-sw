@@ -423,17 +423,16 @@ impl McuHwModel for ModelFpgaRealtime {
         let xi3c_config = xi3c::Config {
             device_id: 0,
             base_address: i3c_controller_ptr,
-            // TODO: validate these parameters
             input_clock_hz: 199_999_000,
             rw_fifo_depth: 16,
             wr_threshold: 12,
             device_count: 1,
-            ibi_capable: true,
+            ibi_capable: false,
             hj_capable: false,
         };
 
         i3c_controller.set_s_clk(12_500_000, 1);
-        i3c_controller.cfg_initialize(&xi3c_config, i3c_controller_ptr as u32);
+        i3c_controller.cfg_initialize(&xi3c_config, i3c_controller_ptr as usize);
         i3c_controller.bus_init();
 
         let realtime_thread_exit_flag = Arc::new(AtomicBool::new(false));
@@ -754,17 +753,45 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
-
-    use uio::UioDevice;
-
     use crate::model_fpga_realtime::FifoData;
+    use crate::xi3c;
+    use std::time::Duration;
+    use uio::UioDevice;
 
     #[test]
     fn test_xi3c() {
         let dev0 = UioDevice::blocking_new(0).unwrap();
-        let xi3c = dev0.map_mapping(3).unwrap() as *mut u32;
-        println!("Memory loc: {:x}", xi3c as u32);
+        let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
+        println!("wrapper loc: {:x}", wrapper as u64);
+        println!("Bring SS out of reset");
+        unsafe {
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
+        }
+
+        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
+        println!("Memory loc: {:x}", xi3c_controller_ptr as u64);
+        println!("version = {:X}", unsafe {
+            core::ptr::read_volatile(xi3c_controller_ptr)
+        });
+        println!("reset = {:x}", unsafe {
+            core::ptr::read_volatile(xi3c_controller_ptr.offset(1))
+        });
+
+        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: xi3c_controller_ptr,
+            input_clock_hz: 199_999_000,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: false,
+            hj_capable: false,
+        };
+
+        i3c_controller.cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize);
+        i3c_controller.set_s_clk(12_500_000, 1);
+        i3c_controller.bus_init();
     }
 
     #[test]

@@ -166,7 +166,7 @@ impl Controller {
         if status as i64 != 0 {}
     }
 
-    pub fn cfg_initialize(&mut self, config: &Config, effective_addr: u32) -> i32 {
+    pub fn cfg_initialize(&mut self, config: &Config, effective_addr: usize) -> i32 {
         if self.ready {
             return 5;
         }
