@@ -130,7 +130,7 @@ strum_macros = "0.24"
 tempfile = "3.14.0"
 thiserror-no-std = "2.0.2"
 toml = "0.8.19"
-uio = "0.2.0"
+uio = "0.4.0"
 uuid = { version = "1.10.0", features = ["serde"]}
 walkdir = "2.5.0"
 zerocopy = { version = "0.8.17", features = ["derive"] }

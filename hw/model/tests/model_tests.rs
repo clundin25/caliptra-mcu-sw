@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "fpga_realtime")]
-fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<i32> {
+fn _wait_with_timeout(child: &mut Child, timeout: Duration) -> Option<i32> {
     let start = Instant::now();
     while start.elapsed() < timeout {
         match child.try_wait() {
@@ -41,7 +41,7 @@ fn run_fw_elf(elf: &[u8]) -> DefaultHwModel {
     .unwrap()
 }
 
-fn run_fw_elf_with_rand_puf(elf: &[u8]) -> DefaultHwModel {
+fn _run_fw_elf_with_rand_puf(elf: &[u8]) -> DefaultHwModel {
     let rom = caliptra_builder::elf2rom(elf).unwrap();
 
     mcu_hw_model::new(

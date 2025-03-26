@@ -60,10 +60,10 @@ int init_module(void)
     uio_info0.mem[2].memtype = UIO_MEM_PHYS;
 
     // I3C controller
-    uio_info1.mem[2].name = "i3c_controller";
-    uio_info1.mem[2].addr = 0xA4080000;
-    uio_info1.mem[2].size = 0x00010000;
-    uio_info1.mem[2].memtype = UIO_MEM_PHYS;
+    uio_info0.mem[3].name = "i3c_controller";
+    uio_info0.mem[3].addr = 0xA4080000;
+    uio_info0.mem[3].size = 0x00010000;
+    uio_info0.mem[3].memtype = UIO_MEM_PHYS;
 
     // Register device
     if (uio_register_device(&uio_dev0, &uio_info0) < 0)
@@ -111,7 +111,7 @@ int init_module(void)
     // Register device
     if (uio_register_device(&uio_dev1, &uio_info1) < 0)
     {
-        printk("Failing to register uio device0 \n");
+        printk("Failing to register uio device1 \n");
         return -EIO;
     }
 

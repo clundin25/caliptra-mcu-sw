@@ -409,7 +409,7 @@ impl McuHwModel for ModelFpgaRealtime {
     {
         let output = Output::new(params.log_writer);
         let uio_num = usize::from_str(&env::var("CPTRA_UIO_NUM")?)?;
-        let dev = UioDevice::new(uio_num)?;
+        let dev = UioDevice::blocking_new(uio_num)?;
 
         let wrapper = dev
             .map_mapping(FPGA_WRAPPER_MAPPING)
@@ -759,6 +759,13 @@ mod test {
     use uio::UioDevice;
 
     use crate::model_fpga_realtime::FifoData;
+
+    #[test]
+    fn test_xi3c() {
+        let dev0 = UioDevice::blocking_new(0).unwrap();
+        let xi3c = dev0.map_mapping(3).unwrap() as *mut u32;
+        println!("Memory loc: {:x}", xi3c as u32);
+    }
 
     #[test]
     fn test_rom_backdoor() {

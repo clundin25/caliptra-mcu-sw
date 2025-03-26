@@ -3498,9 +3498,9 @@ source = "git+https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81
 
 [[package]]
 name = "uio"
-version = "0.2.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e5d9bffc3e2181d5d0ce370d9f7b086a191210a2f650e0c3961abf446ee308d"
+checksum = "fe6429670644060fac2d02d8d284c7f9369a1e71948a654d7f064dbba07fb508"
 dependencies = [
  "fs2",
  "libc",
