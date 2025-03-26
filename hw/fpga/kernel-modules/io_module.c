@@ -77,7 +77,7 @@ int init_module(void)
     uio_info1.mem[0].size = 0x00010000;
     uio_info1.mem[0].memtype = UIO_MEM_PHYS;
 
-    // MCU ROM
+    // MCU ROM Backdoor
     uio_info1.mem[1].name = "mcu_rom";
     uio_info1.mem[1].addr = 0xB0020000;
     uio_info1.mem[1].size = 0x00020000;
@@ -94,6 +94,13 @@ int init_module(void)
     uio_info1.mem[3].addr = 0xA8000000;
     uio_info1.mem[3].size = 0x01000000;
     uio_info1.mem[3].memtype = UIO_MEM_PHYS;
+
+    // MCU ROM Frontdoor
+    uio_info1.mem[4].name = "mcu_frontdoor_rom";
+    uio_info1.mem[4].addr = 0xB0040000;
+    uio_info1.mem[4].size = 0x00020000;
+    uio_info1.mem[4].memtype = UIO_MEM_PHYS;
+
 
     // Register device
     if (uio_register_device(&uio_dev1, &uio_info1) < 0)

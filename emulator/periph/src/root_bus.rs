@@ -37,7 +37,7 @@ pub struct CaliptraRootBusArgs {
 #[derive(Bus)]
 #[incoming_event_fn(handle_incoming_event)]
 pub struct CaliptraRootBus {
-    #[peripheral(offset = 0x0000_0000, len = 0xc000)]
+    #[peripheral(offset = 0x8000_0000, len = 0xc000)]
     pub rom: Rom,
 
     #[peripheral(offset = 0x1000_1000, len = 0x100)]

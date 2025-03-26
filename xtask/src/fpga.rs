@@ -76,14 +76,14 @@ fn fix_permissions() -> Result<()> {
     }
     let uio_path = Path::new("/dev/uio1");
     if uio_path.exists() {
-        sudo::escalate_if_needed()?;
+        sudo::escalate_if_needed().map_err(|e| anyhow!("{}", e))?;
         if !Command::new("chmod")
             .arg("666")
             .arg(uio_path)
             .status()?
             .success()
         {
-            return Err("Failed to change permissions on uio device".into());
+            bail!("Failed to change permissions on uio device");
         }
     }
     Ok(())

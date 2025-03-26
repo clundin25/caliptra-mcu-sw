@@ -18,7 +18,7 @@ OUTPUT_ARCH( "riscv" )
 
 MEMORY
 {
-  ROM   (rx) : ORIGIN = 0x00000000, LENGTH = 48K
+  ROM   (rx) : ORIGIN = 0x80000000, LENGTH = 48K
   RAM  (rwx) : ORIGIN = 0x50000000, LENGTH = 16K /* dedicated SRAM for the ROM stack */
 }
 

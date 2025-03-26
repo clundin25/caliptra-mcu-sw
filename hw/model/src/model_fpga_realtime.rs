@@ -754,14 +754,16 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use uio::UioDevice;
 
     use crate::model_fpga_realtime::FifoData;
 
     #[test]
     fn test_rom_backdoor() {
-        let dev0 = UioDevice::new(0).unwrap();
-        let dev1 = UioDevice::new(1).unwrap();
+        let dev0 = UioDevice::blocking_new(0).unwrap();
+        let dev1 = UioDevice::blocking_new(1).unwrap();
         let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
 
         println!("Check FPGA version");
@@ -769,9 +771,34 @@ mod test {
             core::ptr::read_volatile(wrapper.offset(0x44 / 4))
         });
         let rom_backdoor = dev1.map_mapping(1).unwrap() as *mut u8;
+        let rom_frontdoor = dev1.map_mapping(4).unwrap() as *mut u8;
+        println!("Reset");
+        unsafe {
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x0);
+        }
+
+        let mut rom_data =
+            std::fs::read("../../target/riscv32imc-unknown-none-elf/release/rom.bin").unwrap();
+        while rom_data.len() % 8 != 0 {
+            rom_data.push(0);
+        }
+        println!("Writing ROM {}", rom_data.len());
+
+        let rom_slice = unsafe { core::slice::from_raw_parts_mut(rom_backdoor, rom_data.len()) };
+        rom_slice.copy_from_slice(&rom_data);
+
+        println!("Written to ROM");
+
+        println!(
+            "ROM bytes from backdoor {:x?}",
+            rom_slice[0..8].iter().collect::<Vec<_>>()
+        );
+
         let mci = dev1.map_mapping(3).unwrap() as *mut u32;
         unsafe {
-            // bring out of reset
+            println!("Write reset vector");
+            core::ptr::write_volatile(wrapper.offset(0x54 / 4), 0xB002_0000); // address of ROM backdoor in AXI
+                                                                              // bring out of reset
             println!("Bring SS out of reset");
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
             println!("Write PAUSER");
@@ -788,26 +815,59 @@ mod test {
 
         println!("SS is out of reset");
 
-        let mut rom_data =
-            std::fs::read("../../target/riscv32imc-unknown-none-elf/release/rom.bin").unwrap();
-        while rom_data.len() % 8 != 0 {
-            rom_data.push(0);
-        }
-        println!("Writing ROM {}", rom_data.len());
-
-        let rom_slice = unsafe { core::slice::from_raw_parts_mut(rom_backdoor, rom_data.len()) };
-        rom_slice.copy_from_slice(&rom_data);
-
-        println!("Written to ROM");
+        let rom_frontdoor_slice =
+            unsafe { core::slice::from_raw_parts_mut(rom_frontdoor, rom_data.len()) };
 
         println!(
-            "ROM bytes {:x?}",
-            rom_slice[0..4].iter().collect::<Vec<_>>()
+            "ROM bytes from frontdoor {:x?}",
+            rom_frontdoor_slice[0..8].iter().collect::<Vec<_>>()
         );
 
-        const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
+        let fsm = unsafe { core::ptr::read_volatile(mci.offset(0x24 / 4)) };
+        println!("Checking fsm: {:x}", fsm);
 
+        const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
+        const FPGA_WRAPPER_MCU_LOG_FIFO_PUSH_OFFSET: isize = 0x1014 / 4;
+        const FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET: isize = 0x1018 / 4;
+        let fifo_status = unsafe {
+            wrapper
+                .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
+                .read_volatile()
+        };
+        println!("FIFO status: {:x}", fifo_status);
+        println!("Writing to FIFO: 0x34");
+        unsafe {
+            core::ptr::write_volatile(
+                wrapper.offset(FPGA_WRAPPER_MCU_LOG_FIFO_PUSH_OFFSET),
+                0x34 | 0x100,
+            );
+        }
+        std::thread::sleep(Duration::from_secs_f64(0.001));
+        println!("Writing to FIFO: 0x35");
+        unsafe {
+            core::ptr::write_volatile(
+                wrapper.offset(FPGA_WRAPPER_MCU_LOG_FIFO_PUSH_OFFSET),
+                0x35 | 0x100,
+            );
+        }
+        std::thread::sleep(Duration::from_secs(1));
+        let fifo_status = unsafe {
+            wrapper
+                .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
+                .read_volatile()
+        };
+        println!("FIFO status: {:x}", fifo_status);
+
+        std::thread::sleep(Duration::from_secs(1));
+
+        println!("Reading fifo data");
         loop {
+            let fifo_status = unsafe {
+                wrapper
+                    .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
+                    .read_volatile()
+            };
+            println!("FIFO status: {:x}", fifo_status);
             let fifodata = unsafe {
                 FifoData(
                     wrapper
@@ -815,10 +875,86 @@ mod test {
                         .read_volatile(),
                 )
             };
+            if fifo_status == 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs_f64(0.001));
+            println!(
+                "Got fifo data {:x}, valid {}",
+                fifodata.0,
+                fifodata.log_fifo_valid()
+            );
+            let fifodata = unsafe {
+                FifoData(
+                    wrapper
+                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET)
+                        .read_volatile(),
+                )
+            };
+            println!(
+                "Got fifo data {:x}, valid {}",
+                fifodata.0,
+                fifodata.log_fifo_valid()
+            );
             if fifodata.log_fifo_valid() == 0 {
                 break;
             }
-            println!("Got fifo data {:x}", fifodata);
+        }
+
+        let status = unsafe { core::ptr::read_volatile(wrapper.offset(0x34 / 4)) };
+        println!("Checking status: {:x}", status);
+        let start = std::time::Instant::now();
+        let cycle_count0 = unsafe { core::ptr::read_volatile(wrapper.offset(0x40 / 4)) };
+        println!("Checking cycle count: {}", cycle_count0);
+        std::thread::sleep(Duration::from_secs(1));
+        let end = std::time::Instant::now();
+        let cycle_count1 = unsafe { core::ptr::read_volatile(wrapper.offset(0x40 / 4)) };
+        let dur = end - start;
+        let cycles = (cycle_count1 - cycle_count0) as f64;
+        let seconds = dur.as_secs_f64();
+        println!("Checking cycle count 1: {}", cycle_count1);
+        println!("FPGA Frequency: {:.6} MHz", cycles / seconds / 1000000.0);
+        let output0 = unsafe { core::ptr::read_volatile(wrapper.offset(0x70 / 4)) };
+        println!("Checking generic output wire 0: {:x}", output0);
+        let output1 = unsafe { core::ptr::read_volatile(wrapper.offset(0x74 / 4)) };
+        println!("Checking generic output wire 1: {:x}", output1);
+
+        let fsm = unsafe { core::ptr::read_volatile(mci.offset(0x24 / 4)) };
+        println!("Checking fsm: {:x}", fsm);
+        println!("Writing to FIFO: 0x36");
+        unsafe {
+            core::ptr::write_volatile(
+                wrapper.offset(FPGA_WRAPPER_MCU_LOG_FIFO_PUSH_OFFSET),
+                0x36 | 0x100,
+            );
+        }
+
+        println!("Reading fifo data");
+        loop {
+            let fifo_status = unsafe {
+                wrapper
+                    .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
+                    .read_volatile()
+            };
+            println!("FIFO status: {:x}", fifo_status);
+            if fifo_status == 1 {
+                break;
+            }
+            let fifodata = unsafe {
+                FifoData(
+                    wrapper
+                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET)
+                        .read_volatile(),
+                )
+            };
+            println!(
+                "Got fifo data {:x}, valid {}",
+                fifodata.0,
+                fifodata.log_fifo_valid()
+            );
+            if fifodata.log_fifo_valid() == 0 {
+                break;
+            }
         }
     }
 }
