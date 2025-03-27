@@ -767,7 +767,7 @@ mod test {
     use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
     use uio::UioDevice;
 
-    fn configure_i3c_target(regs: &I3c) {
+    fn configure_i3c_target(regs: &I3c, addr: u8) {
         println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
 
         // Evaluate RING_HEADERS_SECTION_OFFSET, the SECTION_OFFSET should read 0x0 as this controller doesn’t support the DMA mode
@@ -822,10 +822,11 @@ mod test {
         //     panic!("I3C target transaction support is not enabled");
         // }
 
-        // program a static address of 5a
+        // program a static address
         println!("Setting static address");
-        regs.stdby_ctrl_mode_stby_cr_device_addr
-            .write(StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(0x5a));
+        regs.stdby_ctrl_mode_stby_cr_device_addr.write(
+            StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(addr as u32),
+        );
 
         println!("Set TTI queue thresholds");
         // set TTI queue thresholds
@@ -848,13 +849,14 @@ mod test {
         let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
         let i3c_target_raw = dev1.map_mapping(2).unwrap();
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
+        const I3C_TARGET_ADDR: u8 = 0x5a;
 
         println!("Bring SS out of reset");
         unsafe {
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
         }
         println!("Configuring I3C target");
-        configure_i3c_target(i3c_target);
+        configure_i3c_target(i3c_target, I3C_TARGET_ADDR);
 
         // check I3C target address
         if i3c_target
@@ -929,8 +931,6 @@ mod test {
         assert!(i3c_controller
             .send_transfer_cmd(&mut cmd, XI3C_CCC_SETMWL)
             .is_ok());
-
-        const I3C_TARGET_ADDR: u8 = 0x45;
 
         cmd.target_addr = I3C_TARGET_ADDR;
         cmd.no_repeated_start = 1;

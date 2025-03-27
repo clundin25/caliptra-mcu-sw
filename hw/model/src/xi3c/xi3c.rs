@@ -178,21 +178,21 @@ impl Controller {
         cmd.pec = 0;
         cmd.cmd_type = 1;
         // Disable Target Events
-        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_DISEC)?;
+        let _ = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_DISEC);
         cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
         // Enable Target Events
-        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENEC)?;
+        let _ = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENEC);
         cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
         // Reset Dynamic Address assigned to all the I3C Targets
-        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_RSTDAA)?;
+        let _ = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_RSTDAA);
         Ok(())
     }
 
