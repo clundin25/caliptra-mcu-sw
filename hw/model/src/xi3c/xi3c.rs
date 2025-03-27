@@ -11,6 +11,7 @@ use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 
+pub const MAX_TIMEOUT_US: u32 = 2_000_000;
 pub const XI3C_BROADCAST_ADDRESS: u8 = 0x7e;
 
 pub(crate) const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;

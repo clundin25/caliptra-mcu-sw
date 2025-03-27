@@ -9,8 +9,8 @@
 use crate::xi3c::xi3c::{XI3C_BROADCAST_ADDRESS, XST_SEND_ERROR};
 
 use super::xi3c::{
-    Command, Controller, ErrorHandler, DYNA_ADDR_LIST, XI3C_INTR_HJ_MASK, XI3C_INTR_IBI_MASK,
-    XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK, XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
+    Command, Controller, ErrorHandler, DYNA_ADDR_LIST, MAX_TIMEOUT_US, XI3C_INTR_HJ_MASK,
+    XI3C_INTR_IBI_MASK, XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK, XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
     XI3C_SR_RESP_NOT_EMPTY_MASK, XST_NO_DATA, XST_RECV_ERROR,
 };
 use std::time::{Duration, Instant};
@@ -103,7 +103,7 @@ impl Controller {
         let happened = self.wait_for_event(
             XI3C_SR_RESP_NOT_EMPTY_MASK,
             XI3C_SR_RESP_NOT_EMPTY_MASK,
-            2_000_000,
+            MAX_TIMEOUT_US,
         );
         if !happened {
             println!("Event failed to happen");
@@ -318,7 +318,7 @@ impl Controller {
         let happened = self.wait_for_event(
             XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
             XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
-            2_000_000 * 10,
+            MAX_TIMEOUT_US * 10,
         );
         if happened {
             while self.regs().sr.get() & XI3C_SR_RD_FIFO_NOT_EMPTY_MASK != 0
