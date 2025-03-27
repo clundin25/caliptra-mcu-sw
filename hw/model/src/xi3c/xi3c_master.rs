@@ -6,22 +6,15 @@
 
 #![allow(dead_code)]
 
-use super::xi3c::{Command, Controller, ErrorHandler, DYNA_ADDR_LIST};
+use crate::xi3c::xi3c::{XI3C_BROADCAST_ADDRESS, XST_SEND_ERROR};
+
+use super::xi3c::{
+    Command, Controller, ErrorHandler, DYNA_ADDR_LIST, XI3C_INTR_HJ_MASK, XI3C_INTR_IBI_MASK,
+    XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK, XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
+    XI3C_SR_RESP_NOT_EMPTY_MASK, XST_NO_DATA, XST_RECV_ERROR,
+};
 use std::time::{Duration, Instant};
 use tock_registers::interfaces::{Readable, Writeable};
-
-// BIT 4 - Resp Fifo not empty
-const XI3C_SR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
-// BIT 5 - Write Fifo Full
-const XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK: u32 = 0x20;
-// BIT 6 - Read Fifo Full
-const XI3C_INTR_RD_FULL_MASK: u32 = 0x40;
-// BIT 15 - Read FIFO empty
-const XI3C_SR_RD_FIFO_NOT_EMPTY_MASK: u32 = 0x8000;
-// BIT 7 - IBI
-const XI3C_INTR_IBI_MASK: u32 = 0x80;
-// BIT 8 - Hot join
-const XI3C_INTR_HJ_MASK: u32 = 0x100;
 
 impl Controller {
     /// Sets I3C Scl clock frequency.
@@ -107,7 +100,11 @@ impl Controller {
     }
 
     fn get_response(&mut self) -> i32 {
-        let happened = self.wait_for_event(0x10, 0x10, 2000000);
+        let happened = self.wait_for_event(
+            XI3C_SR_RESP_NOT_EMPTY_MASK,
+            XI3C_SR_RESP_NOT_EMPTY_MASK,
+            2_000_000,
+        );
         if !happened {
             println!("Event failed to happen");
             return 31;
@@ -120,13 +117,13 @@ impl Controller {
         assert!(self.ready);
 
         self.write_tx_fifo(&[data]);
-        cmd.target_addr = 0x7e;
+        cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.rw = 0;
         cmd.byte_count = 1;
         self.fill_cmd_fifo(cmd);
         println!("Send transfer waiting for response");
         if self.get_response() != 0 {
-            return Err(28);
+            return Err(XST_SEND_ERROR);
         }
         Ok(())
     }
@@ -163,10 +160,10 @@ impl Controller {
         byte_count: u16,
     ) -> Result<(), i32> {
         if msg_ptr.is_empty() {
-            return Err(13);
+            return Err(XST_NO_DATA);
         }
         if byte_count > 4095 {
-            return Err(28);
+            return Err(XST_SEND_ERROR);
         }
         msg_ptr = &msg_ptr[..byte_count as usize];
         cmd.byte_count = byte_count;
@@ -182,7 +179,7 @@ impl Controller {
             }
         }
         if self.get_response() != 0 {
-            Err(28)
+            Err(XST_SEND_ERROR)
         } else {
             Ok(())
         }
@@ -194,9 +191,9 @@ impl Controller {
         byte_count: u16,
     ) -> Result<Vec<u8>, i32> {
         if byte_count > 4095 {
-            return Err(27);
+            return Err(XST_RECV_ERROR);
         }
-        let mut recv_byte_count = if cmd.target_addr as i32 == 0x7e {
+        let mut recv_byte_count = if cmd.target_addr == XI3C_BROADCAST_ADDRESS {
             (byte_count as i32 - 1) as u16
         } else {
             byte_count
@@ -215,7 +212,7 @@ impl Controller {
             }
         }
         if self.get_response() != 0 {
-            Err(27)
+            Err(XST_RECV_ERROR)
         } else {
             Ok(recv)
         }
@@ -251,10 +248,14 @@ impl Controller {
             self.reset_fifos();
         }
         if intr_status_reg & XI3C_INTR_IBI_MASK != 0 {
-            while self.regs().sr.get() & 0x8000 != 0 || self.regs().sr.get() & 0x10 == 0 {
+            while self.regs().sr.get() & XI3C_SR_RD_FIFO_NOT_EMPTY_MASK != 0
+                || self.regs().sr.get() & XI3C_SR_RESP_NOT_EMPTY_MASK == 0
+            {
                 self.ibi_read_rx_fifo();
             }
-            self.regs().intr_re.set(self.regs().intr_re.get() & !0x80);
+            self.regs()
+                .intr_re
+                .set(self.regs().intr_re.get() & !XI3C_INTR_IBI_MASK);
         }
         if intr_status_reg & XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK != 0 {
             // We don't support buffering data locally.
@@ -265,7 +266,9 @@ impl Controller {
             //     space_index = space_index.wrapping_add(1);
             // }
             // if self.send_byte_count as i32 <= 0 {
-            self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
+            self.regs()
+                .intr_fe
+                .set(self.regs().intr_fe.get() & !XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK);
             // }
         }
         // No FIFO interrupts.
@@ -336,7 +339,7 @@ impl Controller {
             }
         }
         if self.get_response() != 0 {
-            Err(27)
+            Err(XST_RECV_ERROR)
         } else {
             Ok(recv)
         }

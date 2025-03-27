@@ -11,8 +11,46 @@ use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 
-const XI3C_BROADCAST_ADDRESS: u8 = 0x7e;
+pub const XI3C_BROADCAST_ADDRESS: u8 = 0x7e;
 
+pub(crate) const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;
+pub(crate) const XI3C_CCC_BRDCAST_DISEC: u8 = 0x1;
+pub(crate) const XI3C_CCC_BRDCAST_RSTDAA: u8 = 0x6;
+
+/// BIT 4 - Resp Fifo not empty
+pub(crate) const XI3C_SR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
+/// BIT 15 - Read FIFO empty
+pub(crate) const XI3C_SR_RD_FIFO_NOT_EMPTY_MASK: u32 = 0x8000;
+
+/// BIT 5 - Write Fifo Full
+pub(crate) const XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK: u32 = 0x20;
+/// BIT 6 - Read Fifo Full
+pub(crate) const XI3C_INTR_RD_FULL_MASK: u32 = 0x40;
+
+/// BIT 7 - IBI
+pub(crate) const XI3C_INTR_IBI_MASK: u32 = 0x80;
+/// BIT 8 - Hot join
+pub(crate) const XI3C_INTR_HJ_MASK: u32 = 0x100;
+
+/// BIT 0 - Core Enable
+pub(crate) const XI3C_CR_EN_MASK: u32 = 0x1;
+/// BIT 3 - IBI Enable
+pub(crate) const XI3C_CR_IBI_MASK: u32 = 0x8;
+/// BIT 4 - Hot Join Enable
+pub(crate) const XI3C_CR_HJ_MASK: u32 = 0x10;
+
+/// BIT 0 - Reset
+pub(crate) const XI3C_SOFT_RESET_MASK: u32 = 0x1;
+/// BIT 1 to 4 - All fifos reset
+pub(crate) const XI3C_ALL_FIFOS_RESET_MASK: u32 = 0x1e;
+
+pub(crate) const XST_DEVICE_IS_STARTED: i32 = 5;
+/// There was no data available
+pub(crate) const XST_NO_DATA: i32 = 13;
+/// Generic receive error
+pub(crate) const XST_RECV_ERROR: i32 = 27;
+/// Generic transmit error
+pub(crate) const XST_SEND_ERROR: i32 = 28;
 register_structs! {
     pub XI3c {
         (0x0 => pub version: ReadOnly<u32>), // Version Register
@@ -138,39 +176,46 @@ impl Controller {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        const XI3C_CCC_BRDCAST_DISEC: u8 = 0x1;
-        self.send_transfer_cmd(&mut cmd, 0x1)?;
+        // Disable Target Events
+        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_DISEC)?;
         cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;
+        // Enable Target Events
         self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENEC)?;
         cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        const XI3C_CCC_BRDCAST_RSTDAA: u8 = 0x6;
+        // Reset Dynamic Address assigned to all the I3C Targets
         self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_RSTDAA)?;
         Ok(())
     }
 
     pub fn cfg_initialize(&mut self, config: &Config, effective_addr: usize) -> Result<(), i32> {
         if self.ready {
-            return Err(5);
+            return Err(XST_DEVICE_IS_STARTED);
         }
         self.config.device_id = config.device_id;
+        // Set the values read from the device config and the base address.
         self.config.base_address = effective_addr as *mut u32;
         self.config.input_clock_hz = config.input_clock_hz;
         self.config.rw_fifo_depth = config.rw_fifo_depth;
-        self.config.wr_threshold = (config.wr_threshold as i32 * 4) as u8;
+        // WrThreshold value in terms of words from design,
+        // so convert to bytes.
+        self.config.wr_threshold = (config.wr_threshold * 4) as u8;
         self.config.device_count = config.device_count;
         self.config.ibi_capable = config.ibi_capable;
         self.config.hj_capable = config.hj_capable;
         self.cur_device_count = 0;
+        // Indicate the instance is now ready to use, initialized without error
         self.ready = true;
+        // Reset the I3C controller to get it into its initial state. It is expected
+        // that device configuration will take place after this initialization
+        // is done, but before the device is started.
         self.reset();
         self.reset_fifos();
         if self.config.ibi_capable {
@@ -179,26 +224,30 @@ impl Controller {
         if self.config.hj_capable {
             self.enable_hotjoin();
         }
+        // Enable I3C controller
         self.enable(1);
         self.bus_init()?;
-        if self.config.ibi_capable && self.config.device_count as i32 != 0 {
+        if self.config.ibi_capable && self.config.device_count != 0 {
             self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count)?;
             self.config_ibi(self.config.device_count);
         }
+        // Enable Hot join raising edge interrupt.
         if self.config.hj_capable {
-            self.regs().intr_re.set(self.regs().intr_re.get() | 0x100);
+            self.regs()
+                .intr_re
+                .set(self.regs().intr_re.get() | XI3C_INTR_HJ_MASK);
         }
         Ok(())
     }
 
     pub fn fill_cmd_fifo(&mut self, cmd: &Command) {
-        let dev_addr = ((cmd.target_addr as i32 & 0x7f) << 1 | cmd.rw as i32 & 0x1) as u8;
-        let mut transfer_cmd = (cmd.cmd_type as i32 & 0xf) as u32;
-        transfer_cmd |= ((cmd.no_repeated_start as i32 & 0x1) as u32) << 4;
-        transfer_cmd |= ((cmd.pec as i32 & 0x1) as u32) << 5;
+        let dev_addr = ((cmd.target_addr & 0x7f) << 1 | cmd.rw & 0x1) as u8;
+        let mut transfer_cmd = (cmd.cmd_type & 0xf) as u32;
+        transfer_cmd |= ((cmd.no_repeated_start & 0x1) as u32) << 4;
+        transfer_cmd |= ((cmd.pec & 0x1) as u32) << 5;
         transfer_cmd |= (dev_addr as u32) << 8;
-        transfer_cmd |= ((cmd.byte_count as i32 & 0xfff) as u32) << 16;
-        transfer_cmd |= ((cmd.tid as i32 & 0xf) as u32) << 28;
+        transfer_cmd |= ((cmd.byte_count & 0xfff) as u32) << 16;
+        transfer_cmd |= ((cmd.tid & 0xf) as u32) << 28;
         self.regs().cmd_fifo.set(transfer_cmd);
     }
 
@@ -244,8 +293,8 @@ impl Controller {
         self.send_transfer_cmd(&mut cmd, 0x7)?;
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {
-            let addr = (((dyna_addr[index as usize]) as i32) << 1
-                | get_odd_parity(dyna_addr[index as usize]) as i32) as u8;
+            let addr =
+                (dyna_addr[index as usize] << 1 | get_odd_parity(dyna_addr[index as usize])) as u8;
             self.write_tx_fifo(&[addr]);
             if index + 1 == dev_count as u16 {
                 cmd.no_repeated_start = 1;
@@ -270,8 +319,8 @@ impl Controller {
             self.target_info_table[self.cur_device_count as usize].dcr = recv_buffer[7];
             self.target_info_table[self.cur_device_count as usize].dyna_addr =
                 dyna_addr[index as usize];
-            self.cur_device_count = (self.cur_device_count).wrapping_add(1);
-            index = index.wrapping_add(1);
+            self.cur_device_count += 1;
+            index += 1;
         }
         Ok(())
     }
@@ -279,9 +328,9 @@ impl Controller {
     pub fn config_ibi(&mut self, dev_count: u8) {
         assert!(self.ready);
         let mut index = 0;
-        while (index as i32) < dev_count as i32 && (index as i32) < 108 {
-            self.update_addr_bcr(index);
-            index = index.wrapping_add(1);
+        while index < dev_count && index < 108 {
+            self.update_addr_bcr(index as u16);
+            index += 1;
         }
     }
 
@@ -289,7 +338,7 @@ impl Controller {
     fn enable(&mut self, enable: u8) {
         assert!(self.ready);
         let mut data = self.regs().cr.get();
-        data &= !0x1;
+        data &= !XI3C_CR_EN_MASK;
         data |= enable as u32;
         self.regs().cr.set(data);
     }
@@ -298,7 +347,7 @@ impl Controller {
     fn enable_ibi(&mut self) {
         assert!(self.ready);
         let mut data = self.regs().cr.get();
-        data |= 0x8;
+        data |= XI3C_CR_IBI_MASK;
         self.regs().cr.set(data);
     }
 
@@ -306,16 +355,15 @@ impl Controller {
     fn enable_hotjoin(&mut self) {
         assert!(self.ready);
         let mut data = self.regs().cr.get();
-        data |= 0x10;
+        data |= XI3C_CR_HJ_MASK;
         self.regs().cr.set(data);
     }
 
     #[inline]
     pub fn update_addr_bcr(&mut self, dev_index: u16) {
         assert!(self.ready);
-        let mut addr_bcr =
-            (self.target_info_table[dev_index as usize].dyna_addr as i32 & 0x7f) as u32;
-        addr_bcr |= ((self.target_info_table[dev_index as usize].bcr as i32 & 0xff) as u32) << 8;
+        let mut addr_bcr = (self.target_info_table[dev_index as usize].dyna_addr & 0x7f) as u32;
+        addr_bcr |= ((self.target_info_table[dev_index as usize].bcr & 0xff) as u32) << 8;
         self.regs().target_addr_bcr.set(addr_bcr);
     }
 
@@ -323,10 +371,10 @@ impl Controller {
     pub fn reset(&mut self) {
         assert!(self.ready);
         let mut data = self.regs().reset.get();
-        data |= 0x1;
+        data |= XI3C_SOFT_RESET_MASK;
         self.regs().reset.set(data);
         std::thread::sleep(Duration::from_micros(50));
-        data &= !0x1;
+        data &= !XI3C_SOFT_RESET_MASK;
         self.regs().reset.set(data);
         std::thread::sleep(Duration::from_micros(10));
     }
@@ -335,10 +383,10 @@ impl Controller {
     pub fn reset_fifos(&mut self) {
         assert!(self.ready);
         let mut data = self.regs().reset.get();
-        data |= 0x1e;
+        data |= XI3C_ALL_FIFOS_RESET_MASK;
         self.regs().reset.set(data);
         std::thread::sleep(Duration::from_micros(50));
-        data &= !0x1e;
+        data &= !XI3C_ALL_FIFOS_RESET_MASK;
         self.regs().reset.set(data);
         std::thread::sleep(Duration::from_micros(10));
     }
