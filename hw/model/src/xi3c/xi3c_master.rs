@@ -10,6 +10,19 @@ use super::xi3c::{Command, Controller, ErrorHandler, DYNA_ADDR_LIST};
 use std::time::{Duration, Instant};
 use tock_registers::interfaces::{Readable, Writeable};
 
+// BIT 4 - Resp Fifo not empty
+const XI3C_SR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
+// BIT 5 - Write Fifo Full
+const XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK: u32 = 0x20;
+// BIT 6 - Read Fifo Full
+const XI3C_INTR_RD_FULL_MASK: u32 = 0x40;
+// BIT 15 - Read FIFO empty
+const XI3C_SR_RD_FIFO_NOT_EMPTY_MASK: u32 = 0x8000;
+// BIT 7 - IBI
+const XI3C_INTR_IBI_MASK: u32 = 0x80;
+// BIT 8 - Hot join
+const XI3C_INTR_HJ_MASK: u32 = 0x100;
+
 impl Controller {
     /// Sets I3C Scl clock frequency.
     /// - s_clk_hz is Scl clock to be configured in Hz.
@@ -118,12 +131,7 @@ impl Controller {
         Ok(())
     }
 
-    pub unsafe fn master_send(
-        &mut self,
-        cmd: &mut Command,
-        mut msg_ptr: &[u8],
-        byte_count: u16,
-    ) -> i32 {
+    pub fn master_send(&mut self, cmd: &mut Command, mut msg_ptr: &[u8], byte_count: u16) -> i32 {
         if msg_ptr.is_empty() {
             return 13;
         }
@@ -148,30 +156,7 @@ impl Controller {
         0
     }
 
-    pub unsafe fn master_recv(
-        &mut self,
-        cmd: &mut Command,
-        msg_ptr: *mut u8,
-        byte_count: u16,
-    ) -> i32 {
-        if msg_ptr.is_null() {
-            return 13;
-        }
-        if byte_count > 4095 {
-            return 27;
-        }
-        self.recv_buffer_ptr = msg_ptr;
-        self.recv_byte_count = byte_count;
-        cmd.byte_count = byte_count;
-        cmd.rw = 1;
-        self.regs()
-            .intr_re
-            .set(self.regs().intr_re.get() | 0x40 | 0x10);
-        self.fill_cmd_fifo(cmd);
-        0
-    }
-
-    pub unsafe fn master_send_polled(
+    pub fn master_send_polled(
         &mut self,
         cmd: &mut Command,
         mut msg_ptr: &[u8],
@@ -203,51 +188,48 @@ impl Controller {
         }
     }
 
-    pub unsafe fn master_recv_polled(
+    pub fn master_recv_polled(
         &mut self,
         cmd: &mut Command,
-        msg_ptr: *mut u8,
         byte_count: u16,
-    ) -> Result<(), i32> {
-        if msg_ptr.is_null() {
-            return Err(13);
-        }
-        if byte_count as i32 > 4095 {
+    ) -> Result<Vec<u8>, i32> {
+        if byte_count > 4095 {
             return Err(27);
         }
-        self.recv_buffer_ptr = msg_ptr;
-        if cmd.target_addr as i32 == 0x7e {
-            self.recv_byte_count = (byte_count as i32 - 1) as u16;
+        let mut recv_byte_count = if cmd.target_addr as i32 == 0x7e {
+            (byte_count as i32 - 1) as u16
         } else {
-            self.recv_byte_count = byte_count;
-        }
+            byte_count
+        };
         cmd.byte_count = byte_count;
         cmd.rw = 1;
         self.fill_cmd_fifo(cmd);
-        #[allow(clippy::while_immutable_condition)]
-        while self.recv_byte_count as i32 > 0 {
+        let mut recv = vec![];
+        while recv_byte_count > 0 {
             let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
             let mut data_index: u16 = 0;
-            while (data_index as i32) < rx_data_available as i32 && self.recv_byte_count as i32 > 0
-            {
-                self.read_rx_fifo();
-                data_index = data_index.wrapping_add(1);
+            while data_index < rx_data_available && recv_byte_count > 0 {
+                recv.extend(self.read_rx_fifo(recv_byte_count));
+                recv_byte_count -= recv.len() as u16;
+                data_index += 1;
             }
         }
         if self.get_response() != 0 {
             Err(27)
         } else {
-            Ok(())
+            Ok(recv)
         }
     }
-    fn ibi_read_rx_fifo(&mut self) {
+
+    fn ibi_read_rx_fifo(&mut self) -> Vec<u8> {
         let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
         let mut data_index: u16 = 0;
-        while (data_index as i32) < rx_data_available as i32 {
-            self.recv_byte_count = 4;
-            self.read_rx_fifo();
-            data_index = data_index.wrapping_add(1);
+        let mut recv = vec![];
+        while data_index < rx_data_available {
+            recv.extend(self.read_rx_fifo(4));
+            data_index += 1;
         }
+        recv
     }
 
     #[allow(dead_code)]
@@ -257,13 +239,9 @@ impl Controller {
     }
 
     pub fn master_interrupt_handler(&mut self) -> Result<(), i32> {
-        let mut data_index: u16;
-        let mut rx_data_available: u16;
         let mut dyna_addr: [u8; 1] = [0; 1];
         let intr_status_reg = self.regs().intr_status.get();
         self.regs().intr_status.set(intr_status_reg);
-        // BIT 8 - Hot join
-        const XI3C_INTR_HJ_MASK: u32 = 0x100;
         if intr_status_reg & XI3C_INTR_HJ_MASK != 0 {
             if self.cur_device_count as i32 <= 108 {
                 dyna_addr[0] = DYNA_ADDR_LIST[self.cur_device_count as usize];
@@ -272,16 +250,12 @@ impl Controller {
             }
             self.reset_fifos();
         }
-        // BIT 7 - IBI
-        const XI3C_INTR_IBI_MASK: u32 = 0x80;
         if intr_status_reg & XI3C_INTR_IBI_MASK != 0 {
             while self.regs().sr.get() & 0x8000 != 0 || self.regs().sr.get() & 0x10 == 0 {
                 self.ibi_read_rx_fifo();
             }
             self.regs().intr_re.set(self.regs().intr_re.get() & !0x80);
         }
-        // BIT 5 - Write Fifo Full
-        const XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK: u32 = 0x20;
         if intr_status_reg & XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK != 0 {
             // We don't support buffering data locally.
             // let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
@@ -294,86 +268,77 @@ impl Controller {
             self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
             // }
         }
-        // BIT 6 - Read Fifo Full
-        const XI3C_INTR_RD_FULL_MASK: u32 = 0x40;
-        if intr_status_reg & XI3C_INTR_RD_FULL_MASK != 0 {
-            rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
-            data_index = 0;
-            while (data_index as i32) < rx_data_available as i32 && self.recv_byte_count as i32 > 0
-            {
-                self.read_rx_fifo();
-                data_index = data_index.wrapping_add(1);
-            }
-            if self.recv_byte_count as i32 <= 0 {
-                self.regs().intr_re.set(self.regs().intr_re.get() & !0x40);
-            }
-        }
-        // BIT 4 - Resp Fifo not empty
-        const XI3C_INTR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
-        if intr_status_reg & XI3C_INTR_RESP_NOT_EMPTY_MASK != 0 {
-            if self.recv_byte_count as i32 > 0 {
-                rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
-                data_index = 0;
-                while (data_index as i32) < rx_data_available as i32
-                    && self.recv_byte_count as i32 > 0
-                {
-                    self.read_rx_fifo();
-                    data_index = data_index.wrapping_add(1);
-                }
-            }
-            if self.config.ibi_capable {
-                self.ibi_read_rx_fifo();
-            }
-            let response_data = self.regs().resp_status_fifo.get();
-            self.error = ((response_data & 0x1e0) >> 5) as u8;
-            self.regs()
-                .intr_re
-                .set(self.regs().intr_re.get() & !(0x10 | 0x40));
-            self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
-            if let Some(handler) = self.status_handler.as_ref() {
-                handler.handle_error(self.error as u32);
-            }
-        }
+        // No FIFO interrupts.
+        // if intr_status_reg & XI3C_INTR_RD_FULL_MASK != 0 {
+        //     rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
+        //     data_index = 0;
+        //     while (data_index as i32) < rx_data_available as i32 && self.recv_byte_count as i32 > 0
+        //     {
+        //         self.read_rx_fifo();
+        //         data_index = data_index.wrapping_add(1);
+        //     }
+        //     if self.recv_byte_count as i32 <= 0 {
+        //         self.regs().intr_re.set(self.regs().intr_re.get() & !0x40);
+        //     }
+        // }
+        // if intr_status_reg & XI3C_INTR_RESP_NOT_EMPTY_MASK != 0 {
+        //     if self.recv_byte_count as i32 > 0 {
+        //         rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
+        //         data_index = 0;
+        //         while (data_index as i32) < rx_data_available as i32
+        //             && self.recv_byte_count as i32 > 0
+        //         {
+        //             self.read_rx_fifo();
+        //             data_index = data_index.wrapping_add(1);
+        //         }
+        //     }
+        //     if self.config.ibi_capable {
+        //         self.ibi_read_rx_fifo();
+        //     }
+        //     let response_data = self.regs().resp_status_fifo.get();
+        //     self.error = ((response_data & 0x1e0) >> 5) as u8;
+        //     self.regs()
+        //         .intr_re
+        //         .set(self.regs().intr_re.get() & !(0x10 | 0x40));
+        //     self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
+        //     if let Some(handler) = self.status_handler.as_ref() {
+        //         handler.handle_error(self.error as u32);
+        //     }
+        // }
         Ok(())
     }
 
-    pub unsafe fn ibi_recv(&mut self, msg_ptr: *mut u8) -> i32 {
-        assert!(!msg_ptr.is_null());
-        self.recv_buffer_ptr = msg_ptr;
-        self.regs()
-            .intr_re
-            .set(self.regs().intr_re.get() | 0x80 | 0x10);
-        0
-    }
-
-    pub unsafe fn ibi_recv_polled(&mut self, msg_ptr: *mut u8) -> i32 {
-        assert!(!msg_ptr.is_null());
-        self.recv_buffer_ptr = msg_ptr;
+    pub fn ibi_recv_polled(&mut self) -> Result<Vec<u8>, i32> {
+        let mut recv = vec![];
         let mut data_index: u16;
         let mut rx_data_available: u16;
-        let happened = self.wait_for_event(0x8000, 0x8000, 2000000 * 10);
+        let happened = self.wait_for_event(
+            XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
+            XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
+            2_000_000 * 10,
+        );
         if happened {
-            while self.regs().sr.get() & 0x8000 != 0 || self.regs().sr.get() & 0x10 == 0 {
+            while self.regs().sr.get() & XI3C_SR_RD_FIFO_NOT_EMPTY_MASK != 0
+                || self.regs().sr.get() & XI3C_SR_RESP_NOT_EMPTY_MASK == 0
+            {
                 rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
                 data_index = 0;
-                while (data_index as i32) < rx_data_available as i32 {
-                    self.recv_byte_count = 4;
-                    self.read_rx_fifo();
-                    data_index = data_index.wrapping_add(1);
+                while data_index < rx_data_available {
+                    recv.extend(self.read_rx_fifo(4));
+                    data_index += 1;
                 }
             }
             rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
             data_index = 0;
-            while (data_index as i32) < rx_data_available as i32 {
-                self.recv_byte_count = 4;
-                self.read_rx_fifo();
-                data_index = data_index.wrapping_add(1);
+            while data_index < rx_data_available {
+                recv.extend(self.read_rx_fifo(4));
+                data_index += 1;
             }
         }
         if self.get_response() != 0 {
-            27
+            Err(27)
         } else {
-            0
+            Ok(recv)
         }
     }
 

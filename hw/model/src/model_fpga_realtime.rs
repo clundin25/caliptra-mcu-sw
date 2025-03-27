@@ -937,11 +937,9 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1; // SDR mode
-        assert!(unsafe {
-            i3c_controller
-                .master_send_polled(&mut cmd, max_len.as_ptr(), 2)
-                .is_ok()
-        });
+        assert!(i3c_controller
+            .master_send_polled(&mut cmd, &max_len, 2)
+            .is_ok());
 
         /*
          * Set Max read length
@@ -961,11 +959,9 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        assert!(unsafe {
-            i3c_controller
-                .master_send_polled(&mut cmd, max_len.as_ptr(), 2)
-                .is_ok()
-        });
+        assert!(i3c_controller
+            .master_send_polled(&mut cmd, &max_len, 2)
+            .is_ok());
 
         // Fill data to buffer
         for i in 0..I3C_DATALEN as usize {
@@ -979,11 +975,9 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        assert!(unsafe {
-            i3c_controller
-                .master_send_polled(&mut cmd, tx_data.as_ptr(), I3C_DATALEN)
-                .is_ok()
-        });
+        assert!(i3c_controller
+            .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
+            .is_ok());
 
         /*
          * Recv
@@ -993,13 +987,11 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        assert!(unsafe {
-            i3c_controller
-                .master_recv_polled(&mut cmd, rx_data.as_mut_ptr(), I3C_DATALEN)
-                .is_ok()
-        });
+        let rx_data = i3c_controller
+            .master_recv_polled(&mut cmd, I3C_DATALEN)
+            .expect("Failed to receive data");
 
-        assert_eq!(tx_data, rx_data);
+        assert_eq!(tx_data, *rx_data);
     }
 
     #[test]

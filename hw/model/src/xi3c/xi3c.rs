@@ -77,8 +77,6 @@ pub struct TargetInfo {
 pub struct Controller {
     pub config: Config,
     pub ready: bool,
-    pub recv_buffer_ptr: *mut u8,
-    pub recv_byte_count: u16,
     pub error: u8,
     pub cur_device_count: u8,
     pub status_handler: Option<Box<dyn ErrorHandler>>,
@@ -113,8 +111,6 @@ impl Controller {
                 hj_capable: false,
             },
             ready: false,
-            recv_buffer_ptr: std::ptr::null_mut(),
-            recv_byte_count: 0,
             error: 0,
             cur_device_count: 0,
             status_handler: None,
@@ -220,34 +216,16 @@ impl Controller {
         send_buffer.len().max(4)
     }
 
-    pub fn read_rx_fifo(&mut self) {
+    pub fn read_rx_fifo(&mut self, recv_byte_count: u16) -> Vec<u8> {
         let data = self.regs().rd_fifo.get();
-        if self.recv_byte_count as i32 > 3 {
-            unsafe {
-                *(self.recv_buffer_ptr).offset(0) = (data >> 24 & 0xff) as u8;
-                *(self.recv_buffer_ptr).offset(1) = (data >> 16 & 0xff) as u8;
-                *(self.recv_buffer_ptr).offset(2) = (data >> 8 & 0xff) as u8;
-                *(self.recv_buffer_ptr).offset(3) = (data & 0xff) as u8;
-            }
-            self.recv_byte_count = (self.recv_byte_count as i32 - 4) as u16;
-            unsafe {
-                self.recv_buffer_ptr = (self.recv_buffer_ptr).offset(4);
-            }
+        if recv_byte_count > 3 {
+            data.to_be_bytes().to_vec()
         } else {
-            let mut index: u16 = 0;
-            while (index as i32) < self.recv_byte_count as i32 {
-                unsafe {
-                    *(self.recv_buffer_ptr).offset(index as i32 as isize) =
-                        (data >> (24 - 8 * index as i32) & 0xff) as u8;
-                }
-                index = index.wrapping_add(1);
-            }
-            self.recv_byte_count = 0;
-        };
+            data.to_be_bytes()[0..recv_byte_count as usize].to_vec()
+        }
     }
 
     pub fn dyna_addr_assign(&mut self, dyna_addr: &[u8], dev_count: u8) -> Result<(), i32> {
-        let mut recv_buffer: [u8; 8] = [0; 8];
         let mut cmd: Command = Command {
             cmd_type: 0,
             no_repeated_start: 0,
@@ -278,9 +256,9 @@ impl Controller {
             cmd.tid = 0;
             cmd.pec = 0;
             cmd.cmd_type = 1;
-            unsafe {
-                self.master_recv_polled(&mut cmd, recv_buffer.as_mut_ptr(), 9)?;
-            }
+
+            let recv_buffer = self.master_recv_polled(&mut cmd, 9)?;
+
             self.target_info_table[self.cur_device_count as usize].id = (recv_buffer[0] as u64)
                 << 40
                 | (recv_buffer[1] as u64) << 32
