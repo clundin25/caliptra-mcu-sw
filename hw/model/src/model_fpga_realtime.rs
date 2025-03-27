@@ -840,6 +840,12 @@ mod test {
         // enable the PHY connection to the bus
         regs.i3c_base_hc_control
             .modify(ModeSelector::SET + BusEnable::CLEAR); // clear is enabled, set is suspended
+
+        println!("I3C target status {:x}", regs.tti_status.get());
+        println!(
+            "I3C target interrupt status {:x}",
+            regs.tti_interrupt_status.get()
+        );
     }
 
     #[test]
@@ -918,9 +924,13 @@ mod test {
             ..Default::default()
         };
         const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
-        assert!(i3c_controller
-            .send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA)
-            .is_ok());
+        let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
+        println!("I3C target status {:x}", i3c_target.tti_status.get());
+        println!(
+            "I3C target interrupt status {:x}",
+            i3c_target.tti_interrupt_status.get()
+        );
+        assert!(result.is_ok());
 
         cmd.no_repeated_start = 0;
         cmd.tid = 0;
