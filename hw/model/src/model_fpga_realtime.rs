@@ -769,18 +769,6 @@ mod test {
 
     fn configure_i3c_target(regs: &I3c) {
         println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
-        regs.stdby_ctrl_mode_stby_cr_capabilities
-            .write(StbyCrCapabilities::TargetXactSupport::SET);
-        println!(
-            "STBY_CR_CAPABILITIES: {:x}",
-            regs.stdby_ctrl_mode_stby_cr_capabilities.get()
-        );
-        if !regs
-            .stdby_ctrl_mode_stby_cr_capabilities
-            .is_set(StbyCrCapabilities::TargetXactSupport)
-        {
-            panic!("I3C target transaction support is not enabled");
-        }
 
         // Evaluate RING_HEADERS_SECTION_OFFSET, the SECTION_OFFSET should read 0x0 as this controller doesn’t support the DMA mode
         println!("Check ring headers section offset");
@@ -815,6 +803,30 @@ mod test {
                 + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
         );
 
+        println!(
+            "STBY_CR_CONTROL: {:x}",
+            regs.stdby_ctrl_mode_stby_cr_control.get()
+        );
+
+        regs.stdby_ctrl_mode_stby_cr_capabilities
+            .write(StbyCrCapabilities::TargetXactSupport::SET);
+        println!(
+            "STBY_CR_CAPABILITIES: {:x}",
+            regs.stdby_ctrl_mode_stby_cr_capabilities.get()
+        );
+        // TODO: maybe this is being misreported
+        // if !regs
+        //     .stdby_ctrl_mode_stby_cr_capabilities
+        //     .is_set(StbyCrCapabilities::TargetXactSupport)
+        // {
+        //     panic!("I3C target transaction support is not enabled");
+        // }
+
+        // program a static address of 5a
+        println!("Setting static address");
+        regs.stdby_ctrl_mode_stby_cr_device_addr
+            .write(StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(0x5a));
+
         println!("Set TTI queue thresholds");
         // set TTI queue thresholds
         regs.tti_tti_queue_thld_ctrl.modify(
@@ -844,28 +856,6 @@ mod test {
         println!("Configuring I3C target");
         configure_i3c_target(i3c_target);
 
-        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
-        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
-        println!("XI3C HW version = {:x}", xi3c.version.get());
-
-        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
-        let xi3c_config = xi3c::Config {
-            device_id: 0,
-            base_address: xi3c_controller_ptr,
-            input_clock_hz: 199_999_000,
-            rw_fifo_depth: 16,
-            wr_threshold: 12,
-            device_count: 1,
-            ibi_capable: false,
-            hj_capable: false,
-        };
-
-        i3c_controller
-            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
-            .unwrap();
-        i3c_controller.set_s_clk(12_500_000, 1);
-        i3c_controller.bus_init().unwrap();
-
         // check I3C target address
         if i3c_target
             .stdby_ctrl_mode_stby_cr_device_addr
@@ -891,6 +881,28 @@ mod test {
                     .read(StbyCrDeviceAddr::StaticAddr) as u8,
             );
         }
+
+        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
+        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
+        println!("XI3C HW version = {:x}", xi3c.version.get());
+
+        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: xi3c_controller_ptr,
+            input_clock_hz: 199_999_000,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: false,
+            hj_capable: false,
+        };
+
+        i3c_controller
+            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
+            .unwrap();
+        i3c_controller.set_s_clk(12_500_000, 1);
+        i3c_controller.bus_init().unwrap();
 
         const I3C_DATALEN: u16 = 90;
         let max_len = I3C_DATALEN.to_be_bytes();

@@ -11,6 +11,8 @@ use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 
+const XI3C_BROADCAST_ADDRESS: u8 = 0x7e;
+
 register_structs! {
     pub XI3c {
         (0x0 => pub version: ReadOnly<u32>), // Version Register
@@ -139,24 +141,27 @@ impl Controller {
             byte_count: 0,
             tid: 0,
         };
-        cmd.target_addr = 0x7e;
+        cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
+        const XI3C_CCC_BRDCAST_DISEC: u8 = 0x1;
         self.send_transfer_cmd(&mut cmd, 0x1)?;
-        cmd.target_addr = 0x7e;
+        cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        self.send_transfer_cmd(&mut cmd, 0)?;
-        cmd.target_addr = 0x7e;
+        const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;
+        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENEC)?;
+        cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        self.send_transfer_cmd(&mut cmd, 0x6)?;
+        const XI3C_CCC_BRDCAST_RSTDAA: u8 = 0x6;
+        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_RSTDAA)?;
         Ok(())
     }
 
@@ -271,7 +276,7 @@ impl Controller {
         };
         assert!(self.ready);
         cmd.no_repeated_start = 0;
-        cmd.target_addr = 0x7e;
+        cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
@@ -289,7 +294,7 @@ impl Controller {
             } else {
                 cmd.no_repeated_start = 0;
             }
-            cmd.target_addr = 0x7e;
+            cmd.target_addr = XI3C_BROADCAST_ADDRESS;
             cmd.tid = 0;
             cmd.pec = 0;
             cmd.cmd_type = 1;
