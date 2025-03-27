@@ -769,6 +769,12 @@ mod test {
 
     fn configure_i3c_target(regs: &I3c) {
         println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
+        regs.stdby_ctrl_mode_stby_cr_capabilities
+            .write(StbyCrCapabilities::TargetXactSupport::SET);
+        println!(
+            "STBY_CR_CAPABILITIES: {:x}",
+            regs.stdby_ctrl_mode_stby_cr_capabilities.get()
+        );
         if !regs
             .stdby_ctrl_mode_stby_cr_capabilities
             .is_set(StbyCrCapabilities::TargetXactSupport)
