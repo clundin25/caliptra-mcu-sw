@@ -139,8 +139,8 @@ impl Controller {
             return 28;
         }
         msg_ptr = &msg_ptr[..byte_count as usize];
-        (*cmd).byte_count = byte_count;
-        (*cmd).rw = 0;
+        cmd.byte_count = byte_count;
+        cmd.rw = 0;
         let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
         let mut space_index: u16 = 0;
         while space_index < wr_fifo_space && !msg_ptr.is_empty() {

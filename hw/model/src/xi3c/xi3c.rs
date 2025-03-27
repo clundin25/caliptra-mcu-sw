@@ -207,8 +207,8 @@ impl Controller {
             u32::from_be_bytes(send_buffer[0..4].try_into().unwrap())
         } else {
             let mut data = 0;
-            for i in 0..send_buffer.len() {
-                data |= (send_buffer[i] as u32) << (24 - 8 * i);
+            for (i, x) in send_buffer.iter().enumerate() {
+                data |= (*x as u32) << (24 - 8 * i);
             }
             data
         };
