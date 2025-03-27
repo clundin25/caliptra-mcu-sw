@@ -103,12 +103,10 @@ impl Controller {
         ((response_data & 0x1e0) >> 5) as i32
     }
 
-    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, mut data: u8) -> Result<(), i32> {
+    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, data: u8) -> Result<(), i32> {
         assert!(self.ready);
 
-        self.send_buffer_ptr = &mut data;
-        self.send_byte_count = 1;
-        self.write_tx_fifo();
+        self.write_tx_fifo(&[data]);
         cmd.target_addr = 0x7e;
         cmd.rw = 0;
         cmd.byte_count = 1;
@@ -123,24 +121,24 @@ impl Controller {
     pub unsafe fn master_send(
         &mut self,
         cmd: &mut Command,
-        msg_ptr: *mut u8,
+        mut msg_ptr: &[u8],
         byte_count: u16,
     ) -> i32 {
-        if msg_ptr.is_null() {
+        if msg_ptr.is_empty() {
             return 13;
         }
         if byte_count > 4095 {
             return 28;
         }
-        self.send_buffer_ptr = msg_ptr;
-        self.send_byte_count = byte_count;
+        msg_ptr = &msg_ptr[..byte_count as usize];
         (*cmd).byte_count = byte_count;
         (*cmd).rw = 0;
         let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
         let mut space_index: u16 = 0;
-        while space_index < wr_fifo_space && self.send_byte_count > 0 {
-            self.write_tx_fifo();
-            space_index = space_index.wrapping_add(1);
+        while space_index < wr_fifo_space && !msg_ptr.is_empty() {
+            let size = self.write_tx_fifo(msg_ptr);
+            msg_ptr = &msg_ptr[size..];
+            space_index += 1;
         }
         if (self.config.wr_threshold as u16) < byte_count {
             self.regs().intr_fe.set(self.regs().intr_fe.get() | 0x20);
@@ -176,27 +174,26 @@ impl Controller {
     pub unsafe fn master_send_polled(
         &mut self,
         cmd: &mut Command,
-        msg_ptr: *const u8,
+        mut msg_ptr: &[u8],
         byte_count: u16,
     ) -> Result<(), i32> {
-        if msg_ptr.is_null() {
+        if msg_ptr.is_empty() {
             return Err(13);
         }
         if byte_count > 4095 {
             return Err(28);
         }
-        self.send_buffer_ptr = msg_ptr;
-        self.send_byte_count = byte_count;
+        msg_ptr = &msg_ptr[..byte_count as usize];
         cmd.byte_count = byte_count;
         cmd.rw = 0;
         self.fill_cmd_fifo(cmd);
-        #[allow(clippy::while_immutable_condition)]
-        while self.send_byte_count as i32 > 0 {
+        while !msg_ptr.is_empty() {
             let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
             let mut space_index: u16 = 0;
-            while (space_index as i32) < wr_fifo_space as i32 && self.send_byte_count as i32 > 0 {
-                self.write_tx_fifo();
-                space_index = space_index.wrapping_add(1);
+            while space_index < wr_fifo_space && !msg_ptr.is_empty() {
+                let written = self.write_tx_fifo(msg_ptr);
+                msg_ptr = &msg_ptr[written..];
+                space_index += 1;
             }
         }
         if self.get_response() != 0 {
@@ -265,7 +262,9 @@ impl Controller {
         let mut dyna_addr: [u8; 1] = [0; 1];
         let intr_status_reg = self.regs().intr_status.get();
         self.regs().intr_status.set(intr_status_reg);
-        if intr_status_reg & 0x100 != 0 {
+        // BIT 8 - Hot join
+        const XI3C_INTR_HJ_MASK: u32 = 0x100;
+        if intr_status_reg & XI3C_INTR_HJ_MASK != 0 {
             if self.cur_device_count as i32 <= 108 {
                 dyna_addr[0] = DYNA_ADDR_LIST[self.cur_device_count as usize];
                 self.dyna_addr_assign(&dyna_addr, 1)?;
@@ -273,24 +272,31 @@ impl Controller {
             }
             self.reset_fifos();
         }
-        if intr_status_reg & 0x80 != 0 {
+        // BIT 7 - IBI
+        const XI3C_INTR_IBI_MASK: u32 = 0x80;
+        if intr_status_reg & XI3C_INTR_IBI_MASK != 0 {
             while self.regs().sr.get() & 0x8000 != 0 || self.regs().sr.get() & 0x10 == 0 {
                 self.ibi_read_rx_fifo();
             }
             self.regs().intr_re.set(self.regs().intr_re.get() & !0x80);
         }
-        if intr_status_reg & 0x20 != 0 {
-            let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
-            let mut space_index: u16 = 0;
-            while (space_index as i32) < wr_fifo_space as i32 && self.send_byte_count as i32 > 0 {
-                self.write_tx_fifo();
-                space_index = space_index.wrapping_add(1);
-            }
-            if self.send_byte_count as i32 <= 0 {
-                self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
-            }
+        // BIT 5 - Write Fifo Full
+        const XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK: u32 = 0x20;
+        if intr_status_reg & XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK != 0 {
+            // We don't support buffering data locally.
+            // let wr_fifo_space = (self.regs().fifo_lvl_status.get() & 0xffff) as u16;
+            // let mut space_index: u16 = 0;
+            // while (space_index as i32) < wr_fifo_space as i32 && self.send_byte_count as i32 > 0 {
+            //     self.write_tx_fifo();
+            //     space_index = space_index.wrapping_add(1);
+            // }
+            // if self.send_byte_count as i32 <= 0 {
+            self.regs().intr_fe.set(self.regs().intr_fe.get() & !0x20);
+            // }
         }
-        if intr_status_reg & 0x40 != 0 {
+        // BIT 6 - Read Fifo Full
+        const XI3C_INTR_RD_FULL_MASK: u32 = 0x40;
+        if intr_status_reg & XI3C_INTR_RD_FULL_MASK != 0 {
             rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
             data_index = 0;
             while (data_index as i32) < rx_data_available as i32 && self.recv_byte_count as i32 > 0
@@ -302,7 +308,9 @@ impl Controller {
                 self.regs().intr_re.set(self.regs().intr_re.get() & !0x40);
             }
         }
-        if intr_status_reg & 0x10 != 0 {
+        // BIT 4 - Resp Fifo not empty
+        const XI3C_INTR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
+        if intr_status_reg & XI3C_INTR_RESP_NOT_EMPTY_MASK != 0 {
             if self.recv_byte_count as i32 > 0 {
                 rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
                 data_index = 0;

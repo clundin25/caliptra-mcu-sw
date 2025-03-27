@@ -77,9 +77,7 @@ pub struct TargetInfo {
 pub struct Controller {
     pub config: Config,
     pub ready: bool,
-    pub send_buffer_ptr: *const u8,
     pub recv_buffer_ptr: *mut u8,
-    pub send_byte_count: u16,
     pub recv_byte_count: u16,
     pub error: u8,
     pub cur_device_count: u8,
@@ -115,9 +113,7 @@ impl Controller {
                 hj_capable: false,
             },
             ready: false,
-            send_buffer_ptr: std::ptr::null_mut(),
             recv_buffer_ptr: std::ptr::null_mut(),
-            send_byte_count: 0,
             recv_byte_count: 0,
             error: 0,
             cur_device_count: 0,
@@ -210,31 +206,18 @@ impl Controller {
         self.regs().cmd_fifo.set(transfer_cmd);
     }
 
-    pub fn write_tx_fifo(&mut self) {
-        let mut data: u32 = 0;
-        if self.send_byte_count > 3 {
-            unsafe {
-                data = ((*(self.send_buffer_ptr).offset(0) as i32) << 24
-                    | (*(self.send_buffer_ptr).offset(1) as i32) << 16
-                    | (*(self.send_buffer_ptr).offset(2) as i32) << 8
-                    | (*(self.send_buffer_ptr).offset(3) as i32)) as u32;
-            }
-            self.send_byte_count = (self.send_byte_count as i32 - 4) as u16;
-            unsafe {
-                self.send_buffer_ptr = (self.send_buffer_ptr).offset(4);
-            }
+    pub fn write_tx_fifo(&mut self, send_buffer: &[u8]) -> usize {
+        let data = if send_buffer.len() > 3 {
+            u32::from_be_bytes(send_buffer[0..4].try_into().unwrap())
         } else {
-            let mut index: u16 = 0;
-            while index < self.send_byte_count {
-                unsafe {
-                    data |= ((*(self.send_buffer_ptr).offset(index as isize) as i32)
-                        << (24 - 8 * index as i32)) as u32;
-                }
-                index = index.wrapping_add(1);
+            let mut data = 0;
+            for i in 0..send_buffer.len() {
+                data |= (send_buffer[i] as u32) << (24 - 8 * i);
             }
-            self.send_byte_count = 0;
-        }
+            data
+        };
         self.regs().wr_fifo.set(data);
+        send_buffer.len().max(4)
     }
 
     pub fn read_rx_fifo(&mut self) {
@@ -283,12 +266,9 @@ impl Controller {
         self.send_transfer_cmd(&mut cmd, 0x7)?;
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {
-            let mut addr = (((dyna_addr[index as usize]) as i32) << 1
-                | get_odd_parity(dyna_addr[index as usize]) as i32)
-                as u8;
-            self.send_buffer_ptr = &mut addr;
-            self.send_byte_count = 1;
-            self.write_tx_fifo();
+            let addr = (((dyna_addr[index as usize]) as i32) << 1
+                | get_odd_parity(dyna_addr[index as usize]) as i32) as u8;
+            self.write_tx_fifo(&[addr]);
             if index + 1 == dev_count as u16 {
                 cmd.no_repeated_start = 1;
             } else {
