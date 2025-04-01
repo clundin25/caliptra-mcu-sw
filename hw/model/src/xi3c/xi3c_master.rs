@@ -106,7 +106,6 @@ impl Controller {
             MAX_TIMEOUT_US,
         );
         if !happened {
-            println!("Event failed to happen");
             return 31;
         }
         let response_data = self.regs().resp_status_fifo.get();
@@ -121,11 +120,9 @@ impl Controller {
         cmd.rw = 0;
         cmd.byte_count = 1;
         self.fill_cmd_fifo(cmd);
-        println!("Send transfer broadcast waiting for response");
         if self.get_response() != 0 {
             return Err(XST_SEND_ERROR);
         }
-        println!("Send transfer broadcast acknowledged");
         Ok(())
     }
 
@@ -186,9 +183,11 @@ impl Controller {
                 space_index += 1;
             }
         }
+        println!("Waiting for master_send_polled response");
         if self.get_response() != 0 {
             Err(XST_SEND_ERROR)
         } else {
+            println!("master_send_polled OK");
             Ok(())
         }
     }
@@ -215,7 +214,7 @@ impl Controller {
             let mut data_index: u16 = 0;
             while data_index < rx_data_available && recv_byte_count > 0 {
                 recv.extend(self.read_rx_fifo(recv_byte_count));
-                recv_byte_count -= recv.len() as u16;
+                recv_byte_count = recv_byte_count.saturating_sub(recv.len() as u16);
                 data_index += 1;
             }
         }
