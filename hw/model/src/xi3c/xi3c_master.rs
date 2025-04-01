@@ -121,10 +121,11 @@ impl Controller {
         cmd.rw = 0;
         cmd.byte_count = 1;
         self.fill_cmd_fifo(cmd);
-        println!("Send transfer waiting for response");
+        println!("Send transfer broadcast waiting for response");
         if self.get_response() != 0 {
             return Err(XST_SEND_ERROR);
         }
+        println!("Send transfer broadcast acknowledged");
         Ok(())
     }
 
@@ -153,6 +154,13 @@ impl Controller {
         0
     }
 
+    /// This function initiates a polled mode send in master mode.
+    ///
+    /// It sends data to the FIFO and waits for the slave to pick them up.
+    /// If controller fails to send data due arbitration lost or any other error,
+    /// will stop transfer status.
+    /// - msg_ptr is the pointer to the send buffer.
+    /// - byte_count is the number of bytes to be sent.
     pub fn master_send_polled(
         &mut self,
         cmd: &mut Command,

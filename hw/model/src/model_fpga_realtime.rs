@@ -795,9 +795,9 @@ mod test {
 
         println!("Enable the target transaction interface");
         regs.stdby_ctrl_mode_stby_cr_control.modify(
-            StbyCrControl::StbyCrEnableInit::SET // enable the standby controller
+            StbyCrControl::StbyCrEnableInit.val(2) // enable the standby controller
                 + StbyCrControl::TargetXactEnable::SET // enable Target Transaction Interface
-                + StbyCrControl::DaaEntdaaEnable::SET // enable dynamic address assignment
+                + StbyCrControl::DaaEntdaaEnable::CLEAR // disable dynamic address assignment
                 + StbyCrControl::BastCccIbiRing.val(0) // Set the IBI to use ring buffer 0
                 + StbyCrControl::PrimeAcceptGetacccr::CLEAR // // don't auto-accept primary controller role
                 + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
@@ -1157,7 +1157,10 @@ mod test {
         let cycles = (cycle_count1 - cycle_count0) as f64;
         let seconds = dur.as_secs_f64();
         println!("Checking cycle count 1: {}", cycle_count1);
-        println!("FPGA Frequency: {:.6} MHz", cycles / seconds / 1000000.0);
+        println!(
+            "MCU RISC-V Frequency: {:.6} MHz",
+            cycles / seconds / 1000000.0
+        );
         let output0 = unsafe { core::ptr::read_volatile(wrapper.offset(0x70 / 4)) };
         println!("Checking generic output wire 0: {:x}", output0);
         let output1 = unsafe { core::ptr::read_volatile(wrapper.offset(0x74 / 4)) };

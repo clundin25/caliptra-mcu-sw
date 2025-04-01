@@ -263,7 +263,7 @@ impl Controller {
             data
         };
         self.regs().wr_fifo.set(data);
-        send_buffer.len().max(4)
+        send_buffer.len().min(4)
     }
 
     pub fn read_rx_fifo(&mut self, recv_byte_count: u16) -> Vec<u8> {

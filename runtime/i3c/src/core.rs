@@ -173,9 +173,9 @@ impl<'a, A: Alarm<'a>> I3CCore<'a, A> {
         );
 
         self.registers.stdby_ctrl_mode_stby_cr_control.modify(
-            StbyCrControl::StbyCrEnableInit::SET // enable the standby controller
+            StbyCrControl::StbyCrEnableInit.val(2) // enable the standby controller
                 + StbyCrControl::TargetXactEnable::SET // enable Target Transaction Interface
-                + StbyCrControl::DaaEntdaaEnable::SET // enable dynamic address assignment
+                + StbyCrControl::DaaEntdaaEnable::CLEAR // disable dynamic address assignment
                 + StbyCrControl::BastCccIbiRing.val(0) // Set the IBI to use ring buffer 0
                 + StbyCrControl::PrimeAcceptGetacccr::CLEAR // // don't auto-accept primary controller role
                 + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
