@@ -759,8 +759,8 @@ mod test {
     use crate::xi3c;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
-        QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
-        StbyCrDeviceAddr, TtiQueueThldCtrl,
+        InterruptEnable, QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities,
+        StbyCrControl, StbyCrDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
     use std::time::Duration;
@@ -785,8 +785,8 @@ mod test {
         // target will ACK broadcasts correctly if set to 1-7, fails at 8+
         regs.soc_mgmt_if_t_r_reg.set(1); // rise time of both SDA and SCL in clock units
         regs.soc_mgmt_if_t_f_reg.set(1); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_hd_dat_reg.set(2); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(2); // data setup time in clock units
+        regs.soc_mgmt_if_t_hd_dat_reg.set(1); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(1); // data setup time in clock units
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
         println!("Setup HCI queue thresholds");
@@ -843,6 +843,15 @@ mod test {
         // enable the PHY connection to the bus
         regs.i3c_base_hc_control
             .modify(ModeSelector::SET + BusEnable::CLEAR); // clear is enabled, set is suspended
+
+        println!("Enabling interrupts");
+        regs.tti_interrupt_enable.modify(
+            InterruptEnable::IbiThldStatEn::SET
+                + InterruptEnable::RxDescThldStatEn::SET
+                + InterruptEnable::TxDescThldStatEn::SET
+                + InterruptEnable::RxDataThldStatEn::SET
+                + InterruptEnable::TxDataThldStatEn::SET,
+        );
 
         println!("I3C target status {:x}", regs.tti_status.get());
         println!(
