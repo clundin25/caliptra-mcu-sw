@@ -782,11 +782,11 @@ mod test {
         // initialize timing registers
         println!("Initialize timing registers");
         // AXI clock is ~200 MHz, I3C clock is 12.5 MHz
-        // target will ACK broadcasts correctly if set to 1-7, fails at 8+
-        regs.soc_mgmt_if_t_r_reg.set(1); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_f_reg.set(1); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_hd_dat_reg.set(1); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(1); // data setup time in clock units
+        // target will ACK broadcasts correctly if set to 0-7, fails at 8+
+        regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
         println!("Setup HCI queue thresholds");
@@ -976,6 +976,14 @@ mod test {
             "I3C target interrupt status {:x}",
             i3c_target.tti_interrupt_status.get()
         );
+
+        assert_eq!(0x800, i3c_target.tti_interrupt_status.get() & 0x800);
+
+        // let's try reading the message now
+        let desc0 = i3c_target.tti_rx_desc_queue_port.get();
+        let desc1 = i3c_target.tti_rx_desc_queue_port.get();
+
+        println!("Read a descriptor: {:08x} {:08x}", desc0, desc1);
 
         /*
          * Set Max read length
