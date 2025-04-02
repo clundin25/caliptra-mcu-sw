@@ -759,8 +759,8 @@ mod test {
     use crate::xi3c;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
-        InterruptEnable, QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities,
-        StbyCrControl, StbyCrDeviceAddr, TtiQueueThldCtrl,
+        QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
+        StbyCrDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
     use std::time::Duration;
@@ -785,8 +785,8 @@ mod test {
         // target will ACK broadcasts correctly if set to 0-7, fails at 8+
         regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
         regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
+        regs.soc_mgmt_if_t_hd_dat_reg.set(4); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(4); // data setup time in clock units
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
         println!("Setup HCI queue thresholds");
@@ -845,13 +845,14 @@ mod test {
             .modify(ModeSelector::SET + BusEnable::CLEAR); // clear is enabled, set is suspended
 
         println!("Enabling interrupts");
-        regs.tti_interrupt_enable.modify(
-            InterruptEnable::IbiThldStatEn::SET
-                + InterruptEnable::RxDescThldStatEn::SET
-                + InterruptEnable::TxDescThldStatEn::SET
-                + InterruptEnable::RxDataThldStatEn::SET
-                + InterruptEnable::TxDataThldStatEn::SET,
-        );
+        // regs.tti_interrupt_enable.modify(
+        //     InterruptEnable::IbiThldStatEn::SET
+        //         + InterruptEnable::RxDescThldStatEn::SET
+        //         + InterruptEnable::TxDescThldStatEn::SET
+        //         + InterruptEnable::RxDataThldStatEn::SET
+        //         + InterruptEnable::TxDataThldStatEn::SET,
+        // );
+        regs.tti_interrupt_enable.set(0xffff_ffff);
 
         println!("I3C target status {:x}", regs.tti_status.get());
         println!(
@@ -938,6 +939,7 @@ mod test {
             ..Default::default()
         };
         const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
+        println!("Broadcast CCC SETAASA");
         let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
@@ -976,8 +978,16 @@ mod test {
             "I3C target interrupt status {:x}",
             i3c_target.tti_interrupt_status.get()
         );
+        println!(
+            "I3C target interrupt enable {:x}",
+            i3c_target.tti_interrupt_enable.get()
+        );
 
-        // assert_eq!(0x800, i3c_target.tti_interrupt_status.get() & 0x800);
+        assert_eq!(
+            0x800,
+            i3c_target.tti_interrupt_status.get() & 0x800,
+            "Expected I3C target to have an RX descriptor waiting"
+        );
 
         // let's try reading the message now
         let desc0 = i3c_target.tti_rx_desc_queue_port.get();
