@@ -785,8 +785,10 @@ mod test {
         // target will ACK broadcasts correctly if set to 0-7, fails at 8+
         regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
         regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_hd_dat_reg.set(4); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(4); // data setup time in clock units
+
+        // if this is set to 6+ then ACKs start failing
+        regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
         println!("Setup HCI queue thresholds");
@@ -853,6 +855,10 @@ mod test {
         //         + InterruptEnable::TxDataThldStatEn::SET,
         // );
         regs.tti_interrupt_enable.set(0xffff_ffff);
+        println!(
+            "I3C target interrupt enable {:x}",
+            regs.tti_interrupt_enable.get()
+        );
 
         println!("I3C target status {:x}", regs.tti_status.get());
         println!(
@@ -941,12 +947,8 @@ mod test {
         const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
         println!("Broadcast CCC SETAASA");
         let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
-        println!("I3C target status {:x}", i3c_target.tti_status.get());
-        println!(
-            "I3C target interrupt status {:x}",
-            i3c_target.tti_interrupt_status.get()
-        );
         assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
+        println!("Acknowledge received");
 
         cmd.no_repeated_start = 0;
         cmd.tid = 0;
@@ -954,33 +956,33 @@ mod test {
         cmd.rw = 0;
         cmd.cmd_type = 1;
         const XI3C_CCC_SETMWL: u8 = 0x89;
+        println!("Broadcast CCC SETMWL");
         assert!(
             i3c_controller
                 .send_transfer_cmd(&mut cmd, XI3C_CCC_SETMWL)
                 .is_ok(),
             "Failed to ack broadcast CCC SETMWL message"
         );
+        println!("Acknowledge received");
 
         cmd.target_addr = I3C_TARGET_ADDR;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1; // SDR mode
+        println!("Sending 2-byte message to target");
         assert!(
             i3c_controller
                 .master_send_polled(&mut cmd, &max_len, 2)
                 .is_ok(),
             "Failed to ack first message sent to the target"
         );
+        println!("Acknowledge received");
 
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
             "I3C target interrupt status {:x}",
             i3c_target.tti_interrupt_status.get()
-        );
-        println!(
-            "I3C target interrupt enable {:x}",
-            i3c_target.tti_interrupt_enable.get()
         );
 
         assert_eq!(
@@ -991,9 +993,8 @@ mod test {
 
         // let's try reading the message now
         let desc0 = i3c_target.tti_rx_desc_queue_port.get();
-        let desc1 = i3c_target.tti_rx_desc_queue_port.get();
 
-        println!("Read a descriptor: {:08x} {:08x}", desc0, desc1);
+        println!("Read a descriptor: {:08x}", desc0);
 
         /*
          * Set Max read length
@@ -1004,6 +1005,7 @@ mod test {
         cmd.rw = 0;
         cmd.cmd_type = 1;
         const XI3C_CCC_SETMRL: u8 = 0x8a;
+        println!("Broadcast CCC SETMRL");
         assert!(
             i3c_controller
                 .send_transfer_cmd(&mut cmd, XI3C_CCC_SETMRL)
@@ -1016,18 +1018,14 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
+        println!("Sending second message to target");
         assert!(
             i3c_controller
                 .master_send_polled(&mut cmd, &max_len, 2)
                 .is_ok(),
             "Failed to ack second message to target"
         );
-
-        println!("I3C target status {:x}", i3c_target.tti_status.get());
-        println!(
-            "I3C target interrupt status {:x}",
-            i3c_target.tti_interrupt_status.get()
-        );
+        println!("Acknowledge received");
 
         // Fill data to buffer
         for i in 0..I3C_DATALEN as usize {
@@ -1041,12 +1039,14 @@ mod test {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
+        println!("Sending third message to target");
         assert!(
             i3c_controller
                 .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
                 .is_ok(),
             "Failed to ack third message sent to target"
         );
+        println!("Acknowledge received");
 
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
