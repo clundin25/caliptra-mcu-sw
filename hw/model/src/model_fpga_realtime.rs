@@ -757,6 +757,7 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 mod test {
     use crate::model_fpga_realtime::FifoData;
     use crate::xi3c;
+    use bitfield::bitfield;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
         QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
@@ -766,9 +767,21 @@ mod test {
     use std::time::Duration;
     use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
     use uio::UioDevice;
+    use zerocopy::{FromBytes, IntoBytes};
+
+    bitfield! {
+        #[derive(Clone, FromBytes, IntoBytes)]
+        pub struct RxDescriptor(u32);
+        impl Debug;
+        pub u16, data_length, set_data_length: 15, 0;
+    }
 
     fn configure_i3c_target(regs: &I3c, addr: u8) {
         println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
+
+        println!("Set TTI RESET_CONTROL");
+        regs.tti_tti_reset_control.set(0x3f);
+        println!("TTI RESET_CONTROL: {:x}", regs.tti_tti_reset_control.get());
 
         // Evaluate RING_HEADERS_SECTION_OFFSET, the SECTION_OFFSET should read 0x0 as this controller doesn’t support the DMA mode
         println!("Check ring headers section offset");
@@ -779,16 +792,40 @@ mod test {
             panic!("RING_HEADERS_SECTION_OFFSET is not 0");
         }
 
+        println!("TTI QUEUE_SIZE: {:x}", regs.tti_tti_queue_size.get());
+
         // initialize timing registers
         println!("Initialize timing registers");
+
         // AXI clock is ~200 MHz, I3C clock is 12.5 MHz
-        // target will ACK broadcasts correctly if set to 0-7, fails at 8+
+        // values of all of these set to 0-5 seem to work for receiving data correctly
+        // 6-7 gets corrupted data but will ACK
+        // 8+ will fail to ACK
         regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
         regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
 
         // if this is set to 6+ then ACKs start failing
         regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
         regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
+
+        regs.soc_mgmt_if_t_high_reg.set(0); // High period of the SCL in clock units
+        regs.soc_mgmt_if_t_low_reg.set(0); // Low period of the SCL in clock units
+        regs.soc_mgmt_if_t_hd_sta_reg.set(0); // Hold time for (repeated) START in clock units
+        regs.soc_mgmt_if_t_su_sta_reg.set(0); // Setup time for repeated START in clock units
+        regs.soc_mgmt_if_t_su_sto_reg.set(0); // Setup time for STOP in clock units
+
+        println!(
+            "Timing register t_r: {}, t_f: {}, t_hd_dat: {}, t_su_dat: {}, t_high: {}, t_low: {}, t_hd_sta: {}, t_su_sta: {}, t_su_sto: {}",
+            regs.soc_mgmt_if_t_r_reg.get(),
+            regs.soc_mgmt_if_t_f_reg.get(),
+            regs.soc_mgmt_if_t_hd_dat_reg.get(),
+            regs.soc_mgmt_if_t_su_dat_reg.get(),
+            regs.soc_mgmt_if_t_high_reg.get(),
+            regs.soc_mgmt_if_t_low_reg.get(),
+            regs.soc_mgmt_if_t_hd_sta_reg.get(),
+            regs.soc_mgmt_if_t_su_sta_reg.get(),
+            regs.soc_mgmt_if_t_su_sto_reg.get()
+        );
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
         println!("Setup HCI queue thresholds");
@@ -840,6 +877,10 @@ mod test {
                 + TtiQueueThldCtrl::RxDescThld.val(1)
                 + TtiQueueThldCtrl::TxDescThld.val(1),
         );
+        println!(
+            "TTI queue thresholds: {:x}",
+            regs.tti_tti_queue_thld_ctrl.get()
+        );
 
         println!("Enable PHY to the bus");
         // enable the PHY connection to the bus
@@ -867,6 +908,28 @@ mod test {
         );
     }
 
+    fn read_bytes(i3c: &I3c, mut len: usize) -> Vec<u8> {
+        let mut data = vec![];
+        while len > 0 {
+            let dword = i3c.tti_rx_data_port.get();
+            let slice = dword.to_le_bytes();
+            let valid = len.min(4);
+            data.extend(&slice[0..valid]);
+            len -= valid;
+        }
+        data
+    }
+
+    fn read_packet(i3c: &I3c) -> Vec<u8> {
+        assert!(
+            i3c.tti_interrupt_status.get() & 0x801 != 0,
+            "Expected I3C target to have an RX descriptor waiting"
+        );
+        let desc0 = RxDescriptor(i3c.tti_rx_desc_queue_port.get());
+        println!("Read a descriptor: {:08x}", desc0.0,);
+        read_bytes(i3c, desc0.data_length() as usize)
+    }
+
     #[test]
     fn test_xi3c() {
         const AXI_CLOCK_HZ: u32 = 199_999_000;
@@ -880,6 +943,7 @@ mod test {
 
         println!("Bring SS out of reset");
         unsafe {
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0);
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
         }
         println!("Configuring I3C target");
@@ -955,7 +1019,7 @@ mod test {
         cmd.pec = 0;
         cmd.rw = 0;
         cmd.cmd_type = 1;
-        const XI3C_CCC_SETMWL: u8 = 0x89;
+        const XI3C_CCC_SETMWL: u8 = 0x9;
         println!("Broadcast CCC SETMWL");
         assert!(
             i3c_controller
@@ -965,19 +1029,21 @@ mod test {
         );
         println!("Acknowledge received");
 
-        cmd.target_addr = I3C_TARGET_ADDR;
-        cmd.no_repeated_start = 1;
-        cmd.tid = 0;
-        cmd.pec = 0;
-        cmd.cmd_type = 1; // SDR mode
-        println!("Sending 2-byte message to target");
-        assert!(
-            i3c_controller
-                .master_send_polled(&mut cmd, &max_len, 2)
-                .is_ok(),
-            "Failed to ack first message sent to the target"
-        );
-        println!("Acknowledge received");
+        for _ in 0..6 {
+            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.no_repeated_start = 1;
+            cmd.tid = 0;
+            cmd.pec = 0;
+            cmd.cmd_type = 1; // SDR mode
+            println!("Sending 2-byte message to target");
+            assert!(
+                i3c_controller
+                    .master_send_polled(&mut cmd, &max_len, 2)
+                    .is_ok(),
+                "Failed to ack first message sent to the target"
+            );
+            println!("Acknowledge received");
+        }
 
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
@@ -985,16 +1051,20 @@ mod test {
             i3c_target.tti_interrupt_status.get()
         );
 
+        // let's try reading the message now
+        let data = read_packet(i3c_target);
+        println!("Read bytes: {:x?}", data);
+
         assert_eq!(
-            0x800,
-            i3c_target.tti_interrupt_status.get() & 0x800,
-            "Expected I3C target to have an RX descriptor waiting"
+            &I3C_DATALEN.to_be_bytes()[..],
+            &data,
+            "Data read from I3C target did not match what controller sent"
         );
 
-        // let's try reading the message now
-        let desc0 = i3c_target.tti_rx_desc_queue_port.get();
-
-        println!("Read a descriptor: {:08x}", desc0);
+        println!(
+            "I3C target interrupt status {:x}",
+            i3c_target.tti_interrupt_status.get()
+        );
 
         /*
          * Set Max read length
@@ -1004,7 +1074,7 @@ mod test {
         cmd.pec = 0;
         cmd.rw = 0;
         cmd.cmd_type = 1;
-        const XI3C_CCC_SETMRL: u8 = 0x8a;
+        const XI3C_CCC_SETMRL: u8 = 0xa;
         println!("Broadcast CCC SETMRL");
         assert!(
             i3c_controller
@@ -1027,6 +1097,20 @@ mod test {
         );
         println!("Acknowledge received");
 
+        let data = read_packet(i3c_target);
+        println!("Read bytes: {:x?}", data);
+
+        // assert_eq!(
+        //     &I3C_DATALEN.to_be_bytes()[..],
+        //     &data,
+        //     "Data read from I3C target did not match what controller sent"
+        // );
+
+        println!(
+            "I3C target interrupt status {:x}",
+            i3c_target.tti_interrupt_status.get()
+        );
+
         // Fill data to buffer
         for i in 0..I3C_DATALEN as usize {
             tx_data[i] = i as u8; // Test data
@@ -1048,6 +1132,19 @@ mod test {
         );
         println!("Acknowledge received");
 
+        let data = read_packet(i3c_target);
+        println!("Read bytes: {:x?}", data);
+
+        assert_eq!(
+            &tx_data, &*data,
+            "Data read from I3C target did not match what controller sent"
+        );
+
+        println!(
+            "I3C target interrupt status {:x}",
+            i3c_target.tti_interrupt_status.get()
+        );
+
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
             "I3C target interrupt status {:x}",
@@ -1055,20 +1152,27 @@ mod test {
         );
 
         // Recv
+        println!("Sending a read request to the target");
         cmd.target_addr = I3C_TARGET_ADDR;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        let rx_data = i3c_controller
-            .master_recv_polled(&mut cmd, I3C_DATALEN)
-            .expect("Failed to receive data from target");
-
+        i3c_controller
+            .master_recv(&mut cmd, I3C_DATALEN)
+            .expect("Failed to start receive from target");
         println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
             "I3C target interrupt status {:x}",
             i3c_target.tti_interrupt_status.get()
         );
+
+        // let's send a message back
+        // send_bytes(i3c, &tx_data);
+
+        let rx_data = i3c_controller
+            .master_recv_finish(&cmd, I3C_DATALEN)
+            .expect("Failed to finish receiving data from target");
 
         assert_eq!(tx_data, *rx_data);
     }

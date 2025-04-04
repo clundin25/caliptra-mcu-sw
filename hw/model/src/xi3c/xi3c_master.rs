@@ -197,17 +197,28 @@ impl Controller {
         cmd: &mut Command,
         byte_count: u16,
     ) -> Result<Vec<u8>, i32> {
+        self.master_recv(cmd, byte_count)?;
+        self.master_recv_finish(cmd, byte_count)
+    }
+
+    /// Starts a receive from a target, but does not wait on the result (must call .master_recv_finish() separately).
+    pub fn master_recv(&mut self, cmd: &mut Command, byte_count: u16) -> Result<(), i32> {
         if byte_count > 4095 {
             return Err(XST_RECV_ERROR);
         }
+        cmd.byte_count = byte_count;
+        cmd.rw = 1;
+        self.fill_cmd_fifo(cmd);
+        Ok(())
+    }
+
+    /// Finishes a receive from a target.
+    pub fn master_recv_finish(&mut self, cmd: &Command, byte_count: u16) -> Result<Vec<u8>, i32> {
         let mut recv_byte_count = if cmd.target_addr == XI3C_BROADCAST_ADDRESS {
             (byte_count as i32 - 1) as u16
         } else {
             byte_count
         };
-        cmd.byte_count = byte_count;
-        cmd.rw = 1;
-        self.fill_cmd_fifo(cmd);
         let mut recv = vec![];
         while recv_byte_count > 0 {
             let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
