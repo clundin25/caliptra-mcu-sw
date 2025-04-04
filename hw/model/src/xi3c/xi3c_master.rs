@@ -224,8 +224,9 @@ impl Controller {
             let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
             let mut data_index: u16 = 0;
             while data_index < rx_data_available && recv_byte_count > 0 {
-                recv.extend(self.read_rx_fifo(recv_byte_count));
-                recv_byte_count = recv_byte_count.saturating_sub(recv.len() as u16);
+                let new_bytes = self.read_rx_fifo(recv_byte_count);
+                recv.extend(&new_bytes);
+                recv_byte_count = recv_byte_count.saturating_sub(new_bytes.len() as u16);
                 data_index += 1;
             }
         }

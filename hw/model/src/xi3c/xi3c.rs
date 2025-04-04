@@ -67,7 +67,7 @@ register_structs! {
         (0x28 => pub rd_fifo: ReadWrite<u32>), // I3C Read Data FIFO Register
         (0x2C => pub resp_status_fifo: ReadWrite<u32>), // I3C Response status FIFO Register
         (0x30 => pub fifo_lvl_status: ReadWrite<u32>), // I3C CMD & WR FIFO LVL Register
-        (0x34 => pub fifo_lvl_status_1: ReadWrite<u32>), // I3C RESP & RD FIFO LVL  Register
+        (0x34 => pub fifo_lvl_status_1: ReadWrite<u32>), // I3C RESP & RD FIFO LVL Register
         (0x38 => pub scl_high_time: ReadWrite<u32>), // I3C SCL HIGH Register
         (0x3C => pub scl_low_time: ReadWrite<u32>), // I3C SCL LOW  Register
         (0x40 => pub sda_hold_time: ReadWrite<u32>), // I3C SDA HOLD Register

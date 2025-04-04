@@ -764,6 +764,7 @@ mod test {
         StbyCrDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
+    use std::thread::sleep;
     use std::time::Duration;
     use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
     use uio::UioDevice;
@@ -901,14 +902,28 @@ mod test {
             regs.tti_interrupt_enable.get()
         );
 
-        println!("I3C target status {:x}", regs.tti_status.get());
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            regs.tti_status.get(),
             regs.tti_interrupt_status.get()
         );
     }
 
-    fn read_bytes(i3c: &I3c, mut len: usize) -> Vec<u8> {
+    fn empty_rx_queue(i3c: &I3c) {
+        while i3c.tti_interrupt_status.get() & 0x801 != 0 {
+            let packet = read_packet(i3c);
+            println!("Emptying I3C RX queue: {:x?}", packet);
+        }
+    }
+
+    fn read_packet(i3c: &I3c) -> Vec<u8> {
+        assert!(
+            i3c.tti_interrupt_status.get() & 0x801 != 0,
+            "Expected I3C target to have an RX descriptor waiting"
+        );
+        let desc0 = RxDescriptor(i3c.tti_rx_desc_queue_port.get());
+        println!("Read a descriptor: {:08x}", desc0.0,);
+        let mut len = desc0.data_length() as usize;
         let mut data = vec![];
         while len > 0 {
             let dword = i3c.tti_rx_data_port.get();
@@ -920,14 +935,18 @@ mod test {
         data
     }
 
-    fn read_packet(i3c: &I3c) -> Vec<u8> {
-        assert!(
-            i3c.tti_interrupt_status.get() & 0x801 != 0,
-            "Expected I3C target to have an RX descriptor waiting"
-        );
-        let desc0 = RxDescriptor(i3c.tti_rx_desc_queue_port.get());
-        println!("Read a descriptor: {:08x}", desc0.0,);
-        read_bytes(i3c, desc0.data_length() as usize)
+    fn send_packet(i3c: &I3c, mut data: &[u8]) {
+        let mut desc = RxDescriptor(0);
+        desc.set_data_length(data.len() as u16);
+        i3c.tti_tx_desc_queue_port.set(desc.0);
+        while data.len() > 0 {
+            let next = &data[..4.min(data.len())];
+            let mut word = [0, 0, 0, 0];
+            word[..next.len()].copy_from_slice(next);
+            let word = u32::from_le_bytes(word);
+            i3c.tti_tx_data_port.set(word);
+            data = &data[next.len()..];
+        }
     }
 
     #[test]
@@ -940,6 +959,8 @@ mod test {
         let i3c_target_raw = dev1.map_mapping(2).unwrap();
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
+        let repeat = 3; // repeat messages this many times when sending
+        let empty_wait_time = Some(Duration::from_millis(1)); // sleep this much before emptying the rx queue
 
         println!("Bring SS out of reset");
         unsafe {
@@ -1000,7 +1021,6 @@ mod test {
         const I3C_DATALEN: u16 = 90;
         let max_len = I3C_DATALEN.to_be_bytes();
         let mut tx_data = [0u8; I3C_DATALEN as usize];
-        let mut rx_data = [0u8; I3C_DATALEN as usize];
 
         // sequence from xi3c_polled_example.c
         let mut cmd = xi3c::Command {
@@ -1029,7 +1049,7 @@ mod test {
         );
         println!("Acknowledge received");
 
-        for _ in 0..6 {
+        for _ in 0..repeat {
             cmd.target_addr = I3C_TARGET_ADDR;
             cmd.no_repeated_start = 1;
             cmd.tid = 0;
@@ -1045,15 +1065,18 @@ mod test {
             println!("Acknowledge received");
         }
 
-        println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
 
         // let's try reading the message now
         let data = read_packet(i3c_target);
         println!("Read bytes: {:x?}", data);
+
+        empty_wait_time.map(sleep);
+        empty_rx_queue(i3c_target);
 
         assert_eq!(
             &I3C_DATALEN.to_be_bytes()[..],
@@ -1062,7 +1085,8 @@ mod test {
         );
 
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
 
@@ -1083,54 +1107,61 @@ mod test {
             "Failed to ack broadcast CCC SETMRL"
         );
 
-        cmd.target_addr = I3C_TARGET_ADDR;
-        cmd.no_repeated_start = 1;
-        cmd.tid = 0;
-        cmd.pec = 0;
-        cmd.cmd_type = 1;
-        println!("Sending second message to target");
-        assert!(
-            i3c_controller
-                .master_send_polled(&mut cmd, &max_len, 2)
-                .is_ok(),
-            "Failed to ack second message to target"
-        );
-        println!("Acknowledge received");
+        for _ in 0..repeat {
+            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.no_repeated_start = 1;
+            cmd.tid = 0;
+            cmd.pec = 0;
+            cmd.cmd_type = 1;
+            println!("Sending second message to target");
+            assert!(
+                i3c_controller
+                    .master_send_polled(&mut cmd, &max_len, 2)
+                    .is_ok(),
+                "Failed to ack second message to target"
+            );
+            println!("Acknowledge received");
+        }
 
         let data = read_packet(i3c_target);
         println!("Read bytes: {:x?}", data);
 
-        // assert_eq!(
-        //     &I3C_DATALEN.to_be_bytes()[..],
-        //     &data,
-        //     "Data read from I3C target did not match what controller sent"
-        // );
+        assert_eq!(
+            &I3C_DATALEN.to_be_bytes()[..],
+            &data,
+            "Data read from I3C target did not match what controller sent"
+        );
+
+        empty_wait_time.map(sleep);
+        empty_rx_queue(i3c_target);
 
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
 
         // Fill data to buffer
         for i in 0..I3C_DATALEN as usize {
             tx_data[i] = i as u8; // Test data
-            rx_data[i] = 0;
         }
 
         // Send
-        cmd.target_addr = I3C_TARGET_ADDR;
-        cmd.no_repeated_start = 1;
-        cmd.tid = 0;
-        cmd.pec = 0;
-        cmd.cmd_type = 1;
-        println!("Sending third message to target");
-        assert!(
-            i3c_controller
-                .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
-                .is_ok(),
-            "Failed to ack third message sent to target"
-        );
-        println!("Acknowledge received");
+        for _ in 0..repeat {
+            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.no_repeated_start = 1;
+            cmd.tid = 0;
+            cmd.pec = 0;
+            cmd.cmd_type = 1;
+            println!("Sending third message to target");
+            assert!(
+                i3c_controller
+                    .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
+                    .is_ok(),
+                "Failed to ack third message sent to target"
+            );
+            println!("Acknowledge received");
+        }
 
         let data = read_packet(i3c_target);
         println!("Read bytes: {:x?}", data);
@@ -1140,14 +1171,12 @@ mod test {
             "Data read from I3C target did not match what controller sent"
         );
 
-        println!(
-            "I3C target interrupt status {:x}",
-            i3c_target.tti_interrupt_status.get()
-        );
+        empty_wait_time.map(sleep);
+        empty_rx_queue(i3c_target);
 
-        println!("I3C target status {:x}", i3c_target.tti_status.get());
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
 
@@ -1161,14 +1190,21 @@ mod test {
         i3c_controller
             .master_recv(&mut cmd, I3C_DATALEN)
             .expect("Failed to start receive from target");
-        println!("I3C target status {:x}", i3c_target.tti_status.get());
+
         println!(
-            "I3C target interrupt status {:x}",
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
 
+        // assert!(
+        //     i3c_target.tti_interrupt_status.get() & 0x402 != 0,
+        //     "Expected TX_DESC interrupt"
+        // );
+
         // let's send a message back
-        // send_bytes(i3c, &tx_data);
+        println!("Writing data back to controller: {:x?}", tx_data);
+        send_packet(i3c_target, &tx_data);
 
         let rx_data = i3c_controller
             .master_recv_finish(&cmd, I3C_DATALEN)
