@@ -883,6 +883,11 @@ mod test {
             regs.tti_tti_queue_thld_ctrl.get()
         );
 
+        println!(
+            "TTI data buffer thresholds ctrl: {:x}",
+            regs.tti_tti_data_buffer_thld_ctrl.get()
+        );
+
         println!("Enable PHY to the bus");
         // enable the PHY connection to the bus
         regs.i3c_base_hc_control
