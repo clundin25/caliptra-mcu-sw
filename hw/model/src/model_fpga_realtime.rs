@@ -760,7 +760,7 @@ mod test {
     use bitfield::bitfield;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
-        QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
+        DeviceStatus0, QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
         StbyCrDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
@@ -911,6 +911,17 @@ mod test {
             "I3C target status {:x}, interrupt status {:x}",
             regs.tti_status.get(),
             regs.tti_interrupt_status.get()
+        );
+
+        println!(
+            "I3C recovery prot_cap 2 and 3: {:08x} {:08x}",
+            regs.sec_fw_recovery_if_prot_cap_2.get(),
+            regs.sec_fw_recovery_if_prot_cap_3.get(),
+        );
+        println!(
+            "I3C recovery device status: {:x}",
+            regs.sec_fw_recovery_if_device_status_0
+                .read(DeviceStatus0::DevStatus)
         );
     }
 
