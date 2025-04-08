@@ -7,12 +7,20 @@ use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult, SpdmError, SpdmResult};
 use crate::protocol::algorithms::BaseHashAlgoType;
 use crate::protocol::common::SpdmMsgHdr;
+use crate::protocol::version::SpdmVersion;
 use crate::state::ConnectionState;
 use libtock_platform::Syscalls;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const MAX_SPDM_CERT_PORTION_LEN: usize = 512;
 const GET_CERTIFICATE_SLOT_ID_MASK: u8 = 0xF;
+const GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED: u8 = 0x01;
+
+pub enum CertModel {
+    DeviceCertModel = 0x01,
+    AliasCertModel = 0x02,
+    GenericCertModel = 0x03,
+}
 
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(packed)]
@@ -24,10 +32,10 @@ pub struct GetCertificateReq {
 }
 
 impl GetCertificateReq {
-    pub fn new(slot_id: u8, offset: u16, length: u16) -> Self {
+    pub fn new(slot_id: u8, param2: u8, offset: u16, length: u16) -> Self {
         Self {
             slot_id,
-            param2: 0,
+            param2,
             offset,
             length,
         }
@@ -71,7 +79,12 @@ impl Default for GetCertificateResp {
 }
 
 impl GetCertificateResp {
-    pub fn new(slot_id: u8, cert_chain_portion: &[u8], remainder_length: u16) -> SpdmResult<Self> {
+    pub fn new(
+        slot_id: u8,
+        param2: u8,
+        cert_chain_portion: &[u8],
+        remainder_length: u16,
+    ) -> SpdmResult<Self> {
         let portion_length = cert_chain_portion.len() as u16;
         if portion_length > MAX_SPDM_CERT_PORTION_LEN as u16 {
             return Err(SpdmError::InvalidParam);
@@ -80,7 +93,7 @@ impl GetCertificateResp {
         cert_chain[..portion_length as usize].copy_from_slice(cert_chain_portion);
         let common = GetCertificateRespCommon {
             slot_id,
-            param2: 0,
+            param2,
             portion_length,
             remainder_length,
         };
@@ -130,13 +143,19 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
         _ => Err(ctx.generate_error_response(req_payload, ErrorCode::VersionMismatch, 0, None))?,
     }
 
-    let req = GetCertificateReq::decode(req_payload).map_err(|_| {
+    let mut req = GetCertificateReq::decode(req_payload).map_err(|_| {
         ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
     })?;
 
-    // Reserved field should be zero.
-    if req.param2 != 0 {
-        Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
+    // When SlotSizeRequested=1b in the GET_CERTIFICATE request, the Responder shall return
+    // the number of bytes available for certificate chain storage in the RemainderLength field of
+    // the response. When SlotSizeRequested=1b , the Offset and Length fields in the
+    // GET_CERTIFICATE request shall be ignored by the Responder.
+    if connection_version >= SpdmVersion::V13 {
+        if req.param2 & GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED != 0 {
+            req.offset = 0;
+            req.length = 0;
+        }
     }
 
     // Check if the certificate capability is supported.
@@ -185,10 +204,20 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
     // Prepare the response buffer
     ctx.prepare_response_buffer(req_payload)?;
 
+    let mut param2 = 0;
+    // Check if multi-key capability is supported
+    if connection_version >= SpdmVersion::V13 && ctx.local_capabilities.flags.multi_key_cap() != 0 {
+        match slot_id {
+            0 => param2 = CertModel::AliasCertModel as u8,
+            _ => Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?,
+        }
+    }
+
     // Fill the response buffer
     fill_certificate_response(
         ctx,
         slot_id,
+        param2,
         &cert_portion[..],
         remainder_length,
         req_payload,
@@ -233,12 +262,14 @@ fn construct_cert_chain_buffer<S: Syscalls>(
 fn fill_certificate_response<S: Syscalls>(
     ctx: &SpdmContext<S>,
     slot_id: u8,
+    cert_model: u8,
     cert_chain_portion: &[u8],
     remainder_length: u16,
     rsp: &mut MessageBuf,
 ) -> CommandResult<()> {
     // Construct the response
-    let resp = GetCertificateResp::new(slot_id, cert_chain_portion, remainder_length).unwrap();
+    let resp =
+        GetCertificateResp::new(slot_id, cert_model, cert_chain_portion, remainder_length).unwrap();
 
     let payload_len = resp
         .encode(rsp)
@@ -261,7 +292,8 @@ mod tests {
         let remainder_length = 0;
         let slot_id = 0;
 
-        let resp = GetCertificateResp::new(slot_id, &cert_chain_portion, remainder_length).unwrap();
+        let resp =
+            GetCertificateResp::new(slot_id, 0, &cert_chain_portion, remainder_length).unwrap();
         let mut bytes = [0u8; 1024];
         let mut buffer = MessageBuf::new(&mut bytes);
         let encoded_len = resp.encode(&mut buffer).unwrap();
