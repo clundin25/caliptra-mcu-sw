@@ -1,15 +1,11 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::{
-    SpdmCertChainBaseBuffer, SpdmCertChainData, SpdmDigest, SPDM_MAX_CERT_CHAIN_SLOTS,
-    SPDM_MAX_HASH_SIZE,
-};
+use crate::cert_mgr::{SPDM_MAX_CERT_CHAIN_SLOTS, SPDM_MAX_HASH_SIZE};
 use crate::codec::{Codec, CodecError, CodecResult, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::config;
 use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult, SpdmError, SpdmResult};
-use crate::protocol::algorithms::BaseHashAlgoType;
+use crate::protocol::algorithms::{BaseHashAlgoType, Prioritize};
 use crate::protocol::common::SpdmMsgHdr;
 use crate::state::ConnectionState;
 use libtock_platform::Syscalls;
@@ -29,53 +25,43 @@ impl CommonCodec for GetDigestsReq {
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
 #[repr(C)]
 pub struct GetDigestsRespCommon {
-    pub param1: u8,
-    pub slot_mask: u8,
+    pub supported_slot_mask: u8,   // param1: introduced in v13
+    pub provisioned_slot_mask: u8, // param2
 }
 
 impl CommonCodec for GetDigestsRespCommon {
     const DATA_KIND: DataKind = DataKind::Payload;
 }
 
-pub struct GetDigestsResp {
-    pub common: GetDigestsRespCommon,
-    pub digests: [SpdmDigest; SPDM_MAX_CERT_CHAIN_SLOTS],
+#[derive(Debug, Clone)]
+pub struct SpdmDigest {
+    pub data: [u8; SPDM_MAX_HASH_SIZE],
+    pub length: u8,
 }
 
-impl Default for GetDigestsResp {
+impl Default for SpdmDigest {
     fn default() -> Self {
         Self {
-            common: GetDigestsRespCommon::default(),
-            digests: core::array::from_fn(|_| SpdmDigest::default()),
+            data: [0u8; SPDM_MAX_HASH_SIZE],
+            length: 0u8,
         }
     }
 }
-
-impl GetDigestsResp {
-    pub fn new(slot_mask: u8, digests: &[SpdmDigest]) -> Self {
-        let mut resp = Self::default();
-        resp.common.slot_mask = slot_mask;
-        let slot_cnt = slot_mask.count_ones() as usize;
-        for (i, digest) in digests.iter().enumerate().take(slot_cnt) {
-            resp.digests[i] = digest.clone();
-        }
-        resp
+impl AsRef<[u8]> for SpdmDigest {
+    fn as_ref(&self) -> &[u8] {
+        &self.data[..self.length as usize]
     }
 }
 
-impl Codec for GetDigestsResp {
-    fn encode(&self, buffer: &mut MessageBuf) -> CodecResult<usize> {
-        let mut len = self.common.encode(buffer)?;
-        let slot_cnt = self.common.slot_mask.count_ones() as usize;
-        for digest in self.digests.iter().take(slot_cnt) {
-            len += digest.encode(buffer)?;
+impl SpdmDigest {
+    pub fn new(digest: &[u8]) -> Self {
+        let mut data = [0u8; SPDM_MAX_HASH_SIZE];
+        let length = digest.len().min(SPDM_MAX_HASH_SIZE);
+        data[..length].copy_from_slice(&digest[..length]);
+        Self {
+            data,
+            length: length as u8,
         }
-        Ok(len)
-    }
-
-    fn decode(_data: &mut MessageBuf) -> CodecResult<Self> {
-        // Decoding is not required for SPDM responder
-        unimplemented!()
     }
 }
 
@@ -96,6 +82,44 @@ impl Codec for SpdmDigest {
             .map_err(|_| CodecError::WriteError)?;
         buffer.pull_data(hash_len.into())?;
         Ok(hash_len.into())
+    }
+
+    fn decode(_data: &mut MessageBuf) -> CodecResult<Self> {
+        // Decoding is not required for SPDM responder
+        unimplemented!()
+    }
+}
+
+// TODO: Add key_pair_id, cert_info, and key_usage_bit_mask if needed
+pub struct GetDigestsResp<'a> {
+    pub common: GetDigestsRespCommon,
+    pub digests: &'a [SpdmDigest],
+}
+
+impl<'a> GetDigestsResp<'a> {
+    pub fn new(
+        supported_slot_mask: u8,
+        provisioned_slot_mask: u8,
+        digests: &'a [SpdmDigest],
+    ) -> Self {
+        Self {
+            common: GetDigestsRespCommon {
+                supported_slot_mask,
+                provisioned_slot_mask,
+            },
+            digests,
+        }
+    }
+}
+
+impl<'a> Codec for GetDigestsResp<'a> {
+    fn encode(&self, buffer: &mut MessageBuf) -> CodecResult<usize> {
+        let mut len = self.common.encode(buffer)?;
+        let slot_cnt = self.common.provisioned_slot_mask.count_ones() as usize;
+        for digest in self.digests.iter().take(slot_cnt) {
+            len += digest.encode(buffer)?;
+        }
+        Ok(len)
     }
 
     fn decode(_data: &mut MessageBuf) -> CodecResult<Self> {
@@ -137,22 +161,41 @@ pub(crate) fn handle_digests<'a, S: Syscalls>(
 
     // TODO: transcript manager and session support
 
-    let hash_algo = ctx
-        .get_select_hash_algo()
+    let hash_algo = get_select_hash_algo(ctx)
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
-    let slot_mask = config::CERT_CHAIN_SLOT_MASK;
-    let mut digest = SpdmDigest::default();
-
-    // Get the digest of the certificate chain 0
-    get_certificate_chain_digest(ctx, hash_algo, &mut digest)
+    // Get the supported and provisioned slot masks.
+    let (supported_mask, provisioned_mask) = ctx
+        .device_certs_manager
+        .get_cert_chain_slot_mask()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
+
+    let slot_cnt = provisioned_mask.count_ones() as usize;
+    if slot_cnt > SPDM_MAX_CERT_CHAIN_SLOTS {
+        Err(ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
+    }
+
+    let mut digests: [SpdmDigest; SPDM_MAX_CERT_CHAIN_SLOTS] =
+        core::array::from_fn(|_| SpdmDigest::default());
+
+    for (slot_id, digest) in digests.iter_mut().take(slot_cnt).enumerate() {
+        ctx.get_certificate_chain_digest(slot_id as u8, hash_algo, digest)
+            .map_err(|_| {
+                ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)
+            })?;
+    }
 
     // Prepare the response buffer
     ctx.prepare_response_buffer(req_payload)?;
 
     // Fill the response buffer
-    fill_digests_response(ctx, slot_mask, &[digest], req_payload)?;
+    fill_digests_response(
+        ctx,
+        supported_mask,
+        provisioned_mask,
+        &digests[..slot_cnt],
+        req_payload,
+    )?;
 
     if ctx.state.connection_info.state() < ConnectionState::AfterDigest {
         ctx.state
@@ -165,12 +208,13 @@ pub(crate) fn handle_digests<'a, S: Syscalls>(
 
 fn fill_digests_response<S: Syscalls>(
     ctx: &SpdmContext<S>,
-    slot_mask: u8,
+    supported_slot_mask: u8,
+    provisioned_slot_mask: u8,
     digests: &[SpdmDigest],
     rsp: &mut MessageBuf,
 ) -> CommandResult<()> {
     // Construct the response
-    let resp = GetDigestsResp::new(slot_mask, digests);
+    let resp = GetDigestsResp::new(supported_slot_mask, provisioned_slot_mask, digests);
 
     let payload_len = resp
         .encode(rsp)
@@ -183,52 +227,23 @@ fn fill_digests_response<S: Syscalls>(
     Ok(())
 }
 
-fn get_certificate_chain_digest<S: Syscalls>(
-    ctx: &mut SpdmContext<S>,
-    hash_type: BaseHashAlgoType,
-    digest: &mut SpdmDigest,
-) -> SpdmResult<()> {
-    let mut cert_chain_data = SpdmCertChainData::default();
-    let mut root_hash = SpdmDigest::default();
+fn get_select_hash_algo<S: Syscalls>(ctx: &SpdmContext<S>) -> SpdmResult<BaseHashAlgoType> {
+    let peer_algorithms = ctx.state.connection_info.peer_algorithms();
+    let local_algorithms = &ctx.local_algorithms.device_algorithms;
+    let algorithm_priority_table = &ctx.local_algorithms.algorithm_priority_table;
 
-    let root_cert_len = ctx
-        .device_certs_manager
-        .get_certificate_chain_data(&mut cert_chain_data)?;
+    let base_hash_sel = local_algorithms.base_hash_algo.prioritize(
+        &peer_algorithms.base_hash_algo,
+        algorithm_priority_table.base_hash_algo,
+    );
 
-    // Get the hash of root_cert
-    ctx.hash_engine
-        .hash_all(
-            &cert_chain_data.as_ref()[..root_cert_len],
-            hash_type,
-            &mut root_hash,
-        )
-        .map_err(SpdmError::HashEngine)?;
+    // Ensure BaseHashSel has exactly one bit set
+    if base_hash_sel.0.count_ones() != 1 {
+        return Err(SpdmError::InvalidParam);
+    }
 
-    // Construct the cert chain base buffer
-    let cert_chain_base_buf =
-        SpdmCertChainBaseBuffer::new(cert_chain_data.length as usize, root_hash.as_ref())?;
-
-    // Start the hash operation
-    ctx.hash_engine
-        .start(hash_type)
-        .map_err(SpdmError::HashEngine)?;
-
-    // Hash the cert chain base
-    ctx.hash_engine
-        .update(cert_chain_base_buf.as_ref())
-        .map_err(SpdmError::HashEngine)?;
-
-    // Hash the cert chain data
-    ctx.hash_engine
-        .update(cert_chain_data.as_ref())
-        .map_err(SpdmError::HashEngine)?;
-
-    // Finalize the hash operation
-    ctx.hash_engine
-        .finish(digest)
-        .map_err(SpdmError::HashEngine)?;
-
-    Ok(())
+    BaseHashAlgoType::try_from(base_hash_sel.0.trailing_zeros() as u8)
+        .map_err(|_| SpdmError::InvalidParam)
 }
 
 #[cfg(test)]
@@ -242,7 +257,7 @@ mod test {
         let digest2 = SpdmDigest::new(&[0xBB; SPDM_MAX_HASH_SIZE]);
         let digests = [digest1, digest2];
 
-        let resp = GetDigestsResp::new(slot_mask, &digests);
+        let resp = GetDigestsResp::new(slot_mask, slot_mask, &digests);
         let mut bytes = [0u8; 1024];
         let mut buffer = MessageBuf::new(&mut bytes);
         let encode_result = resp.encode(&mut buffer);
@@ -257,7 +272,7 @@ mod test {
         assert_eq!(encoded_len, expected_len);
 
         // Verify the contents in the message buffer
-        assert_eq!(buffer.total_message()[0], 0); // param1
+        assert_eq!(buffer.total_message()[0], slot_mask); // param1
         assert_eq!(buffer.total_message()[1], slot_mask); // slot_mask
         assert_eq!(
             buffer.total_message()[2..2 + SPDM_MAX_HASH_SIZE],

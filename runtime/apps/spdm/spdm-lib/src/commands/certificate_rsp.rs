@@ -1,7 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::{SpdmCertChainBuffer, SpdmCertChainData, SpdmDigest};
+use crate::cert_mgr::{SpdmCertChainBuffer, SpdmCertChainData};
 use crate::codec::{Codec, CodecError, CodecResult, CommonCodec, DataKind, MessageBuf};
+use crate::commands::digests_rsp::SpdmDigest;
 use crate::commands::error_rsp::ErrorCode;
 use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult, SpdmError, SpdmResult};
@@ -175,7 +176,7 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
         .get_select_hash_algo()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
-    let cert_chain_buffer = construct_cert_chain_buffer(ctx, hash_type)
+    let cert_chain_buffer = construct_cert_chain_buffer(ctx, hash_type, slot_id)
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
     let mut length = req.length;
@@ -236,12 +237,13 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
 fn construct_cert_chain_buffer<S: Syscalls>(
     ctx: &mut SpdmContext<S>,
     hash_type: BaseHashAlgoType,
+    slot_id: u8,
 ) -> SpdmResult<SpdmCertChainBuffer> {
     let mut cert_chain_data = SpdmCertChainData::default();
     let mut root_hash = SpdmDigest::default();
     let root_cert_len = ctx
         .device_certs_manager
-        .get_certificate_chain_data(&mut cert_chain_data)?;
+        .construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
 
     // Get the hash of root_cert
     ctx.hash_engine
