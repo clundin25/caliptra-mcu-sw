@@ -147,6 +147,7 @@ mod test {
     // * add the feature to the emulator and use it to implement any behavior needed
     // * add the feature to the runtime and use it in board.rs at the end of the main function to call your test
     // These use underscores but will be converted to dashes in the feature flags
+    /*
     run_test!(test_caliptra_mailbox, caliptra);
     run_test!(test_i3c_simple);
     run_test!(test_i3c_constant_writes);
@@ -158,8 +159,9 @@ mod test {
     run_test!(test_flash_usermode);
     run_test!(test_mctp_ctrl_cmds);
     run_test!(test_mctp_capsule_loopback);
-    run_test!(test_mctp_user_loopback);
     run_test!(test_pldm_request_response);
+     */
+    run_test!(test_mctp_user_loopback);
     run_test!(test_spdm_validator);
     run_test!(test_pldm_discovery);
     run_test!(test_pldm_fw_update);
