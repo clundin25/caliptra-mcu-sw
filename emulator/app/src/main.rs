@@ -19,6 +19,7 @@ mod gdb;
 mod i3c_socket;
 mod mctp_transport;
 mod tests;
+mod thread_manager;
 
 use crate::i3c_socket::start_i3c_socket;
 use caliptra_emu_cpu::{Cpu as CaliptraMainCpu, StepAction as CaliptraMainStepAction};
@@ -694,6 +695,9 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             );
         }
     }
+
+    // Wait for all threads to finish
+    crate::thread_manager::wait_for_threads();
 
     Ok(uart_output.map(|o| o.borrow().clone()).unwrap_or_default())
 }

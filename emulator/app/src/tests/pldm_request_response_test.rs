@@ -92,7 +92,7 @@ impl PldmRequestResponseTest {
     }
 
     pub fn run(socket: MctpPldmSocket, running: Arc<AtomicBool>) {
-        std::thread::spawn(move || {
+        crate::thread_manager::spawn(move || {
             print!("Emulator: Running PLDM Loopback Test: ",);
             let mut test = PldmRequestResponseTest::new(socket, running);
             if test.test_send_receive().is_err() {

@@ -160,7 +160,7 @@ impl PldmFwUpdateTest {
     }
 
     pub fn run(socket: MctpPldmSocket, running: Arc<AtomicBool>) {
-        std::thread::spawn(move || {
+        crate::thread_manager::spawn(move || {
             print!("Emulator: Running PLDM Loopback Test: ",);
             let mut test = PldmFwUpdateTest::new(socket, running);
             if test.test_fw_update().is_err() {

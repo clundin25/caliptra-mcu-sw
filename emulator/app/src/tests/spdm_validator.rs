@@ -342,7 +342,7 @@ impl TestTrait for Test {
 }
 
 pub fn execute_spdm_validator(running: Arc<AtomicBool>) {
-    std::thread::spawn(move || match start_spdm_device_validator() {
+    crate::thread_manager::spawn(move || match start_spdm_device_validator() {
         Ok(mut child) => {
             while running.load(Ordering::Relaxed) {
                 match child.try_wait() {

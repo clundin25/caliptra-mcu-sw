@@ -61,7 +61,7 @@ pub(crate) fn start_i3c_socket(
     let (bus_command_tx, bus_command_rx) = mpsc::channel::<I3cBusCommand>();
     let (bus_response_tx, bus_response_rx) = mpsc::channel::<I3cBusResponse>();
     let running_clone = running.clone();
-    std::thread::spawn(move || {
+    crate::thread_manager::spawn(move || {
         handle_i3c_socket_loop(running_clone, listener, bus_response_rx, bus_command_tx)
     });
 
@@ -183,11 +183,11 @@ pub(crate) fn run_tests(
     let stream = TcpStream::connect(addr).unwrap();
     let running_clone_stop = running.clone();
     // cancel the test after 30 seconds
-    std::thread::spawn(move || {
+    crate::thread_manager::spawn(move || {
         std::thread::sleep(Duration::from_secs(30));
         running_clone_stop.store(false, Ordering::Relaxed);
     });
-    std::thread::spawn(move || {
+    crate::thread_manager::spawn(move || {
         let mut test_runner = MctpTestRunner::new(stream, target_addr.into(), running_clone, tests);
         test_runner.run_tests();
     });
