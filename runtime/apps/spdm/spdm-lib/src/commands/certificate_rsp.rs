@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::{SpdmCertChainBuffer, SpdmCertChainData};
+use crate::cert_mgr::{
+    CertChainSlotState, SpdmCertChainBuffer, SpdmCertChainData, SPDM_MAX_CERT_CHAIN_SLOTS,
+};
 use crate::codec::{Codec, CodecError, CodecResult, CommonCodec, DataKind, MessageBuf};
 use crate::commands::digests_rsp::SpdmDigest;
 use crate::commands::error_rsp::ErrorCode;
@@ -13,15 +15,8 @@ use crate::state::ConnectionState;
 use libtock_platform::Syscalls;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-const MAX_SPDM_CERT_PORTION_LEN: usize = 512;
-const GET_CERTIFICATE_SLOT_ID_MASK: u8 = 0xF;
+const MAX_SPDM_CERT_PORTION_LEN: usize = 512; // Arbitrary limit and adjusted as needed.
 const GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED: u8 = 0x01;
-
-pub enum CertModel {
-    DeviceCertModel = 0x01,
-    AliasCertModel = 0x02,
-    GenericCertModel = 0x03,
-}
 
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(packed)]
@@ -144,32 +139,28 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
         _ => Err(ctx.generate_error_response(req_payload, ErrorCode::VersionMismatch, 0, None))?,
     }
 
-    let mut req = GetCertificateReq::decode(req_payload).map_err(|_| {
-        ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
-    })?;
-
-    // When SlotSizeRequested=1b in the GET_CERTIFICATE request, the Responder shall return
-    // the number of bytes available for certificate chain storage in the RemainderLength field of
-    // the response. When SlotSizeRequested=1b , the Offset and Length fields in the
-    // GET_CERTIFICATE request shall be ignored by the Responder.
-    if connection_version >= SpdmVersion::V13 {
-        if req.param2 & GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED != 0 {
-            req.offset = 0;
-            req.length = 0;
-        }
-    }
-
     // Check if the certificate capability is supported.
     if ctx.local_capabilities.flags.cert_cap() == 0 {
         Err(ctx.generate_error_response(req_payload, ErrorCode::UnsupportedRequest, 0, None))?;
     }
 
-    // TODO: transcript manager and session support
+    let mut req = GetCertificateReq::decode(req_payload).map_err(|_| {
+        ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
+    })?;
 
     let slot_id = req.slot_id;
-    // Only slot_id 0 is supported for now.
-    if slot_id & GET_CERTIFICATE_SLOT_ID_MASK != 0 {
-        Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
+    if slot_id >= SPDM_MAX_CERT_CHAIN_SLOTS as u8 {
+        return Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None));
+    }
+
+    // Check if the slot is provisioned. Otherwise, return an InvalidRequest error.
+    let slot_mask = 1 << slot_id;
+    let (_, provisioned_slot_mask) = ctx
+        .device_certs_manager
+        .get_cert_chain_slot_mask()
+        .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
+    if provisioned_slot_mask & slot_mask == 0 {
+        return Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None));
     }
 
     let hash_type = ctx
@@ -179,8 +170,17 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
     let cert_chain_buffer = construct_cert_chain_buffer(ctx, hash_type, slot_id)
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
+    // When SlotSizeRequested=1b in the GET_CERTIFICATE request, the Responder shall return
+    // the number of bytes available for certificate chain storage in the RemainderLength field of the response.
+    if connection_version >= SpdmVersion::V13
+        && req.param2 & GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED != 0
+    {
+        req.offset = 0;
+        req.length = 0;
+    }
+
     let mut length = req.length;
-    if length > MAX_SPDM_CERT_PORTION_LEN as u16 {
+    if length > MAX_SPDM_CERT_PORTION_LEN as u16 && ctx.local_capabilities.flags.chunk_cap() == 0 {
         length = MAX_SPDM_CERT_PORTION_LEN as u16;
     }
 
@@ -205,12 +205,18 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
     // Prepare the response buffer
     ctx.prepare_response_buffer(req_payload)?;
 
+    // Set the param2 field if the connection version is V13 or higher and multi-key capability is supported
     let mut param2 = 0;
-    // Check if multi-key capability is supported
     if connection_version >= SpdmVersion::V13 && ctx.local_capabilities.flags.multi_key_cap() != 0 {
-        match slot_id {
-            0 => param2 = CertModel::AliasCertModel as u8,
-            _ => Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?,
+        let mut cert_chain_slot_state = CertChainSlotState::default();
+        ctx.device_certs_manager
+            .get_cert_chain_slot_state(slot_id, &mut cert_chain_slot_state)
+            .map_err(|_| {
+                ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
+            })?;
+
+        if let Some(cert_model) = cert_chain_slot_state.cert_model {
+            param2 = cert_model as u8;
         }
     }
 
@@ -219,10 +225,12 @@ pub(crate) fn handle_certificates<'a, S: Syscalls>(
         ctx,
         slot_id,
         param2,
-        &cert_portion[..],
+        &cert_portion[..portion_length as usize],
         remainder_length,
         req_payload,
     )?;
+
+    // TODO: transcript manager and session support
 
     // Set the connection state to AfterCertificate
     if ctx.state.connection_info.state() < ConnectionState::AfterCertificate {
@@ -243,7 +251,8 @@ fn construct_cert_chain_buffer<S: Syscalls>(
     let mut root_hash = SpdmDigest::default();
     let root_cert_len = ctx
         .device_certs_manager
-        .construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
+        .construct_cert_chain_data(slot_id, &mut cert_chain_data)
+        .map_err(SpdmError::CertMgr)?;
 
     // Get the hash of root_cert
     ctx.hash_engine
@@ -264,15 +273,14 @@ fn construct_cert_chain_buffer<S: Syscalls>(
 fn fill_certificate_response<S: Syscalls>(
     ctx: &SpdmContext<S>,
     slot_id: u8,
-    cert_model: u8,
+    param2: u8,
     cert_chain_portion: &[u8],
     remainder_length: u16,
     rsp: &mut MessageBuf,
 ) -> CommandResult<()> {
     // Construct the response
-    let resp =
-        GetCertificateResp::new(slot_id, cert_model, cert_chain_portion, remainder_length).unwrap();
-
+    let resp = GetCertificateResp::new(slot_id, param2, cert_chain_portion, remainder_length)
+        .map_err(|_| (false, CommandError::BufferTooSmall))?;
     let payload_len = resp
         .encode(rsp)
         .map_err(|_| ctx.generate_error_response(rsp, ErrorCode::InvalidRequest, 0, None))?;
