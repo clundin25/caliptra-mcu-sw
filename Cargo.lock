@@ -2409,6 +2409,7 @@ dependencies = [
  "embedded-alloc",
  "libapi-caliptra",
  "libsyscall-caliptra",
+ "libtock_console",
  "libtock_platform",
  "libtock_runtime",
  "libtock_unittest",

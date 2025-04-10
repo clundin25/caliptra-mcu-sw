@@ -336,4 +336,16 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
             .set_fd_t1_update_ts(self.ops.now().await)
             .await;
     }
+
+    pub async fn fd_progress(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
+        // initiator mode request
+
+        Ok(0)
+    }
+
+    pub async fn handle_response(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
+        // responder mode request
+
+        Ok(0)
+    }
 }

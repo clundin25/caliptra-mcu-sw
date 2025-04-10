@@ -6,10 +6,17 @@ use crate::firmware_device::fd_context::FirmwareDeviceContext;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 use libsyscall_caliptra::mctp::driver_num;
+
 use libtock_platform::Syscalls;
 use libtockasync::{self, TockExecutor};
+
+// Debug usage
+use libtock_console::ConsoleWriter;
+use libtock_console::Console;
+use core::fmt::Write;
 
 pub const MAX_MCTP_PLDM_MSG_SIZE: usize = 1024;
 
@@ -36,7 +43,7 @@ pub enum PldmServiceError {
 /// * `running` - An atomic boolean indicating whether the PLDM service is currently running.
 /// * `initiator_signal` - A signal used to activate the PLDM initiator task.
 pub struct PldmService<S: Syscalls> {
-    cmd_interface: CmdInterface<'static, S>,
+    cmd_interface: Mutex<CriticalSectionRawMutex, CmdInterface<'static, S>>,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 }
@@ -45,13 +52,17 @@ pub struct PldmService<S: Syscalls> {
 // It will be extended and refactored to support additional PLDM commands in both responder and requester modes.
 impl<S: Syscalls> PldmService<S> {
     pub fn init() -> Self {
+        // Debug usage
+        let cw = Console::<S>::writer();
+
         let cmd_interface = CmdInterface::new(
             driver_num::MCTP_PLDM,
             config::PLDM_PROTOCOL_CAPABILITIES.get(),
             FirmwareDeviceContext::new(),
+            cw,  // Debug usage
         );
         Self {
-            cmd_interface,
+            cmd_interface: Mutex::new(cmd_interface),
             running: {
                 static RUNNING: AtomicBool = AtomicBool::new(false);
                 &RUNNING
@@ -73,8 +84,12 @@ impl<S: Syscalls> PldmService<S> {
         let mut responder_executor = TockExecutor::new();
         let responder_executor: &'static mut TockExecutor =
             unsafe { core::mem::transmute(&mut responder_executor) };
-        let cmd_interface: &'static mut CmdInterface<'static, libtock_runtime::TockSyscalls> =
-            unsafe { core::mem::transmute(&mut self.cmd_interface) };
+
+        let cmd_interface: &'static Mutex<
+            CriticalSectionRawMutex,
+            CmdInterface<'static, libtock_runtime::TockSyscalls>,
+        > = unsafe { core::mem::transmute(&self.cmd_interface) };
+
         responder_executor
             .spawner()
             .spawn(pldm_responder_task(
@@ -89,7 +104,11 @@ impl<S: Syscalls> PldmService<S> {
             unsafe { core::mem::transmute(&mut initiator_executor) };
         initiator_executor
             .spawner()
-            .spawn(pldm_initiator_task(self.running, self.initiator_signal))
+            .spawn(pldm_initiator_task(
+                cmd_interface,
+                self.running,
+                self.initiator_signal,
+            ))
             .unwrap();
 
         loop {
@@ -103,66 +122,70 @@ impl<S: Syscalls> PldmService<S> {
     }
 }
 
-#[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
 pub async fn pldm_initiator_task(
+    cmd_interface: &'static Mutex<
+        CriticalSectionRawMutex,
+        CmdInterface<'static, libtock_runtime::TockSyscalls>,
+    >,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
-    pldm_initiator::<libtock_runtime::TockSyscalls>(running, initiator_signal).await;
+    pldm_initiator::<libtock_runtime::TockSyscalls>(cmd_interface, running, initiator_signal).await;
 }
 
-#[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
 pub async fn pldm_responder_task(
-    cmd_interface: &'static mut CmdInterface<'static, libtock_runtime::TockSyscalls>,
+    cmd_interface: &'static Mutex<
+        CriticalSectionRawMutex,
+        CmdInterface<'static, libtock_runtime::TockSyscalls>,
+    >,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
     pldm_responder::<libtock_runtime::TockSyscalls>(cmd_interface, running, initiator_signal).await;
 }
 
-#[cfg(not(target_arch = "riscv32"))]
-#[embassy_executor::task]
-async fn pldm_initiator_task(
-    running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
-) {
-    pldm_initiator::<libtock_unittest::fake::Syscalls>(running, initiator_signal).await;
-}
-
-#[cfg(not(target_arch = "riscv32"))]
-#[embassy_executor::task]
-async fn pldm_responder_task(
-    cmd_interface: &'static mut CmdInterface<'static, libtock_runtime::TockSyscalls>,
-    running: &'static AtomicBool,
-    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
-) {
-    pldm_responder::<libtock_unittest::fake::Syscalls>(cmd_interface, running, initiator_signal)
-        .await;
-}
-
 pub async fn pldm_initiator<S: Syscalls>(
+    cmd_interface: &'static Mutex<CriticalSectionRawMutex, CmdInterface<'static, S>>,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
     // Wait for signal from responder before starting the loop
     initiator_signal.wait().await;
 
+    // Print out message that the initiator task has started
+    let mut console_writer = Console::<S>::writer();
+    writeln!(console_writer, "[xs debug]pldm_dameon: Initiator task started").unwrap();
+
     while running.load(Ordering::SeqCst) {
+        writeln!(console_writer, "[xs debug]Initiator task running").unwrap();
         // TODO: Implement the PLDM initiator logic here
+        let _cmd_interface_guard = cmd_interface.lock().await; // Lock the mutex before accessing cmd_interface
+
     }
 }
 
 pub async fn pldm_responder<S: Syscalls>(
-    cmd_interface: &'static mut CmdInterface<'static, libtock_runtime::TockSyscalls>,
+    cmd_interface: &'static Mutex<CriticalSectionRawMutex, CmdInterface<'static, S>>,
     running: &'static AtomicBool,
-    _initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
+    initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 ) {
     let mut msg_buffer = [0; MAX_MCTP_PLDM_MSG_SIZE];
+
+    // For test: signal the initiator task to start
+    initiator_signal.signal(()); // Correctly signal with unit type
+
+    // Print out message that the initiator task has started
+    let mut console_writer = Console::<S>::writer();
+    writeln!(console_writer, "[xs debug]pldm_dameon: responder task started").unwrap();
+
     while running.load(Ordering::SeqCst) {
+        // Lock the mutex before accessing cmd_interface
+        let mut cmd_interface_guard = cmd_interface.lock().await;
+
         // TODO: add a timeout to avoid blocking indefinitely
-        let _ = cmd_interface.handle_msg(&mut msg_buffer).await;
+        let _ = cmd_interface_guard.handle_msg(&mut msg_buffer).await;
 
         // TODO: signal the initiator task to start
         // initiator_signal.signal(initiator_signal).unwrap();
