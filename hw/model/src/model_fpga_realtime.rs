@@ -1197,15 +1197,17 @@ mod test {
         );
 
         // Recv
-        println!("Sending a read request to the target");
-        cmd.target_addr = I3C_TARGET_ADDR;
-        cmd.no_repeated_start = 1;
-        cmd.tid = 0;
-        cmd.pec = 0;
-        cmd.cmd_type = 1;
-        i3c_controller
-            .master_recv(&mut cmd, I3C_DATALEN)
-            .expect("Failed to start receive from target");
+        for _ in 0..repeat {
+            println!("Sending a read request to the target");
+            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.no_repeated_start = 1;
+            cmd.tid = 0;
+            cmd.pec = 0;
+            cmd.cmd_type = 1;
+            i3c_controller
+                .master_recv(&mut cmd, I3C_DATALEN)
+                .expect("Failed to start receive from target");
+        }
 
         println!(
             "I3C target status {:x}, interrupt status {:x}",
@@ -1227,6 +1229,12 @@ mod test {
             .expect("Failed to finish receiving data from target");
 
         assert_eq!(tx_data, *rx_data);
+
+        println!(
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
+            i3c_target.tti_interrupt_status.get()
+        );
     }
 
     #[test]
