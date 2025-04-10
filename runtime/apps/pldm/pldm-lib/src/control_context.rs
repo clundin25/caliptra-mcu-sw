@@ -165,7 +165,7 @@ pub trait CtrlCmdResponder {
     fn get_pldm_version_rsp(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError>;
 }
 
-impl<'a> CtrlCmdResponder for ControlContext<'a> {
+impl CtrlCmdResponder for ControlContext<'_> {
     fn get_tid_rsp(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
         let req = GetTidRequest::decode(payload).map_err(MsgHandlerError::Codec)?;
         let resp = GetTidResponse::new(
