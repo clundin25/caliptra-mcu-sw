@@ -152,7 +152,7 @@ impl PldmFwUpdateTest {
         // Device will not send the RequestUpdate response so UA will stop at RequestUpdateSent state.
         // Modify this as more commands are supported by the device.
         // Note that the UA state machine will not progress if it receives an unexpected response from the device.
-        let res = self.wait_for_state_transition(update_sm::States::Download);
+        let res = self.wait_for_state_transition(update_sm::States::Verify);
 
         self.daemon.as_mut().unwrap().stop();
 

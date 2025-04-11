@@ -132,9 +132,29 @@ impl FdInternal {
         };
     }
 
+    pub async fn get_fd_req(&self) -> FdReq {
+        let inner = self.inner.lock().await;
+        inner.req.clone()
+    }
+
     pub async fn set_fd_t1_update_ts(&self, timestamp: PldmFdTime) {
         let mut inner = self.inner.lock().await;
         inner.fd_t1_update_ts = timestamp;
+    }
+
+    pub async fn get_fd_t1_update_ts(&self) -> PldmFdTime {
+        let inner = self.inner.lock().await;
+        inner.fd_t1_update_ts
+    }
+
+    pub async fn set_fd_t1_timeout(&self, timeout: PldmFdTime) {
+        let mut inner = self.inner.lock().await;
+        inner.fd_t1_timeout = timeout;
+    }
+
+    pub async fn get_fd_t1_timeout(&self) -> PldmFdTime {
+        let inner = self.inner.lock().await;
+        inner.fd_t1_timeout
     }
 }
 
@@ -183,23 +203,23 @@ pub enum FdReqState {
 #[derive(Debug, Clone)]
 pub struct FdReq {
     // The current state of the request.
-    state: FdReqState,
+    pub state: FdReqState,
 
     // Indicates if the request is complete and ready to transition to the next state.
     // This is relevant for TransferComplete, VerifyComplete, and ApplyComplete requests.
-    complete: bool,
+    pub complete: bool,
 
     // The result of the request, only valid when `complete` is set.
-    result: Option<u8>,
+    pub result: Option<u8>,
 
     // The instance ID of the request, only valid in the `SENT` state.
-    instance_id: Option<u8>,
+    pub instance_id: Option<u8>,
 
     // The command associated with the request, only valid in the `SENT` state.
-    command: Option<u8>,
+    pub command: Option<u8>,
 
     // The time when the request was sent, only valid in the `SENT` state.
-    sent_time: Option<PldmFdTime>,
+    pub sent_time: Option<PldmFdTime>,
 }
 
 impl Default for FdReq {

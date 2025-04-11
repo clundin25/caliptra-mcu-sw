@@ -21,13 +21,23 @@ use pldm_common::message::firmware_update::request_update::{
 use pldm_common::message::firmware_update::update_component::{
     UpdateComponentRequest, UpdateComponentResponse,
 };
-use pldm_common::protocol::base::{PldmBaseCompletionCode, TransferRespFlag};
+
+use pldm_common::message::firmware_update::request_fw_data::{
+    RequestFirmwareDataRequest, RequestFirmwareDataResponse,
+};
+
+use pldm_common::protocol::base::{PldmBaseCompletionCode, PldmMsgType, TransferRespFlag};
 use pldm_common::protocol::firmware_update::{
     ComponentCompatibilityResponse, ComponentCompatibilityResponseCode, ComponentResponse,
     ComponentResponseCode, Descriptor, FirmwareDeviceState, FwUpdateCompletionCode,
     PldmFirmwareString, UpdateOptionFlags, MAX_DESCRIPTORS_COUNT, PLDM_FWUP_BASELINE_TRANSFER_SIZE,
 };
 use pldm_common::util::fw_component::FirmwareComponent;
+
+// Debug usage
+use core::fmt::Write;
+use libtock_console::Console;
+use libtock_console::ConsoleWriter;
 
 pub struct FirmwareDeviceContext<S: Syscalls> {
     ops: FdOpsObject<S>,
@@ -338,14 +348,72 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
     }
 
     pub async fn fd_progress(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
-        // initiator mode request
+        // Get fd state
+        let fd_state = self.internal.get_fd_state().await;
+
+        let ret = match fd_state {
+            FirmwareDeviceState::Download => self.fd_progress_download(payload).await,
+            FirmwareDeviceState::Verify => self.pldm_fd_progress_verify(payload).await,
+            FirmwareDeviceState::Apply => self.pldm_fd_progress_apply(payload).await,
+            _ => {
+                //writeln!(Console::<S>::writer(), "[xs debug]fd_progress: Invalid state").unwrap();
+                return Err(MsgHandlerError::FdInitiatorModeError);
+            }
+        };
+
+        // Cancel update if expected UA message isn't received within timeout
+        let ua_timeout_check = match fd_state {
+            FirmwareDeviceState::Download
+            | FirmwareDeviceState::Verify
+            | FirmwareDeviceState::Apply => {
+                self.internal.get_fd_req().await.state == FdReqState::Sent
+            }
+            FirmwareDeviceState::Idle => false,
+            _ => true,
+        };
+
+        if ua_timeout_check
+            && self.ops.now().await - self.internal.get_fd_t1_update_ts().await
+                > self.internal.get_fd_t1_timeout().await
+        {
+            //TODO: Implement the cancel component and idle timeout logic
+
+            // pldm_fd_maybe_cancel_component(fd);
+            // pldm_fd_idle_timeout(fd);
+            return Ok(0);
+        }
+
+        ret
+    }
+
+    pub async fn handle_response(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
+        // responder mode request
 
         Ok(0)
     }
 
-    pub async fn handle_response(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
-        // responder mode request
+    async fn fd_progress_download(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
+        let mut cw = Console::<S>::writer(); // Debug usage
+        writeln!(cw, "[xs debug]fd_progress_download start").unwrap();
+        let instance_id = 1;
+        let offset = 0;
+        let length = 32;
+        let request_fw_data_req =
+            RequestFirmwareDataRequest::new(instance_id, PldmMsgType::Request, offset, length);
 
+        // Encode the request into payload
+        let msg_len = request_fw_data_req
+            .encode(payload)
+            .map_err(MsgHandlerError::Codec)?;
+
+        Ok(msg_len)
+    }
+
+    async fn pldm_fd_progress_verify(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
+        Ok(0)
+    }
+
+    async fn pldm_fd_progress_apply(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
         Ok(0)
     }
 }

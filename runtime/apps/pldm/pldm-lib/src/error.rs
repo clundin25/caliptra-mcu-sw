@@ -13,5 +13,6 @@ pub enum MsgHandlerError {
     PldmCommon(PldmError),
     Util(UtilError),
     FdOps(FdOpsError),
+    FdInitiatorModeError,
     NotReady,
 }

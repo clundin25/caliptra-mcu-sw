@@ -10,3 +10,5 @@ pub mod daemon;
 pub mod error;
 pub mod firmware_device;
 pub mod transport;
+
+pub mod alarm;
