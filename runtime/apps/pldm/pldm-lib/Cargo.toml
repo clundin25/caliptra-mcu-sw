@@ -17,6 +17,11 @@ embassy-executor.workspace = true
 embassy-sync.workspace = true
 pldm-common.workspace = true
 
+libtock_alarm.workspace = true
+
+#TODO: remove when checking in
+libtock_console.workspace = true
+
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
 libtock_unittest.workspace = true
 

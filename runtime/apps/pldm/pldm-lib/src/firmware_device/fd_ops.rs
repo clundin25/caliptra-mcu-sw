@@ -7,11 +7,13 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use libapi_caliptra::mailbox::Mailbox;
 use libtock_platform::Syscalls;
+use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_common::{
     message::firmware_update::get_fw_params::FirmwareParameters,
     protocol::firmware_update::{
         ComponentResponseCode, Descriptor, PldmFdTime, PLDM_FWUP_BASELINE_TRANSFER_SIZE,
+        PLDM_FWUP_MAX_PADDING_SIZE,
     },
 };
 
@@ -21,6 +23,7 @@ pub enum FdOpsError {
     FirmwareParametersError,
     TransferSizeError,
     ComponentError,
+    FwDownloadError,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +138,25 @@ pub trait FdOps {
         op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError>;
 
+    /// Handles firmware data downloading operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The offset in bytes where the firmware data should be written or processed.
+    /// * `data` - A slice of bytes representing the firmware data to be handled.
+    /// * `component` - A reference to the `FirmwareComponent` associated with the firmware data.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<TransferResult, FdOpsError>` - On success, returns a `TransferResult` indicating the outcome of the operation.
+    ///   On failure, returns an `FdOpsError`.
+    async fn download_fw_data(
+        &self,
+        offset: usize,
+        data: &[u8],
+        component: &FirmwareComponent,
+    ) -> Result<TransferResult, FdOpsError>;
+
     /// Retrieves the current timestamp in milliseconds.
     ///
     /// # Returns
@@ -213,11 +235,31 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         todo!()
     }
 
+    async fn download_fw_data(
+        &self,
+        offset: usize,
+        data: &[u8],
+        component: &FirmwareComponent,
+    ) -> Result<TransferResult, FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            if offset + data.len()
+                > (component.comp_image_size.unwrap() as usize
+                    + PLDM_FWUP_MAX_PADDING_SIZE as usize)
+            {
+                return Err(FdOpsError::FwDownloadError);
+            }
+            return Ok(TransferResult::TransferSuccess);
+        }
+
+        // TODO: Implement the actual firmware data handling logic
+        todo!()
+    }
+
     async fn now(&self) -> PldmFdTime {
         let _guard = self.inner.lock().await;
         if cfg!(feature = "pldm-lib-use-static-config") {
-            let current_time = crate::config::get_test_fw_update_timestamp();
-            crate::config::update_test_fw_update_timestamp();
+            let current_time = crate::timer::AsyncAlarm::<S>::get_milliseconds().unwrap();
             return current_time;
         }
 

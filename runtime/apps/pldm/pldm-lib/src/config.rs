@@ -17,6 +17,7 @@ pub const FD_FW_COMPONENTS_COUNT: usize = 1;
 pub const FD_MAX_XFER_SIZE: usize = 256; // Arbitrary limit and change as needed.
 pub const DEFAULT_FD_T1_TIMEOUT: PldmFdTime = 120000; // FD_T1 update mode idle timeout, range is [60s, 120s].
 pub const DEFAULT_FD_T2_RETRY_TIME: PldmFdTime = 5000; // FD_T2 retry request for firmware data, range is [1s, 5s].
+pub const INSTANCE_ID_COUNT: u8 = 32;
 
 pub static PLDM_PROTOCOL_CAPABILITIES: LazyLock<
     [ProtocolCapability<'static>; PLDM_PROTOCOL_CAP_COUNT],
@@ -91,16 +92,3 @@ pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
         &[component_parameter_entry],
     )
 });
-
-pub static TEST_FW_UPDATE_TIMESTAMP: AtomicU32 = AtomicU32::new(0);
-
-// Function to increment the global firmware update timestamp by 1000 milliseconds for testing purposes.
-pub fn update_test_fw_update_timestamp() {
-    let mut current_timestamp = TEST_FW_UPDATE_TIMESTAMP.load(Ordering::SeqCst);
-    current_timestamp = current_timestamp.wrapping_add(1000);
-    TEST_FW_UPDATE_TIMESTAMP.store(current_timestamp, Ordering::SeqCst);
-}
-
-pub fn get_test_fw_update_timestamp() -> u64 {
-    TEST_FW_UPDATE_TIMESTAMP.load(Ordering::SeqCst) as u64
-}

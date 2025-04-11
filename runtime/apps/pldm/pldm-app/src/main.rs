@@ -6,8 +6,11 @@
 #![allow(static_mut_refs)]
 
 use core::fmt::Write;
+use libtock::alarm::Milliseconds;
 use libtock_console::Console;
 use libtock_platform::Syscalls;
+use pldm_lib::timer::AsyncAlarm;
+
 #[allow(unused)]
 use pldm_lib::daemon::PldmService;
 
@@ -46,6 +49,23 @@ async fn start() {
 pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "PLDM_APP: Hello PLDM async world!").unwrap();
+
+    // Print out alarm
+    writeln!(
+        console_writer,
+        "PLDM_APP: Alarm: {:?}",
+        AsyncAlarm::<S>::exists()
+    )
+    .unwrap();
+    writeln!(
+        console_writer,
+        "PLDM_APP: Alarm frequency: {:?}",
+        AsyncAlarm::<S>::get_frequency()
+    )
+    .unwrap();
+
+    // sleep for 1 second
+    AsyncAlarm::<S>::sleep(Milliseconds(1000)).await;
 
     #[cfg(any(
         feature = "test-pldm-discovery",
