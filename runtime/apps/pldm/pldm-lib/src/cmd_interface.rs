@@ -15,6 +15,10 @@ use pldm_common::util::mctp_transport::PLDM_MSG_OFFSET;
 
 pub type PldmCompletionErrorCode = u8;
 
+// Debug usage
+use core::fmt::Write;
+use libtock_console::Console;
+
 // Helper function to write a failure response message into payload
 pub(crate) fn generate_failure_response(
     payload: &mut [u8],
@@ -29,7 +33,6 @@ pub(crate) fn generate_failure_response(
 }
 
 pub struct CmdInterface<'a, S: Syscalls> {
-    transport: MctpTransport<S>,
     ctrl_ctx: ControlContext<'a>,
     fd_ctx: FirmwareDeviceContext<S>,
     busy: AtomicBool,
@@ -37,23 +40,25 @@ pub struct CmdInterface<'a, S: Syscalls> {
 
 impl<'a, S: Syscalls> CmdInterface<'a, S> {
     pub fn new(
-        driver_num: u32,
         protocol_capabilities: &'a [ProtocolCapability],
         fd_ctx: FirmwareDeviceContext<S>,
     ) -> Self {
-        let transport = MctpTransport::new(driver_num);
         let ctrl_ctx = ControlContext::new(protocol_capabilities);
         Self {
-            transport,
+            //transport,
             ctrl_ctx,
             fd_ctx,
             busy: AtomicBool::new(false),
         }
     }
 
-    pub async fn handle_msg(&mut self, msg_buf: &mut [u8]) -> Result<(), MsgHandlerError> {
+    pub async fn handle_msg(
+        &self,
+        transport: &mut MctpTransport<S>,
+        msg_buf: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
         // Receive msg from mctp transport
-        self.transport
+        transport
             .receive_request(msg_buf)
             .await
             .map_err(MsgHandlerError::Transport)?;
@@ -62,10 +67,61 @@ impl<'a, S: Syscalls> CmdInterface<'a, S> {
         let resp_len = self.process_request(msg_buf).await?;
 
         // Send the response
-        self.transport
+        transport
             .send_response(&msg_buf[..resp_len])
             .await
             .map_err(MsgHandlerError::Transport)
+    }
+
+    pub async fn is_start_initiator_mode(&self) -> bool {
+        self.fd_ctx.is_start_initiator_mode().await
+    }
+
+    // Handle the initiator mode to prepare the request to be sent out
+    pub async fn initiate_firmware_request(
+        &self,
+        transport: &mut MctpTransport<S>,
+        msg_buf: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
+        // TODO: Find the UA EID from transport receive request
+        {
+            let ua_eid: u8 = 0x00;
+            // Prepare the request payload
+            let payload = pldm_common::util::mctp_transport::construct_mctp_pldm_msg(msg_buf)
+                .map_err(MsgHandlerError::Util)?;
+
+            let reserved_len = PLDM_MSG_OFFSET;
+
+            // Progress and generate request
+            let req_len = self.fd_ctx.fd_progress(payload).await?;
+
+            // Send the request
+            transport
+                .send_request(ua_eid, &msg_buf[..req_len + reserved_len])
+                .await
+                .map_err(MsgHandlerError::Transport)?;
+
+            writeln!(
+                Console::<S>::writer(),
+                "[xs debug]initiator mode: Sent request to UA: succeed, req_len = {}",
+                req_len + reserved_len
+            )
+            .unwrap();
+        }
+
+        // Wait for the response
+        transport
+            .receive_response(msg_buf)
+            .await
+            .map_err(MsgHandlerError::Transport)?;
+
+        let payload = pldm_common::util::mctp_transport::extract_pldm_msg(msg_buf)
+            .map_err(MsgHandlerError::Util)?;
+
+        // Process the response. Place holder
+        self.fd_ctx.handle_response(payload).await?;
+
+        Ok(())
     }
 
     async fn process_request(&self, msg_buf: &mut [u8]) -> Result<usize, MsgHandlerError> {

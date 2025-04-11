@@ -4,7 +4,9 @@ use crate::control_context::Tid;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use pldm_common::message::firmware_update::get_status::GetStatusReasonCode;
-use pldm_common::protocol::firmware_update::{FirmwareDeviceState, PldmFdTime, UpdateOptionFlags};
+use pldm_common::protocol::firmware_update::{
+    FirmwareDeviceState, PldmFdTime, UpdateOptionFlags, PLDM_FWUP_MAX_PADDING_SIZE,
+};
 use pldm_common::util::fw_component::FirmwareComponent;
 
 pub struct FdInternal {
@@ -37,7 +39,7 @@ pub struct FdInternalInner {
     req: FdReq,
 
     // Mode-specific data for the requester.
-    requester_mode_specific: FdSpecific,
+    initiator_mode_specific: FdSpecific,
 
     // Address of the Update Agent (UA).
     ua_address: Option<Tid>,
@@ -107,6 +109,11 @@ impl FdInternal {
         inner.update_comp = comp.clone();
     }
 
+    pub async fn get_component(&self) -> FirmwareComponent {
+        let inner = self.inner.lock().await;
+        inner.update_comp.clone()
+    }
+
     pub async fn set_update_flags(&self, flags: UpdateOptionFlags) {
         let mut inner = self.inner.lock().await;
         inner.update_flags = flags;
@@ -132,9 +139,102 @@ impl FdInternal {
         };
     }
 
+    /* Allocate the next instance ID. Only one request is outstanding so cycling
+     * through the range is OK */
+    pub async fn alloc_next_instance_id(&self) -> Option<u8> {
+        let mut inner = self.inner.lock().await;
+        inner.req.instance_id = Some(
+            inner
+                .req
+                .instance_id
+                .map_or(1, |id| (id + 1) % crate::config::INSTANCE_ID_COUNT),
+        );
+        inner.req.instance_id
+    }
+
+    pub async fn get_fd_req(&self) -> FdReq {
+        let inner = self.inner.lock().await;
+        inner.req.clone()
+    }
+
+    pub async fn get_fd_req_state(&self) -> FdReqState {
+        let inner = self.inner.lock().await;
+        inner.req.state.clone()
+    }
+
+    pub async fn set_fd_req_state(&self, state: FdReqState) {
+        let mut inner = self.inner.lock().await;
+        inner.req.state = state;
+    }
+
+    pub async fn get_fd_sent_time(&self) -> Option<PldmFdTime> {
+        let inner = self.inner.lock().await;
+        inner.req.sent_time
+    }
+
+    pub async fn is_fd_req_complete(&self) -> bool {
+        let inner = self.inner.lock().await;
+        inner.req.complete
+    }
+
+    pub async fn get_fd_req_result(&self) -> Option<u8> {
+        let inner = self.inner.lock().await;
+        inner.req.result
+    }
+
+    // Get the offset and size of the firmware data to be downloaded.
+    pub async fn get_fd_dowload_info(&self) -> Option<(u32, u32)> {
+        let inner = self.inner.lock().await;
+        if inner.state != FirmwareDeviceState::Download {
+            return None;
+        }
+        let offset = match &inner.initiator_mode_specific {
+            FdSpecific::Download(download) => download.offset,
+            _ => return None,
+        };
+        let comp_image_size = inner.update_comp.comp_image_size.unwrap_or(0);
+        if offset > comp_image_size {
+            return None;
+        }
+        let size = (comp_image_size - offset).min(inner.max_xfer_size);
+        Some((offset, size))
+    }
+
+    pub async fn set_fd_dl_offset(&self, offset: u32) {
+        let mut inner = self.inner.lock().await;
+        if let FdSpecific::Download(download) = &mut inner.initiator_mode_specific {
+            download.offset = offset;
+        }
+    }
+    
     pub async fn set_fd_t1_update_ts(&self, timestamp: PldmFdTime) {
         let mut inner = self.inner.lock().await;
         inner.fd_t1_update_ts = timestamp;
+    }
+
+    pub async fn get_fd_t1_update_ts(&self) -> PldmFdTime {
+        let inner = self.inner.lock().await;
+        inner.fd_t1_update_ts
+    }
+
+    pub async fn set_fd_t1_timeout(&self, timeout: PldmFdTime) {
+        let mut inner = self.inner.lock().await;
+        inner.fd_t1_timeout = timeout;
+    }
+
+    pub async fn get_fd_t1_timeout(&self) -> PldmFdTime {
+        let inner = self.inner.lock().await;
+        inner.fd_t1_timeout
+    }
+
+    pub async fn set_fd_t2_retry_time(&self, retry_time: PldmFdTime) {
+        let mut inner = self.inner.lock().await;
+        inner.fd_t2_retry_time = retry_time;
+    }
+
+    pub async fn get_fd_t2_retry_time(&self) -> PldmFdTime {
+        let inner = self.inner.lock().await;
+        inner.fd_t2_retry_time
     }
 }
 
@@ -158,7 +258,7 @@ impl FdInternalInner {
             update_flags: UpdateOptionFlags(0),
             max_xfer_size,
             req: FdReq::new(),
-            requester_mode_specific: FdSpecific::Download(FdDownload::new()),
+            initiator_mode_specific: FdSpecific::Download(FdDownload::new()),
             ua_address: None,
             fd_t1_update_ts: 0,
             fd_t1_timeout,
@@ -183,23 +283,23 @@ pub enum FdReqState {
 #[derive(Debug, Clone)]
 pub struct FdReq {
     // The current state of the request.
-    state: FdReqState,
+    pub state: FdReqState,
 
     // Indicates if the request is complete and ready to transition to the next state.
     // This is relevant for TransferComplete, VerifyComplete, and ApplyComplete requests.
-    complete: bool,
+    pub complete: bool,
 
     // The result of the request, only valid when `complete` is set.
-    result: Option<u8>,
+    pub result: Option<u8>,
 
     // The instance ID of the request, only valid in the `SENT` state.
-    instance_id: Option<u8>,
+    pub instance_id: Option<u8>,
 
     // The command associated with the request, only valid in the `SENT` state.
-    command: Option<u8>,
+    pub command: Option<u8>,
 
     // The time when the request was sent, only valid in the `SENT` state.
-    sent_time: Option<PldmFdTime>,
+    pub sent_time: Option<PldmFdTime>,
 }
 
 impl Default for FdReq {
@@ -231,7 +331,7 @@ pub enum FdSpecific {
 #[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdDownload {
-    offset: u32,
+    pub offset: u32,
 }
 
 impl FdDownload {
@@ -243,11 +343,11 @@ impl FdDownload {
 #[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdVerify {
-    progress_percent: u8,
+    pub progress_percent: u8,
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdApply {
-    progress_percent: u8,
+    pub progress_percent: u8,
 }

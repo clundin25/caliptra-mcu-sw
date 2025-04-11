@@ -7,11 +7,13 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use libapi_caliptra::mailbox::Mailbox;
 use libtock_platform::Syscalls;
+use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_common::{
     message::firmware_update::get_fw_params::FirmwareParameters,
     protocol::firmware_update::{
-        ComponentResponseCode, Descriptor, PldmFdTime, PLDM_FWUP_BASELINE_TRANSFER_SIZE,
+        ComponentResponseCode, Descriptor, PldmFdTime,
+        PLDM_FWUP_BASELINE_TRANSFER_SIZE, PLDM_FWUP_MAX_PADDING_SIZE
     },
 };
 
@@ -21,6 +23,7 @@ pub enum FdOpsError {
     FirmwareParametersError,
     TransferSizeError,
     ComponentError,
+    FwDownloadError,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +138,25 @@ pub trait FdOps {
         op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError>;
 
+    /// Handles firmware data downloading operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The offset in bytes where the firmware data should be written or processed.
+    /// * `data` - A slice of bytes representing the firmware data to be handled.
+    /// * `component` - A reference to the `FirmwareComponent` associated with the firmware data.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<TransferResult, FdOpsError>` - On success, returns a `TransferResult` indicating the outcome of the operation.
+    ///   On failure, returns an `FdOpsError`.
+    async fn download_fw_data(
+        &self,
+        offset: usize,
+        data: &[u8],
+        component: &FirmwareComponent,
+    ) -> Result<TransferResult, FdOpsError>;
+
     /// Retrieves the current timestamp in milliseconds.
     ///
     /// # Returns
@@ -210,6 +232,46 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         }
 
         // For `UpdateComponent` operation, device specific logic might be extended from here.
+        todo!()
+    }
+
+    /*
+        /* @brief Provides firmware update data from the UA
+     *
+     *  @param[in] ctx - callback context
+     *  @param[in] offset - offset of the data
+     *  @param[in] data - firmware data buffer
+     *  @param[in] len - length of data
+     *  @param[in] comp - the relevant component
+     *
+     *  @return TransferComplete code - either
+     *			enum pldm_firmware_update_common_error_codes or
+     *			enum pldm_firmware_update_transfer_result_values.
+     *
+     * PLDM_FWUP_TRANSFER_SUCCESS will accept the data chunk, other codes will
+     * abort the transfer, returning that code as TransferComplete
+     */
+    uint8_t (*firmware_data)(
+        void *ctx, uint32_t offset, const uint8_t *data, uint32_t len,
+        const struct pldm_firmware_update_component *comp);
+
+     */
+
+    async fn download_fw_data(
+        &self,
+        offset: usize,
+        data: &[u8],
+        component: &FirmwareComponent,
+    ) -> Result<TransferResult, FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            if offset + data.len() > (component.comp_image_size.unwrap() as usize + PLDM_FWUP_MAX_PADDING_SIZE as usize) {
+                return Err(FdOpsError::FwDownloadError);
+            }
+            return Ok(TransferResult::TransferSuccess);
+        }
+
+        // TODO: Implement the actual firmware data handling logic
         todo!()
     }
 
