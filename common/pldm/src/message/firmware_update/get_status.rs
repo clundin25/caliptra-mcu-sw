@@ -58,7 +58,7 @@ impl TryFrom<u8> for AuxStateStatus {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GetStatusReasonCode {
+pub enum ReasonCode {
     Initialization = 0,
     ActivateFw = 1,
     CancelUpdate = 2,
@@ -70,20 +70,20 @@ pub enum GetStatusReasonCode {
     VendorDefined,
 }
 
-impl TryFrom<u8> for GetStatusReasonCode {
+impl TryFrom<u8> for ReasonCode {
     type Error = PldmError;
 
     fn try_from(value: u8) -> Result<Self, PldmError> {
         match value {
-            0 => Ok(GetStatusReasonCode::Initialization),
-            1 => Ok(GetStatusReasonCode::ActivateFw),
-            2 => Ok(GetStatusReasonCode::CancelUpdate),
-            3 => Ok(GetStatusReasonCode::LearnComponentTimeout),
-            4 => Ok(GetStatusReasonCode::ReadyXferTimeout),
-            5 => Ok(GetStatusReasonCode::DownloadTimeout),
-            6 => Ok(GetStatusReasonCode::VerifyTimeout),
-            7 => Ok(GetStatusReasonCode::ApplyTimeout),
-            200..=255 => Ok(GetStatusReasonCode::VendorDefined),
+            0 => Ok(ReasonCode::Initialization),
+            1 => Ok(ReasonCode::ActivateFw),
+            2 => Ok(ReasonCode::CancelUpdate),
+            3 => Ok(ReasonCode::LearnComponentTimeout),
+            4 => Ok(ReasonCode::ReadyXferTimeout),
+            5 => Ok(ReasonCode::DownloadTimeout),
+            6 => Ok(ReasonCode::VerifyTimeout),
+            7 => Ok(ReasonCode::ApplyTimeout),
+            200..=255 => Ok(ReasonCode::VendorDefined),
             _ => Err(PldmError::InvalidGetStatusReasonCode),
         }
     }
@@ -139,7 +139,7 @@ impl GetStatusResponse {
         aux_state: AuxState,
         aux_state_status: AuxStateStatus,
         progress_percent: ProgressPercent,
-        reason_code: GetStatusReasonCode,
+        reason_code: ReasonCode,
         update_option: UpdateOptionResp,
     ) -> GetStatusResponse {
         GetStatusResponse {
@@ -193,7 +193,7 @@ mod test {
             AuxState::IdleLearnComponentsReadXfer,
             AuxStateStatus::AuxStateInProgressOrSuccess,
             ProgressPercent::new(50).unwrap(),
-            GetStatusReasonCode::Initialization,
+            ReasonCode::Initialization,
             UpdateOptionResp::NoForceUpdate,
         );
 

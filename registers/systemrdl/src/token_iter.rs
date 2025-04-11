@@ -2,7 +2,7 @@
 Licensed under the Apache-2.0 license.
 --*/
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use crate::file_source::FileSource;
@@ -26,7 +26,6 @@ pub struct TokenIter<'a> {
     current_file_path: PathBuf,
     file_source: Option<&'a dyn FileSource>,
     iter_stack: Vec<IncludeStackEntry<'a>>,
-    defines: HashSet<String>,
 }
 impl<'a> TokenIter<'a> {
     pub fn from_path(file_source: &'a dyn FileSource, file_path: &Path) -> std::io::Result<Self> {
@@ -41,7 +40,6 @@ impl<'a> TokenIter<'a> {
             current_file_contents: file_contents,
             iter_stack: Vec::new(),
             file_source: Some(file_source),
-            defines: HashSet::new(),
         })
     }
     pub fn from_str(s: &'a str) -> Self {
@@ -54,7 +52,6 @@ impl<'a> TokenIter<'a> {
             current_file_contents: s,
             file_source: Default::default(),
             iter_stack: Default::default(),
-            defines: Default::default(),
         }
     }
 
@@ -63,26 +60,6 @@ impl<'a> TokenIter<'a> {
 
         loop {
             match self.lex.next() {
-                Some(Token::PreprocIfndef) => {
-                    let Some(Token::Identifier(name)) = self.lex.next() else {
-                        return Some(Token::Error);
-                    };
-                    if self.defines.contains(name) {
-                        // skip to the endif
-                        while !matches!(self.lex.next(), Some(Token::PreprocEndif)) {}
-                    }
-                    continue;
-                }
-                Some(Token::PreprocDefine) => {
-                    let Some(Token::Identifier(name)) = self.lex.next() else {
-                        return Some(Token::Error);
-                    };
-                    self.defines.insert(name.to_string());
-                    continue;
-                }
-                Some(Token::PreprocEndif) => {
-                    continue;
-                }
                 Some(Token::PreprocInclude) => {
                     let Some(Token::StringLiteral(filename)) = self.lex.next() else {
                         return Some(Token::Error);

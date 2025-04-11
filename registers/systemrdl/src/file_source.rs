@@ -2,7 +2,6 @@
 
 use crate::string_arena::StringArena;
 use core::panic;
-use same_file::is_same_file;
 use std::{cell::RefCell, path::Path};
 
 #[cfg(test)]
@@ -47,7 +46,7 @@ impl FileSource for FsFileSource {
     fn read_to_string(&self, path: &Path) -> std::io::Result<&str> {
         let mut contents = trim_lines(&std::fs::read_to_string(path)?);
         for (patch_path, from, to) in self.patches.borrow().iter() {
-            if is_same_file(path, patch_path).unwrap_or_default() {
+            if path.display().to_string() == *patch_path {
                 if !contents.contains(from) {
                     panic!("Patch {:?} not found in file: {}", from, path.display());
                 }

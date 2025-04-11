@@ -1,8 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use caliptra_api::mailbox::{
-    MailboxReqHeader, QuotePcrsFlags, QuotePcrsReq, QuotePcrsResp, Request,
-};
+use caliptra_api::mailbox::{MailboxReqHeader, QuotePcrsReq, QuotePcrsResp, Request};
 use core::fmt::Write;
 use libsyscall_caliptra::mailbox::{Mailbox, MailboxError};
 use libtock_platform::Syscalls;
@@ -18,7 +16,6 @@ pub(crate) async fn test_caliptra_mailbox<S: Syscalls>() {
     let mut req = QuotePcrsReq {
         hdr: MailboxReqHeader::default(),
         nonce: [0x34; 32],
-        flags: QuotePcrsFlags::ECC_SIGNATURE,
     };
     let req_data = req.as_mut_bytes();
     mailbox
@@ -71,7 +68,6 @@ pub(crate) async fn test_caliptra_mailbox_bad_command<S: Syscalls>() {
     let mut req = QuotePcrsReq {
         hdr: MailboxReqHeader::default(),
         nonce: [0x34; 32],
-        flags: QuotePcrsFlags::ECC_SIGNATURE,
     };
     let req_data = req.as_mut_bytes();
     mailbox.populate_checksum(0xffff_ffff, req_data).unwrap();
@@ -105,7 +101,6 @@ pub(crate) async fn test_caliptra_mailbox_fail<S: Syscalls>() {
     let mut req = QuotePcrsReq {
         hdr: MailboxReqHeader::default(),
         nonce: [0x34; 32],
-        flags: QuotePcrsFlags::ECC_SIGNATURE,
     };
     let req_data = req.as_mut_bytes();
     let len = req_data.len();

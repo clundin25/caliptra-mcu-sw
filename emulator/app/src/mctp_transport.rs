@@ -18,8 +18,6 @@ use std::net::{SocketAddr, TcpStream};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 
-pub const MCTP_TAG_MASK: u8 = 0x07;
-
 #[derive(Debug, PartialEq, Clone)]
 enum MctpPldmSocketState {
     Idle,
@@ -35,7 +33,6 @@ pub struct MctpPldmSocket {
     running: Arc<AtomicBool>,
     context: Arc<(Mutex<MctpPldmSocketData>, Condvar)>,
     stream: TcpStream,
-    response_msg_tag: Arc<Mutex<u8>>,
 }
 
 struct MctpPldmSocketData {
@@ -86,8 +83,6 @@ impl PldmSocket for MctpPldmSocket {
                 self.target_addr,
             );
         } else {
-            let msg_tag = *self.response_msg_tag.lock().unwrap();
-            mctp_util.set_msg_tag(msg_tag & MCTP_TAG_MASK);
             mctp_util.send_response(
                 mctp_payload.as_mut_slice(),
                 self.running.clone(),
@@ -149,9 +144,6 @@ impl PldmSocket for MctpPldmSocket {
         // Skip the first byte containing the MCTP common header
         // and only return the PLDM payload
         data[..len].copy_from_slice(&raw_pkt[1..]);
-        if data[1] & 0x80 == 0x80 {
-            *self.response_msg_tag.lock().unwrap() = mctp_util.get_msg_tag();
-        }
         Ok(RxPacket {
             src: self.dest,
             payload: Payload { data, len },
@@ -176,7 +168,6 @@ impl PldmSocket for MctpPldmSocket {
             running: self.running.clone(),
             context: self.context.clone(),
             stream: self.stream.try_clone().unwrap(),
-            response_msg_tag: self.response_msg_tag.clone(),
         }
     }
 }
@@ -217,7 +208,6 @@ impl PldmTransport<MctpPldmSocket> for MctpTransport {
                 }),
                 Condvar::new(),
             )),
-            response_msg_tag: Arc::new(Mutex::new(msg_tag)),
         })
     }
 }

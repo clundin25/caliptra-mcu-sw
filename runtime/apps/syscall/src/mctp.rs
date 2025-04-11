@@ -73,8 +73,8 @@ impl<S: Syscalls> Mctp<S> {
         let (recv_len, _, info) = share::scope::<(), _, _>(|_handle| {
             let sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
                 self.driver_num,
-                subscribe::RECEIVED_REQUEST,
-                allow_rw::READ_REQUEST,
+                subscribe::MESSAGE_RECEIVED,
+                allow_rw::MESSAGE_READ,
                 req,
             );
 
@@ -191,8 +191,8 @@ impl<S: Syscalls> Mctp<S> {
         let (recv_len, _, info) = share::scope::<(), _, _>(|_handle| {
             let sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
                 self.driver_num,
-                subscribe::RECEIVED_RESPONSE,
-                allow_rw::READ_RESPONSE,
+                subscribe::MESSAGE_RECEIVED,
+                allow_rw::MESSAGE_READ,
                 resp,
             );
 
@@ -250,10 +250,9 @@ mod command {
 
 mod subscribe {
     /// Message received
-    pub const RECEIVED_REQUEST: u32 = 0;
-    pub const RECEIVED_RESPONSE: u32 = 1;
+    pub const MESSAGE_RECEIVED: u32 = 0;
     /// Message transmitted
-    pub const MESSAGE_TRANSMITTED: u32 = 2;
+    pub const MESSAGE_TRANSMITTED: u32 = 1;
 }
 
 mod allow_ro {
@@ -263,6 +262,5 @@ mod allow_ro {
 
 mod allow_rw {
     /// Read buffer for the message payload received
-    pub const READ_REQUEST: u32 = 0;
-    pub const READ_RESPONSE: u32 = 1;
+    pub const MESSAGE_READ: u32 = 0;
 }

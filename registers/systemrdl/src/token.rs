@@ -48,9 +48,6 @@ pub enum Token<'a> {
     PreprocInclude,
     UnableToOpenFile(&'a str),
     IncludeDepthLimitReached,
-    PreprocDefine,
-    PreprocIfndef,
-    PreprocEndif,
 
     Error,
 }

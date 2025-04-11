@@ -563,12 +563,11 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         Some(Box::new(i3c)),
         Some(Box::new(main_flash_controller)),
         Some(Box::new(recovery_flash_controller)),
+        Some(Box::new(otp)),
         Some(Box::new(mci)),
         None,
         None,
         None,
-        None,
-        Some(Box::new(otp)),
         None,
     );
 

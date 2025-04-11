@@ -52,24 +52,16 @@ impl Soc {
         // TODO: vendor-specific fuses when those are supported
         self.registers
             .fuse_fmc_key_manifest_svn
-            .set(u32::from_le_bytes(
-                fuses.cptra_core_fmc_key_manifest_svn().try_into().unwrap(),
-            ));
+            .set(fuses.fmc_key_manifest_svn());
 
         romtime::print!("[mcu-fuse-write] Writing fuse key vendor PK hash: ");
-        if fuses.cptra_core_vendor_pk_hash_0().len() != self.registers.fuse_vendor_pk_hash.len() * 4
-        {
+        if fuses.key_manifest_pk_hash().len() != self.registers.fuse_vendor_pk_hash.len() {
             romtime::println!("[mcu-fuse-write] Key manifest PK hash length mismatch");
             fatal_error(1);
         }
-        for i in 0..fuses.cptra_core_vendor_pk_hash_0().len() / 4 {
-            let word = u32::from_le_bytes(
-                fuses.cptra_core_vendor_pk_hash_0()[i * 4..i * 4 + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            romtime::print!("{}", HexWord(word));
-            self.registers.fuse_vendor_pk_hash[i].set(word);
+        for i in 0..fuses.key_manifest_pk_hash().len() {
+            romtime::print!("{}", HexWord(fuses.key_manifest_pk_hash()[i]));
+            self.registers.fuse_vendor_pk_hash[i].set(fuses.key_manifest_pk_hash()[i]);
         }
         romtime::println!("");
 
@@ -79,44 +71,41 @@ impl Soc {
         //     romtime::println!("[mcu-fuse-write] Owner PK hash length mismatch");
         //     fatal_error();
         // }
+        romtime::print!("[mcu-fuse-write] Writing Owner PK hash from fuses: ");
+        for (i, f) in fuses.owner_pk_hash().iter().enumerate() {
+            romtime::print!("{}", HexWord(*f));
+            self.registers.cptra_owner_pk_hash[i].set(*f);
+        }
         romtime::println!("");
-        if fuses.cptra_core_runtime_svn().len() != self.registers.fuse_runtime_svn.len() * 4 {
+        if fuses.runtime_svn().len() != self.registers.fuse_runtime_svn.len() {
             romtime::println!("[mcu-fuse-write] Runtime SVN length mismatch");
             fatal_error(1);
         }
-        for i in 0..fuses.cptra_core_runtime_svn().len() / 4 {
-            let word = u32::from_le_bytes(
-                fuses.cptra_core_runtime_svn()[i * 4..i * 4 + 4]
-                    .try_into()
-                    .unwrap(),
-            );
-            self.registers.fuse_runtime_svn[i].set(word);
+        for i in 0..fuses.runtime_svn().len() {
+            self.registers.fuse_runtime_svn[i].set(fuses.runtime_svn()[i]);
         }
         // TODO
         // self.registers
         //     .fuse_anti_rollback_disable
         //     .set(fuses.anti_rollback_disable());
-        // TODO: fix these
-        // for i in 0..self.registers.fuse_idevid_cert_attr.len() {
-        //     self.registers.fuse_idevid_cert_attr[i].set(fuses.cptra_core_idevid_cert_idevid_attr()[i]);
-        // }
-        // for i in 0..self.registers.fuse_idevid_manuf_hsm_id.len() {
-        //     self.registers.fuse_idevid_manuf_hsm_id[i].set(fuses.idevid_manuf_hsm_id()[i]);
-        // }
+        for i in 0..self.registers.fuse_idevid_cert_attr.len() {
+            self.registers.fuse_idevid_cert_attr[i].set(fuses.idevid_cert_attr()[i]);
+        }
+        for i in 0..self.registers.fuse_idevid_manuf_hsm_id.len() {
+            self.registers.fuse_idevid_manuf_hsm_id[i].set(fuses.idevid_manuf_hsm_id()[i]);
+        }
         // TODO: read the lifecycle partition from the lifecycle controller
         // self.registers
         //     .fuse_life_cycle
         //     .write(soc::bits::FuseLifeCycle::LifeCycle.val(..));
-        // self.registers.fuse_lms_revocation.set(u32::from_le_bytes(
-        //     fuses.cptra_core_lms_revocation_0().try_into().unwrap(),
-        // ));
+        self.registers
+            .fuse_lms_revocation
+            .set(fuses.lms_revocation());
         // TODO
         //self.registers.fuse_mldsa_revocation.set(fuses.mldsa_revocation());
-        let soc_stepping_id =
-            u16::from_le_bytes(fuses.cptra_core_soc_stepping_id()[0..2].try_into().unwrap()) as u32;
         self.registers
             .fuse_soc_stepping_id
-            .write(soc::bits::FuseSocSteppingId::SocSteppingId.val(soc_stepping_id));
+            .write(soc::bits::FuseSocSteppingId::SocSteppingId.val(fuses.soc_stepping_id()));
         // TODO: debug unlock / rma token?
     }
 
@@ -126,7 +115,7 @@ impl Soc {
 }
 
 pub const OTP_BASE: StaticRef<otp_ctrl::regs::OtpCtrl> =
-    unsafe { StaticRef::new(otp_ctrl::OTP_CTRL_ADDR as *const otp_ctrl::regs::OtpCtrl) };
+    unsafe { StaticRef::new(otp_ctrl::CALIPTRA_OTP_CTRL_ADDR as *const otp_ctrl::regs::OtpCtrl) };
 
 pub const I3C_BASE: StaticRef<i3c::regs::I3c> =
     unsafe { StaticRef::new(i3c::I3C_CSR_ADDR as *const i3c::regs::I3c) };
