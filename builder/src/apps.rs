@@ -10,7 +10,7 @@ pub const APPS: &[App] = &[
     App {
         name: "example-app",
         permissions: vec![],
-        minimum_ram: 20 * 1024,
+        minimum_ram: 28 * 1024,
     },
     App {
         name: "spdm-app",

@@ -148,6 +148,7 @@ mod test {
     // * add the feature to the runtime and use it in board.rs at the end of the main function to call your test
     // These use underscores but will be converted to dashes in the feature flags
     run_test!(test_caliptra_mailbox, caliptra);
+    run_test!(test_caliptra_crypto, caliptra);
     run_test!(test_i3c_simple);
     run_test!(test_i3c_constant_writes);
     run_test!(test_flash_ctrl_init);
