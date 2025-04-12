@@ -1000,6 +1000,9 @@ mod test {
         let repeat = 3; // repeat messages this many times when sending
         let empty_wait_time = Some(Duration::from_millis(1)); // sleep this much before emptying the rx queue
 
+        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(0x44 / 4)) };
+        println!("FPGA version: {:08x}", fpga_version);
+
         println!("Bring SS out of reset");
         unsafe {
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0);
@@ -1286,6 +1289,9 @@ mod test {
         let i3c_target_raw = dev1.map_mapping(2).unwrap();
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
+
+        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(0x44 / 4)) };
+        println!("FPGA version: {:08x}", fpga_version);
 
         println!("Bring SS out of reset");
         unsafe {
