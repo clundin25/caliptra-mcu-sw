@@ -1,6 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-use libapi_caliptra::crypto::error::{CryptoError, CryptoResult};
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 
 use core::fmt::write;
@@ -64,6 +63,8 @@ pub async fn test_caliptra_sha<S: Syscalls>() {
 
 async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
     println!("Testing SHA algorithm: {:?}", algo);
+
+    let hash_size = algo.hash_size();
     let mut hash_context = HashContext::<S>::new();
 
     let mut hash = [0u8; 64];
@@ -83,7 +84,7 @@ async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &
         test_exit(1);
     });
 
-    if hash[..hash_context.hash_size()] != expected_hash[..] {
+    if hash[..hash_size] != expected_hash[..] {
         println!(
             "Hash mismatch: expected {:x?}, got {:x?}",
             expected_hash, hash

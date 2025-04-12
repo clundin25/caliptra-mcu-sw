@@ -13,7 +13,7 @@ use crate::crypto::error::{CryptoError, CryptoResult};
 
 pub const MAX_HASH_SIZE: usize = 64; // SHA512
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HashAlgoType {
     SHA384,
     SHA512,
@@ -24,6 +24,15 @@ impl From<HashAlgoType> for u32 {
         match algo {
             HashAlgoType::SHA384 => CmHashAlgorithm::Sha384 as u32,
             HashAlgoType::SHA512 => CmHashAlgorithm::Sha512 as u32,
+        }
+    }
+}
+
+impl HashAlgoType {
+    pub fn hash_size(&self) -> usize {
+        match self {
+            HashAlgoType::SHA384 => 48,
+            HashAlgoType::SHA512 => 64,
         }
     }
 }
@@ -49,16 +58,21 @@ impl<S: Syscalls> HashContext<S> {
         }
     }
 
-    pub fn hash_algo(&self) -> Option<HashAlgoType> {
-        self.algo.clone()
+    pub async fn hash_all(
+        hash_algo: HashAlgoType,
+        data: &[u8],
+        hash: &mut [u8],
+    ) -> CryptoResult<()> {
+        let mut ctx = HashContext::<S>::new();
+        if hash.len() < hash_algo.hash_size() {
+            Err(CryptoError::InvalidArgument("Hash buffer too small"))?;
+        }
+        ctx.init(hash_algo.clone(), Some(data)).await?;
+        ctx.finalize(hash).await
     }
 
-    pub fn hash_size(&self) -> usize {
-        match self.algo {
-            Some(HashAlgoType::SHA384) => 48,
-            Some(HashAlgoType::SHA512) => 64,
-            None => 0,
-        }
+    pub fn hash_algo(&self) -> Option<HashAlgoType> {
+        self.algo.clone()
     }
 
     pub async fn init(&mut self, hash_algo: HashAlgoType, data: Option<&[u8]>) -> CryptoResult<()> {
@@ -150,8 +164,16 @@ impl<S: Syscalls> HashContext<S> {
             .ctx
             .ok_or(CryptoError::InvalidOperation("Context not initialized"))?;
 
-        if hash.len() < self.hash_size() {
-            return Err(CryptoError::InvalidOperation("Hash buffer too small"));
+        let hash_size = self
+            .algo
+            .as_ref()
+            .ok_or(CryptoError::InvalidOperation(
+                "Hash algorithm not initialized",
+            ))?
+            .hash_size();
+
+        if hash.len() < hash_size {
+            return Err(CryptoError::InvalidArgument("Hash buffer too small"));
         }
 
         let mut final_req = CmShaFinalReq {
@@ -173,7 +195,7 @@ impl<S: Syscalls> HashContext<S> {
         let final_rsp = CmShaFinalResp::ref_from_bytes(final_rsp_bytes)
             .map_err(|_| CryptoError::InvalidResponse)?;
 
-        hash[..self.hash_size()].copy_from_slice(&final_rsp.hash[..self.hash_size()]);
+        hash[..hash_size].copy_from_slice(&final_rsp.hash[..hash_size]);
 
         Ok(())
     }
