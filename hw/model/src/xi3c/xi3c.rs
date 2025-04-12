@@ -99,7 +99,9 @@ pub struct Config {
 pub struct Command {
     /// I3C command type. 0 = legacy i2c, 1 = SDR, 2+ reserve
     pub cmd_type: u8,
-    /// toc (termination on completion). 0 = next command will be started with Sr, 1 = stop command will be issued after the existing command is completed.
+    /// toc (termination on completion).
+    /// 0 = next command will be started with Sr
+    /// 1 = stop command will be issued after the existing command is completed
     pub no_repeated_start: u8,
     /// pec enable. Per the JEDEC standard, the PEC value will be computed. 0 = disable PEC, 1 = enable PEC.
     pub pec: u8,

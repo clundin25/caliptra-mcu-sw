@@ -1054,6 +1054,23 @@ mod test {
             .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
             .unwrap();
         i3c_controller.set_s_clk(I3C_CLOCK_HZ, 1);
+        println!("I3C controller timing registers:");
+        println!(
+            "  od scl high: {}",
+            i3c_controller.regs().od_scl_high_time.get()
+        );
+        println!(
+            "  od scl low: {}",
+            i3c_controller.regs().od_scl_low_time.get()
+        );
+        println!("  scl high: {}", i3c_controller.regs().scl_high_time.get());
+        println!("  scl low: {}", i3c_controller.regs().scl_low_time.get());
+        println!("  sda hold: {}", i3c_controller.regs().sda_hold_time.get());
+        println!("  tsu start: {}", i3c_controller.regs().tsu_start.get());
+        println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
+        println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
+        println!("  thld start: {}", i3c_controller.regs().thd_start.get());
+
         i3c_controller.bus_init().unwrap();
 
         const I3C_DATALEN: u16 = 90;
@@ -1324,7 +1341,26 @@ mod test {
             .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
             .unwrap();
         i3c_controller.set_s_clk(I3C_CLOCK_HZ, 1);
+        println!("I3C controller timing registers:");
+        println!(
+            "  od scl high: {}",
+            i3c_controller.regs().od_scl_high_time.get()
+        );
+        println!(
+            "  od scl low: {}",
+            i3c_controller.regs().od_scl_low_time.get()
+        );
+        println!("  scl high: {}", i3c_controller.regs().scl_high_time.get());
+        println!("  scl low: {}", i3c_controller.regs().scl_low_time.get());
+        println!("  sda hold: {}", i3c_controller.regs().sda_hold_time.get());
+        println!("  tsu start: {}", i3c_controller.regs().tsu_start.get());
+        println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
+        println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
+        println!("  thld start: {}", i3c_controller.regs().thd_start.get());
+
         i3c_controller.bus_init().unwrap();
+
+        // Run the recovery flow.
 
         let (caliptra_cpu_event_sender, from_bmc) = mpsc::channel();
         let (to_bmc, caliptra_cpu_event_recv) = mpsc::channel();
@@ -1332,6 +1368,7 @@ mod test {
         // these aren't used
         let (mcu_cpu_event_sender, mcu_cpu_event_recv) = mpsc::channel();
 
+        // This is a fake BMC that runs the recovery flow as a series of events for recovery block reads and writes.
         let mut bmc = Bmc::new(
             caliptra_cpu_event_sender,
             caliptra_cpu_event_recv,
