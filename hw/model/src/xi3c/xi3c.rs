@@ -97,12 +97,19 @@ pub struct Config {
 
 #[derive(Copy, Clone, Default)]
 pub struct Command {
+    /// I3C command type. 0 = legacy i2c, 1 = SDR, 2+ reserve
     pub cmd_type: u8,
+    /// toc (termination on completion). 0 = next command will be started with Sr, 1 = stop command will be issued after the existing command is completed.
     pub no_repeated_start: u8,
+    /// pec enable. Per the JEDEC standard, the PEC value will be computed. 0 = disable PEC, 1 = enable PEC.
     pub pec: u8,
     pub target_addr: u8,
     pub rw: u8,
+    /// Bytes to Read/Write. This field acts as bytes to read/write (for common command codes (CCC) command, the number of bytes to read or write along with CCC like defining bytes for direct/broadcast CCC or subcommand bytes for broadcast CCC).
+    /// Only in SDR/I2C commands.
+    /// For other commands, it should be zero. The IP supports 4095 bytes to Read/Write for the SDR/I2C command.
     pub byte_count: u16,
+    /// Transaction ID: This field acts as identification tag for I3C commands. The controller returns this tag along with the transaction status
     pub tid: u8,
 }
 #[derive(Copy, Clone, Default)]
@@ -319,7 +326,7 @@ impl Controller {
             cmd.pec = 0;
             cmd.cmd_type = 1;
 
-            let recv_buffer = self.master_recv_polled(&mut cmd, 9)?;
+            let recv_buffer = self.master_recv_polled(None, &mut cmd, 9)?;
 
             self.target_info_table[self.cur_device_count as usize].id = (recv_buffer[0] as u64)
                 << 40

@@ -758,13 +758,17 @@ mod test {
     use crate::model_fpga_realtime::FifoData;
     use crate::xi3c;
     use bitfield::bitfield;
+    use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
+    use emulator_bmc::Bmc;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
-        DeviceStatus0, QueueThldCtrl, RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl,
-        StbyCrDeviceAddr, TtiQueueThldCtrl,
+        DeviceStatus0, ProtCap2, ProtCap3, QueueThldCtrl, RingHeadersSectionOffset,
+        StbyCrCapabilities, StbyCrControl, StbyCrDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
-    use std::thread::sleep;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{mpsc, Arc};
+    use std::thread::{self, sleep};
     use std::time::Duration;
     use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
     use uio::UioDevice;
@@ -777,7 +781,7 @@ mod test {
         pub u16, data_length, set_data_length: 15, 0;
     }
 
-    fn configure_i3c_target(regs: &I3c, addr: u8) {
+    fn configure_i3c_target(regs: &I3c, addr: u8, recovery_enabled: bool) {
         println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
 
         println!("Set TTI RESET_CONTROL");
@@ -913,6 +917,24 @@ mod test {
             regs.tti_interrupt_status.get()
         );
 
+        if recovery_enabled {
+            println!("Enabling recovery interface");
+            regs.sec_fw_recovery_if_prot_cap_2.write(
+                ProtCap2::RecProtVersion.val(0x101)
+                    + ProtCap2::AgentCaps.val(
+                        (1 << 0) | // device id
+                (1 << 4) | // device status
+                (1 << 5) | // indirect ctrl
+                (1 << 7), // push c-image support
+                    ),
+            );
+            regs.sec_fw_recovery_if_prot_cap_3.write(
+                ProtCap3::NumOfCmsRegions.val(1) + ProtCap3::MaxRespTime.val(20), // 1.048576 second maximum response time
+            );
+            regs.sec_fw_recovery_if_device_status_0
+                .write(DeviceStatus0::DevStatus.val(0x3)); // ready to accept recovery image
+        }
+
         println!(
             "I3C recovery prot_cap 2 and 3: {:08x} {:08x}",
             regs.sec_fw_recovery_if_prot_cap_2.get(),
@@ -984,7 +1006,7 @@ mod test {
             core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
         }
         println!("Configuring I3C target");
-        configure_i3c_target(i3c_target, I3C_TARGET_ADDR);
+        configure_i3c_target(i3c_target, I3C_TARGET_ADDR, false);
 
         // check I3C target address
         if i3c_target
@@ -1225,7 +1247,7 @@ mod test {
         send_packet(i3c_target, &tx_data);
 
         let rx_data = i3c_controller
-            .master_recv_finish(&cmd, I3C_DATALEN)
+            .master_recv_finish(None, &cmd, I3C_DATALEN)
             .expect("Failed to finish receiving data from target");
 
         assert_eq!(tx_data, *rx_data);
@@ -1235,6 +1257,276 @@ mod test {
             i3c_target.tti_status.get(),
             i3c_target.tti_interrupt_status.get()
         );
+    }
+
+    #[test]
+    fn test_recovery_flow() {
+        const AXI_CLOCK_HZ: u32 = 199_999_000;
+        const I3C_CLOCK_HZ: u32 = 12_500_000;
+        let dev0 = UioDevice::blocking_new(0).unwrap();
+        let dev1 = UioDevice::blocking_new(1).unwrap();
+        let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
+        let i3c_target_raw = dev1.map_mapping(2).unwrap();
+        let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
+        const I3C_TARGET_ADDR: u8 = 0x5a;
+
+        println!("Bring SS out of reset");
+        unsafe {
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0);
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
+        }
+        println!("Configuring I3C target");
+        configure_i3c_target(i3c_target, I3C_TARGET_ADDR, true);
+
+        // check I3C target address
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::DynamicAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target dynamic address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::DynamicAddr) as u8,
+            );
+        }
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::StaticAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target static address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::StaticAddr) as u8,
+            );
+        }
+
+        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
+        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
+        println!("XI3C HW version = {:x}", xi3c.version.get());
+
+        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: xi3c_controller_ptr,
+            input_clock_hz: AXI_CLOCK_HZ,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: false,
+            hj_capable: false,
+        };
+
+        i3c_controller
+            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
+            .unwrap();
+        i3c_controller.set_s_clk(I3C_CLOCK_HZ, 1);
+        i3c_controller.bus_init().unwrap();
+
+        let (caliptra_cpu_event_sender, from_bmc) = mpsc::channel();
+        let (to_bmc, caliptra_cpu_event_recv) = mpsc::channel();
+
+        // these aren't used
+        let (mcu_cpu_event_sender, mcu_cpu_event_recv) = mpsc::channel();
+
+        let mut bmc = Bmc::new(
+            caliptra_cpu_event_sender,
+            caliptra_cpu_event_recv,
+            mcu_cpu_event_sender,
+            mcu_cpu_event_recv,
+        );
+
+        let running = Arc::new(AtomicBool::new(true));
+        let running_timer = running.clone();
+
+        // stop running the test after a while
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(30));
+            running_timer.store(false, Ordering::Relaxed);
+        });
+
+        while running.load(Ordering::Relaxed) {
+            bmc.step();
+
+            if let Ok(event) = from_bmc.try_recv() {
+                if !matches!(event.dest, Device::CaliptraCore) {
+                    continue;
+                }
+                match event.event {
+                    EventData::RecoveryBlockReadRequest {
+                        source_addr,
+                        target_addr,
+                        command_code,
+                    } => {
+                        println!("Recovery block read request {:?}", command_code);
+
+                        let payload = recovery_block_read_request(
+                            running.clone(),
+                            &mut i3c_controller,
+                            I3C_TARGET_ADDR,
+                            command_code,
+                        );
+
+                        to_bmc
+                            .send(Event {
+                                src: Device::CaliptraCore,
+                                dest: Device::BMC,
+                                event: EventData::RecoveryBlockReadResponse {
+                                    source_addr: target_addr,
+                                    target_addr: source_addr,
+                                    command_code,
+                                    payload,
+                                },
+                            })
+                            .unwrap();
+
+                        panic!("Stop the test");
+                    }
+                    EventData::RecoveryBlockReadResponse {
+                        source_addr: _,
+                        target_addr: _,
+                        command_code: _,
+                        payload: _,
+                    } => todo!(),
+                    EventData::RecoveryBlockWrite {
+                        source_addr: _,
+                        target_addr: _,
+                        command_code: _,
+                        payload: _,
+                    } => todo!(),
+                    EventData::RecoveryImageAvailable {
+                        image_id: _,
+                        image: _,
+                    } => {
+                        todo!()
+                    }
+                    _ => todo!(),
+                }
+            }
+        }
+    }
+
+    fn command_code_to_u8(command: RecoveryCommandCode) -> u8 {
+        match command {
+            RecoveryCommandCode::ProtCap => 34,
+            RecoveryCommandCode::DeviceId => 35,
+            RecoveryCommandCode::DeviceStatus => 36,
+            RecoveryCommandCode::DeviceReset => 37,
+            RecoveryCommandCode::RecoveryCtrl => 38,
+            RecoveryCommandCode::RecoveryStatus => 39,
+            RecoveryCommandCode::HwStatus => 40,
+            RecoveryCommandCode::IndirectCtrl => 41,
+            RecoveryCommandCode::IndirectStatus => 42,
+            RecoveryCommandCode::IndirectData => 43,
+            RecoveryCommandCode::Vendor => 44,
+            RecoveryCommandCode::IndirectFifoCtrl => 45,
+            RecoveryCommandCode::IndirectFifoStatus => 46,
+            RecoveryCommandCode::IndirectFifoData => 47,
+        }
+    }
+
+    fn command_code_to_len(command: RecoveryCommandCode) -> (u16, u16) {
+        match command {
+            RecoveryCommandCode::ProtCap => (15, 15),
+            RecoveryCommandCode::DeviceId => (24, 255),
+            RecoveryCommandCode::DeviceStatus => (7, 255),
+            RecoveryCommandCode::DeviceReset => (3, 3),
+            RecoveryCommandCode::RecoveryCtrl => (3, 3),
+            RecoveryCommandCode::RecoveryStatus => (2, 2),
+            RecoveryCommandCode::HwStatus => (4, 255),
+            RecoveryCommandCode::IndirectCtrl => (6, 6),
+            RecoveryCommandCode::IndirectStatus => (6, 6),
+            RecoveryCommandCode::IndirectData => (1, 252),
+            RecoveryCommandCode::Vendor => (1, 255),
+            RecoveryCommandCode::IndirectFifoCtrl => (6, 6),
+            RecoveryCommandCode::IndirectFifoStatus => (20, 20),
+            RecoveryCommandCode::IndirectFifoData => (1, 4095),
+        }
+    }
+
+    // send a recovery block read request to the I3C target
+    fn recovery_block_read_request(
+        running: Arc<AtomicBool>,
+        xi3c: &mut xi3c::Controller,
+        target_addr: u8,
+        command: RecoveryCommandCode,
+    ) -> Vec<u8> {
+        // per the recovery spec, this maps to a private write and private read
+
+        // First we write the recovery command code for the block we want
+        let mut cmd = xi3c::Command {
+            cmd_type: 1,
+            no_repeated_start: 0, // we want the next command (read) to be Sr
+            pec: 1,
+            target_addr,
+            ..Default::default()
+        };
+
+        let recovery_command_code = command_code_to_u8(command);
+
+        println!(
+            "Sending write to target: 0x{:x} to start recovery block read (with no termination)",
+            recovery_command_code
+        );
+        assert!(
+            xi3c.master_send_polled(&mut cmd, &[recovery_command_code], 1)
+                .is_ok(),
+            "Failed to ack write message sent to target"
+        );
+        println!("Acknowledge received");
+
+        // then we send a private read for the minimum length
+        let len_range = command_code_to_len(command);
+        cmd.target_addr = target_addr;
+        cmd.no_repeated_start = 0;
+        cmd.tid = 0;
+        cmd.pec = 0;
+        cmd.cmd_type = 1;
+        println!(
+            "Starting private read from target for {} bytes with repeated start",
+            len_range.0
+        );
+        xi3c.master_recv(&mut cmd, len_range.0)
+            .expect("Failed to receive ack from target");
+        println!("Acknowledge received");
+
+        // read in the length, lsb then msb
+        println!(
+            "Reading the minimum block length ({}+ bytes expected)",
+            len_range.0
+        );
+        let resp = xi3c
+            .master_recv_finish(Some(running.clone()), &cmd, len_range.0)
+            .expect(&format!("Expected to read {}+ bytes", len_range.0));
+
+        if resp.len() < 2 {
+            panic!("Expected to read at least 2 bytes from target for recovery block length");
+        }
+        println!("Read from target {:02x?}", resp);
+        let len = u16::from_le_bytes([resp[0], resp[1]]);
+        if len < len_range.0 || len > len_range.1 {
+            panic!(
+                "Expected to read between {} and {} bytes from target, got {}",
+                len_range.0, len_range.1, len
+            );
+        }
+        let len = len as usize;
+        let left = len - (resp.len() - 2);
+        println!(
+            "Expect to read {} more bytes from target ({} more)",
+            len, left
+        );
+        // read the rest of the bytes
+        if left > 0 {
+            // TODO: if the length is more than the minimum we need to abort and restart with the correct value
+            // because the xi3c controller does not support variable reads.
+            todo!()
+        }
+        println!("Got block read back from target: {:x?}", &resp[2..]);
+        resp[2..].to_vec()
     }
 
     #[test]

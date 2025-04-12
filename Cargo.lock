@@ -2241,6 +2241,7 @@ dependencies = [
  "caliptra-image-types",
  "caliptra-registers",
  "caliptra-test-harness-types",
+ "emulator-bmc",
  "emulator-bus",
  "emulator-cpu",
  "emulator-periph",

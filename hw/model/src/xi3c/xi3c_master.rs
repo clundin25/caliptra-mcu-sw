@@ -13,7 +13,13 @@ use super::xi3c::{
     XI3C_INTR_IBI_MASK, XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK, XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
     XI3C_SR_RESP_NOT_EMPTY_MASK, XST_NO_DATA, XST_RECV_ERROR,
 };
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
 use tock_registers::interfaces::{Readable, Writeable};
 
 impl Controller {
@@ -194,11 +200,12 @@ impl Controller {
 
     pub fn master_recv_polled(
         &mut self,
+        running: Option<Arc<AtomicBool>>,
         cmd: &mut Command,
         byte_count: u16,
     ) -> Result<Vec<u8>, i32> {
         self.master_recv(cmd, byte_count)?;
-        self.master_recv_finish(cmd, byte_count)
+        self.master_recv_finish(running, cmd, byte_count)
     }
 
     /// Starts a receive from a target, but does not wait on the result (must call .master_recv_finish() separately).
@@ -212,15 +219,32 @@ impl Controller {
         Ok(())
     }
 
+    /// Receives up to 4 bytes from the read FIFO.
+    /// Could return fewer. 0 bytes are returned if no data is available.
+    pub fn master_recv_4_bytes(&mut self) -> Vec<u8> {
+        let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
+        if rx_data_available > 0 {
+            self.read_rx_fifo(rx_data_available.min(4))
+        } else {
+            vec![]
+        }
+    }
+
     /// Finishes a receive from a target.
-    pub fn master_recv_finish(&mut self, cmd: &Command, byte_count: u16) -> Result<Vec<u8>, i32> {
+    pub fn master_recv_finish(
+        &mut self,
+        running: Option<Arc<AtomicBool>>,
+        cmd: &Command,
+        byte_count: u16,
+    ) -> Result<Vec<u8>, i32> {
         let mut recv_byte_count = if cmd.target_addr == XI3C_BROADCAST_ADDRESS {
             (byte_count as i32 - 1) as u16
         } else {
             byte_count
         };
         let mut recv = vec![];
-        while recv_byte_count > 0 {
+        let running = running.unwrap_or_else(|| Arc::new(AtomicBool::new(true)));
+        while running.load(Ordering::Relaxed) && recv_byte_count > 0 {
             let rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
             let mut data_index: u16 = 0;
             while data_index < rx_data_available && recv_byte_count > 0 {

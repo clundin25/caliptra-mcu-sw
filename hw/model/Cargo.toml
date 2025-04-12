@@ -24,6 +24,7 @@ caliptra-emu-types.workspace = true
 caliptra-hw-model-types.workspace = true
 caliptra-image-types.workspace = true
 caliptra-registers.workspace = true
+emulator-bmc.workspace = true
 emulator-bus.workspace = true
 emulator-cpu.workspace = true
 emulator-periph.workspace = true
