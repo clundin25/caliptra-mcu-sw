@@ -92,5 +92,5 @@ async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &
         test_exit(1);
     }
 
-    println!("SHA test passed");
+    println!("SHA test for {:?} passed", algo);
 }

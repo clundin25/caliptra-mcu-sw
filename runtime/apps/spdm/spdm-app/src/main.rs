@@ -33,6 +33,9 @@ static HASH_PRIORITY_TABLE: &[BaseHashAlgoType] = &[
     BaseHashAlgoType::TpmAlgSha256,
 ];
 
+// Only support slot 0 for now. Adjust this when we support multiple slots.
+pub const CERT_CHAIN_SLOT_MASK: u8 = 0x01;
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
@@ -106,7 +109,7 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         },
     };
 
-    let device_certs_mgr = DeviceCertsManager::new();
+    let device_certs_mgr = DeviceCertsManager::new(CERT_CHAIN_SLOT_MASK, CERT_CHAIN_SLOT_MASK);
 
     let mut ctx = match SpdmContext::new(
         SPDM_VERSIONS,

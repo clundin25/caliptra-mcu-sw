@@ -191,7 +191,7 @@ pub(crate) async fn handle_digests<'a, S: Syscalls>(
     for (slot_id, digest) in digests.iter_mut().take(slot_cnt).enumerate() {
         digest.length = caliptra_hash_algo.hash_size() as u8;
         ctx.device_certs_manager
-            .get_certificate_chain_digest::<S>(slot_id as u8, hash_algo, &mut digest.data)
+            .cert_chain_digest::<S>(slot_id as u8, hash_algo, &mut digest.data)
             .await
             .map_err(|_| {
                 ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)

@@ -158,11 +158,20 @@ impl Default for CertChainSlotState {
     }
 }
 
-pub struct DeviceCertsManager;
+pub struct DeviceCertsManager {
+    supported_slot_mask: SupportedSlotMask,
+    provisioned_slot_mask: ProvisionedSlotMask,
+}
 
 impl DeviceCertsManager {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(
+        supported_slot_mask: SupportedSlotMask,
+        provisioned_slot_mask: ProvisionedSlotMask,
+    ) -> Self {
+        Self {
+            supported_slot_mask,
+            provisioned_slot_mask,
+        }
     }
 }
 
@@ -176,7 +185,7 @@ impl DeviceCertsManager {
     pub fn get_cert_chain_slot_mask(
         &self,
     ) -> Result<(SupportedSlotMask, ProvisionedSlotMask), DeviceCertsMgrError> {
-        Ok((config::CERT_CHAIN_SLOT_MASK, config::CERT_CHAIN_SLOT_MASK))
+        Ok((self.supported_slot_mask, self.provisioned_slot_mask))
     }
 
     /// Retrieves the state of the certificate chain for a specific slot, including the
@@ -316,32 +325,6 @@ impl DeviceCertsManager {
     pub async fn cert_chain_digest<S: Syscalls>(
         &self,
         slot_id: u8,
-        algo: HashAlgoType,
-        digest: &mut [u8],
-    ) -> Result<(), DeviceCertsMgrError> {
-        let mut cert_chain_data = SpdmCertChainData::default();
-        let root_cert_len = self.construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
-
-        if digest.len() < algo.hash_size() {
-            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
-        }
-
-        let mut hash_ctx = HashContext::<S>::new();
-        hash_ctx.init(algo, None).await?;
-
-        // Hash the cert chain data
-        hash_ctx
-            .update(&cert_chain_data.as_ref()[..root_cert_len])
-            .await?;
-
-        hash_ctx.finalize(digest).await?;
-
-        Ok(())
-    }
-
-    pub async fn get_certificate_chain_digest<S: Syscalls>(
-        &self,
-        slot_id: u8,
         hash_type: BaseHashAlgoType,
         digest: &mut [u8],
     ) -> Result<(), DeviceCertsMgrError> {
@@ -366,43 +349,23 @@ impl DeviceCertsManager {
         .await
         .map_err(DeviceCertsMgrError::CryptoError)?;
 
-        // self.hash_engine
-        //     .hash_all(
-        //         &cert_chain_data.as_ref()[..root_cert_len],
-        //         hash_type,
-        //         &mut root_hash,
-        //     )
-        //     .map_err(SpdmError::HashEngine)?;
-
         // Construct the cert chain base buffer
         let cert_chain_base_buf =
             SpdmCertChainBaseBuffer::new(cert_chain_data.length as usize, root_hash.as_ref())?;
 
         // Start the hash operation
         let mut hash_ctx = HashContext::<S>::new();
+
         // Hash the cert chain base
         hash_ctx
             .init(hash_algo, Some(cert_chain_base_buf.as_ref()))
             .await?;
+
         // Hash the cert chain data
         hash_ctx.update(cert_chain_data.as_ref()).await?;
+
         // Finalize the hash operation
         hash_ctx.finalize(digest).await?;
-        // self.hash_engine
-        //     .start(hash_type)
-        //     .map_err(SpdmError::HashEngine)?;
-
-        // self.hash_engine
-        //     .update(cert_chain_base_buf.as_ref())
-        //     .map_err(SpdmError::HashEngine)?;
-
-        // self.hash_engine
-        //     .update(cert_chain_data.as_ref())
-        //     .map_err(SpdmError::HashEngine)?;
-
-        // self.hash_engine
-        //     .finish(digest)
-        //     .map_err(SpdmError::HashEngine)?;
 
         Ok(())
     }
@@ -416,7 +379,7 @@ mod test {
     #[test]
     fn test_get_certificate_chain_data() {
         let mut cert_chain_data = SpdmCertChainData::default();
-        let device_certs_mgr = DeviceCertsManager;
+        let device_certs_mgr = DeviceCertsManager::new(1, 1);
         let slot_id = 0;
 
         let root_cert_len = device_certs_mgr
@@ -439,7 +402,7 @@ mod test {
 
     #[test]
     fn test_certificate_chain_base_buffer() {
-        let device_certs_mgr = DeviceCertsManager;
+        let device_certs_mgr = DeviceCertsManager::new(1, 1);
         let mut cert_chain_data = SpdmCertChainData::default();
         let slot_id = 0;
         let root_cert_len = device_certs_mgr

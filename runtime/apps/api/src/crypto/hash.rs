@@ -67,16 +67,16 @@ impl<S: Syscalls> HashContext<S> {
         if hash.len() < hash_algo.hash_size() {
             Err(CryptoError::InvalidArgument("Hash buffer too small"))?;
         }
-        ctx.init(hash_algo.clone(), Some(data)).await?;
+        ctx.init(hash_algo, Some(data)).await?;
         ctx.finalize(hash).await
     }
 
     pub fn hash_algo(&self) -> Option<HashAlgoType> {
-        self.algo.clone()
+        self.algo
     }
 
     pub async fn init(&mut self, hash_algo: HashAlgoType, data: Option<&[u8]>) -> CryptoResult<()> {
-        self.algo = Some(hash_algo.clone());
+        self.algo = Some(hash_algo);
 
         let mut init_req = CmShaInitReq {
             hdr: MailboxReqHeader::default(),
