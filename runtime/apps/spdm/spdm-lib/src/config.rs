@@ -7,6 +7,9 @@ pub const MAX_DER_CERT_LENGTH: usize = 1024;
 
 pub const MAX_CERT_CHAIN_DATA_SIZE: usize = MAX_DER_CERT_LENGTH * MAX_CERT_COUNT_PER_CHAIN;
 
+// Maximum size of a certificate portion in bytes. Adjust as needed.
+pub const MAX_SPDM_CERT_PORTION_LEN: usize = 512;
+
 // This is a hard-coded test device ID cert for development and testing.
 // Refactor out when we have real mechanism to retrieve the certificate chain.
 pub static TEST_DEVID_CERT_DER: [u8; 651] = [
