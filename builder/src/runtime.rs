@@ -18,7 +18,7 @@ use std::process::Command;
 const DEFAULT_RUNTIME_NAME: &str = "runtime.bin";
 const INTERRUPT_TABLE_SIZE: usize = 128;
 // amount to reserve for data RAM at the end of RAM
-const DATA_RAM_SIZE: usize = 114 * 1024;
+const DATA_RAM_SIZE: usize = 128 * 1024;
 
 fn get_apps_memory_offset(elf_file: PathBuf) -> Result<usize> {
     let elf_bytes = std::fs::read(&elf_file)?;
@@ -57,10 +57,16 @@ pub fn runtime_build_no_apps(
     let apps_offset = apps_offset.unwrap_or(RAM_OFFSET as usize + 192 * 1024);
     let apps_size = apps_size.unwrap_or(64 * 1024);
 
+    println!(" Kernel size: {:x}", runtime_size);
+    println!(" Apps offset: {:x}", apps_offset);
+    println!(" Apps size: {:x}", apps_size);
+    println!(" RAM_OFFSET: {:x}", RAM_OFFSET);
+    println!(" RAM_SIZE: {:x}", RAM_SIZE);
+
     let ram_start = RAM_OFFSET as usize + RAM_SIZE as usize - DATA_RAM_SIZE;
     assert!(
         ram_start >= apps_offset + apps_size,
-        "RAM must be after apps"
+        "RAM must be after apps ram_start {:x} apps_offset {:x} apps_size {:x}", ram_start, apps_offset, apps_size
     );
 
     std::fs::write(
