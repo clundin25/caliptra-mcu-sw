@@ -207,6 +207,18 @@ impl FdInternal {
         }
     }
 
+    pub async fn set_initiator_mode(&self, mode: FdSpecific) {
+        let mut inner = self.inner.lock().await;
+        inner.initiator_mode_specific = mode;
+    }
+
+    pub async fn set_fd_verify_progress(&self, progress: u8) {
+        let mut inner = self.inner.lock().await;
+        if let FdSpecific::Verify(verify) = &mut inner.initiator_mode_specific {
+            verify.progress_percent = progress;
+        }
+    }
+
     pub async fn set_fd_t1_update_ts(&self, timestamp: PldmFdTime) {
         let mut inner = self.inner.lock().await;
         inner.fd_t1_update_ts = timestamp;
@@ -258,7 +270,7 @@ impl FdInternalInner {
             update_flags: UpdateOptionFlags(0),
             max_xfer_size,
             req: FdReq::new(),
-            initiator_mode_specific: FdSpecific::Download(FdDownload::new()),
+            initiator_mode_specific: FdSpecific::Download(FdDownload::default()),
             ua_address: None,
             fd_t1_update_ts: 0,
             fd_t1_timeout,
@@ -328,25 +340,16 @@ pub enum FdSpecific {
     Apply(FdApply),
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdDownload {
     pub offset: u32,
 }
 
-impl FdDownload {
-    fn new() -> Self {
-        Self { offset: 0 }
-    }
-}
-
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdVerify {
     pub progress_percent: u8,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct FdApply {
     pub progress_percent: u8,

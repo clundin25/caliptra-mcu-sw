@@ -7,7 +7,9 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use libapi_caliptra::mailbox::Mailbox;
 use libtock_platform::Syscalls;
+use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
+use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_common::{
     message::firmware_update::get_fw_params::FirmwareParameters,
@@ -157,6 +159,12 @@ pub trait FdOps {
         component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError>;
 
+    async fn verify(
+        &self,
+        component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<VerifyResult, FdOpsError>;
+
     /// Retrieves the current timestamp in milliseconds.
     ///
     /// # Returns
@@ -253,6 +261,22 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         }
 
         // TODO: Implement the actual firmware data handling logic
+        todo!()
+    }
+
+    async fn verify(
+        &self,
+        _component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<VerifyResult, FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            //let _ = progress_percent.set_value((progress_percent.value() + 40).min(100));
+            progress_percent.set_value(100);
+            return Ok(VerifyResult::VerifySuccess);
+        }
+
+        // TODO: Implement the actual verification logic
         todo!()
     }
 

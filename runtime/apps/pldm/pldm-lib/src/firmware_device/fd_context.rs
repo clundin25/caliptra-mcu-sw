@@ -9,6 +9,7 @@ use pldm_common::codec::PldmCodec;
 use pldm_common::message::firmware_update::get_fw_params::{
     FirmwareParameters, GetFirmwareParametersRequest, GetFirmwareParametersResponse,
 };
+use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::pass_component::{
     PassComponentTableRequest, PassComponentTableResponse,
 };
@@ -29,6 +30,8 @@ use pldm_common::message::firmware_update::request_fw_data::{
     RequestFirmwareDataRequest, RequestFirmwareDataResponseFixed,
 };
 
+use pldm_common::message::firmware_update::verify_complete::{VerifyCompleteRequest, VerifyResult};
+
 use pldm_common::codec::PldmCodecError; // Added import for PldmCodecError
 use pldm_common::protocol::base::{
     PldmBaseCompletionCode, PldmMsgHeader, PldmMsgType, TransferRespFlag,
@@ -43,6 +46,8 @@ use pldm_common::util::fw_component::FirmwareComponent;
 // Debug usage
 use core::fmt::Write;
 use libtock_console::Console;
+
+use super::fd_internal::{FdApply, FdDownload, FdSpecific, FdVerify};
 
 pub struct FirmwareDeviceContext<S: Syscalls> {
     ops: FdOpsObject<S>,
@@ -333,10 +338,14 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         match resp.encode(payload) {
             Ok(bytes) => {
                 if comp_resp_code == ComponentResponseCode::CompCanBeUpdated {
+                    self.internal
+                        .set_initiator_mode(FdSpecific::Download(FdDownload::default()))
+                        .await;
                     // Set up the req for download.
                     self.internal
                         .set_fd_req(FdReqState::Ready, false, None, None, None, None)
                         .await;
+
                     // Move FD state machine to download state.
                     self.internal
                         .set_fd_state(FirmwareDeviceState::Download)
@@ -415,6 +424,14 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
 
         match FwUpdateCmd::try_from(cmd_code) {
             Ok(FwUpdateCmd::RequestFirmwareData) => self.process_request_fw_data_rsp(payload).await,
+            Ok(FwUpdateCmd::TransferComplete) => {
+                // Handle TransferComplete response
+                self.process_transfer_complete_rsp(payload).await
+            }
+            Ok(FwUpdateCmd::VerifyComplete) => {
+                // Handle VerifyComplete response
+                self.process_verify_complete_rsp(payload).await
+            }
             // Add more response handler here
             _ => Err(MsgHandlerError::FdInitiatorModeError),
         }
@@ -488,14 +505,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
 
             // XS added: Invoke another request if there is more data to download
             self.internal
-                .set_fd_req(
-                    FdReqState::Ready,
-                    false,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
+                .set_fd_req(FdReqState::Ready, false, None, None, None, None)
                 .await;
 
             if dl_offset == self.internal.get_component().await.comp_image_size.unwrap() {
@@ -522,6 +532,133 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         Ok(())
     }
 
+    async fn process_transfer_complete_rsp(
+        &self,
+        _payload: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
+        let mut cw = Console::<S>::writer(); // Debug usage
+        writeln!(cw, "[xs debug]process_transfer_complete_rsp start").unwrap();
+
+        // Get fd device state
+        let fd_state = self.internal.get_fd_state().await;
+        if fd_state != FirmwareDeviceState::Download {
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+        let fd_req = self.internal.get_fd_req().await;
+        if fd_req.state != FdReqState::Sent {
+            // Not waiting for a response, ignore it
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        if !fd_req.complete {
+            // Were waiting for RequestFirmwareData instead, ignore it
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        /* Next state depends whether the transfer succeeded */
+        if fd_req.result == Some(TransferResult::TransferSuccess as u8) {
+            // Switch to Verify
+            self.internal
+                .set_initiator_mode(FdSpecific::Verify(FdVerify::default()))
+                .await;
+            self.internal
+                .set_fd_req(FdReqState::Ready, false, None, None, None, None)
+                .await;
+            self.internal
+                .set_fd_state(FirmwareDeviceState::Verify)
+                .await;
+        } else {
+            // Wait for UA to cancel
+            self.internal
+                .set_fd_req(FdReqState::Failed, true, None, None, None, None)
+                .await;
+        }
+
+        writeln!(cw, "[xs debug]process_transfer_complete_rsp end").unwrap();
+        Ok(())
+    }
+
+    /*
+
+    LIBPLDM_CC_NONNULL
+    static int pldm_fd_handle_verify_complete_resp(
+        struct pldm_fd *fd, const struct pldm_msg *resp LIBPLDM_CC_UNUSED,
+        size_t resp_payload_len LIBPLDM_CC_UNUSED)
+    {
+        if (fd->state != PLDM_FD_STATE_VERIFY) {
+            return -EPROTO;
+        }
+
+        if (fd->req.state != PLDM_FD_REQ_SENT) {
+            /* Not waiting for a response, ignore it */
+            return -EPROTO;
+        }
+
+        assert(fd->req.complete);
+
+        /* Disregard the response completion code */
+
+        /* Next state depends whether the verify succeeded */
+        if (fd->req.result == PLDM_FWUP_VERIFY_SUCCESS) {
+            /* Switch to Apply */
+            memset(&fd->specific, 0x0, sizeof(fd->specific));
+            fd->specific.apply.progress_percent =
+                PROGRESS_PERCENT_NOT_SUPPORTED;
+            fd->req.state = PLDM_FD_REQ_READY;
+            fd->req.complete = false;
+            pldm_fd_set_state(fd, PLDM_FD_STATE_APPLY);
+        } else {
+            /* Wait for UA to cancel */
+            fd->req.state = PLDM_FD_REQ_FAILED;
+        }
+        return 0;
+    }
+         */
+    async fn process_verify_complete_rsp(
+        &self,
+        _payload: &mut [u8],
+    ) -> Result<(), MsgHandlerError> {
+        let mut cw = Console::<S>::writer(); // Debug usage
+        writeln!(cw, "[xs debug]process_verify_complete_rsp start").unwrap();
+
+        // Get fd device state
+        let fd_state = self.internal.get_fd_state().await;
+        if fd_state != FirmwareDeviceState::Verify {
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        let fd_req = self.internal.get_fd_req().await;
+        if fd_req.state != FdReqState::Sent {
+            // Not waiting for a response, ignore it
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        if !fd_req.complete {
+            // Were waiting for RequestFirmwareData instead, ignore it
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        /* Next state depends whether the verify succeeded */
+        if fd_req.result == Some(VerifyResult::VerifySuccess as u8) {
+            // Switch to Apply
+            self.internal
+                .set_initiator_mode(FdSpecific::Apply(FdApply::default()))
+                .await;
+            self.internal
+                .set_fd_req(FdReqState::Ready, false, None, None, None, None)
+                .await;
+            self.internal.set_fd_state(FirmwareDeviceState::Apply).await;
+        } else {
+            // Wait for UA to cancel
+            self.internal
+                .set_fd_req(FdReqState::Failed, true, None, None, None, None)
+                .await;
+        }
+
+        writeln!(cw, "[xs debug]process_verify_complete_rsp end").unwrap();
+        Ok(())
+    }
+
     async fn fd_progress_download(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
         let mut cw = Console::<S>::writer(); // Debug usage
         writeln!(cw, "[xs debug]fd_progress_download start").unwrap();
@@ -533,7 +670,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
 
         // Allocate the next instance ID
         let instance_id = self.internal.alloc_next_instance_id().await.unwrap();
-        let mut msg_len = 0;
+        //let mut msg_len = 0;
 
         // If the request is complete, send TransferComplete
         if self.internal.is_fd_req_complete().await {
@@ -543,7 +680,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                 .await
                 .ok_or(MsgHandlerError::FdInitiatorModeError)?;
 
-            msg_len = TransferCompleteRequest::new(
+            let msg_len = TransferCompleteRequest::new(
                 instance_id,
                 PldmMsgType::Request,
                 TransferResult::try_from(result).unwrap(),
@@ -569,9 +706,11 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                 "[xs debug]fd_progress_download: issuing transfer complete"
             )
             .unwrap();
+
+            return Ok(msg_len);
         } else {
             if let Some((offset, length)) = self.internal.get_fd_dowload_info().await {
-                msg_len = RequestFirmwareDataRequest::new(
+                let msg_len = RequestFirmwareDataRequest::new(
                     instance_id,
                     PldmMsgType::Request,
                     offset,
@@ -594,16 +733,68 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                     .await;
 
                 writeln!(cw, "[xs debug]fd_progress_download: requesting fw data: offset={:02x}, length = {:02x}", offset, length).unwrap();
+                return Ok(msg_len);
             } else {
                 return Err(MsgHandlerError::FdInitiatorModeError);
             }
         }
-
-        Ok(msg_len)
     }
 
     async fn pldm_fd_progress_verify(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
-        Ok(0)
+        let mut cw = Console::<S>::writer(); // Debug usage
+        writeln!(cw, "[xs debug]fd_progress_verify start").unwrap();
+
+        // Check if the request is ready to send
+        if !self.should_send_fd_request().await {
+            return Err(MsgHandlerError::FdInitiatorModeError);
+        }
+
+        let mut res = VerifyResult::VerifyGenericError;
+        if !self.internal.is_fd_req_complete().await {
+            let mut progress_percent = ProgressPercent::default();
+            res = self
+                .ops
+                .verify(&self.internal.get_component().await, &mut progress_percent)
+                .await
+                .map_err(MsgHandlerError::FdOps)?;
+
+            // Set the progress percent to FdVerify
+            self.internal
+                .set_fd_verify_progress(progress_percent.value())
+                .await;
+
+            if res == VerifyResult::VerifySuccess && progress_percent.value() != 100 {
+                // doing nothing and wait for the next call
+                return Ok(0);
+            }
+        }
+
+        // It could be a failure or success
+        // Allocate the next instance ID
+        let instance_id = self.internal.alloc_next_instance_id().await.unwrap();
+
+        let verify_complete_req =
+            VerifyCompleteRequest::new(instance_id, PldmMsgType::Request, res);
+
+        // Encode the request message
+        let msg_len = verify_complete_req
+            .encode(_payload)
+            .map_err(MsgHandlerError::Codec)?;
+
+        self.internal
+            .set_fd_req(
+                FdReqState::Sent,
+                true,
+                Some(res as u8),
+                Some(instance_id),
+                Some(FwUpdateCmd::VerifyComplete as u8),
+                Some(self.ops.now().await),
+            )
+            .await;
+
+        writeln!(cw, "[xs debug]fd_progress_verify: issuing verify complete").unwrap();
+
+        return Ok(msg_len);
     }
 
     async fn pldm_fd_progress_apply(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
