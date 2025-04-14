@@ -66,7 +66,10 @@ pub fn runtime_build_no_apps(
     let ram_start = RAM_OFFSET as usize + RAM_SIZE as usize - DATA_RAM_SIZE;
     assert!(
         ram_start >= apps_offset + apps_size,
-        "RAM must be after apps ram_start {:x} apps_offset {:x} apps_size {:x}", ram_start, apps_offset, apps_size
+        "RAM must be after apps ram_start {:x} apps_offset {:x} apps_size {:x}",
+        ram_start,
+        apps_offset,
+        apps_size
     );
 
     std::fs::write(
