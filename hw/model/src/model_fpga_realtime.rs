@@ -862,20 +862,22 @@ mod test {
             "STBY_CR_CAPABILITIES: {:x}",
             regs.stdby_ctrl_mode_stby_cr_capabilities.get()
         );
-        // TODO: maybe this is being misreported
-        // if !regs
-        //     .stdby_ctrl_mode_stby_cr_capabilities
-        //     .is_set(StbyCrCapabilities::TargetXactSupport)
-        // {
-        //     panic!("I3C target transaction support is not enabled");
-        // }
+        if !regs
+            .stdby_ctrl_mode_stby_cr_capabilities
+            .is_set(StbyCrCapabilities::TargetXactSupport)
+        {
+            panic!("I3C target transaction support is not enabled");
+        }
 
         // program a static address
-        if !recovery_enabled {
-            println!("Setting static address");
-            regs.stdby_ctrl_mode_stby_cr_device_addr.write(
-                StbyCrDeviceAddr::StaticAddrValid::SET
-                    + StbyCrDeviceAddr::StaticAddr.val(addr as u32),
+        println!("Setting static address");
+        regs.stdby_ctrl_mode_stby_cr_device_addr.write(
+            StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(addr as u32),
+        );
+        if recovery_enabled {
+            regs.stdby_ctrl_mode_stby_cr_virt_device_addr.write(
+                StbyCrVirtDeviceAddr::VirtStaticAddrValid::SET
+                    + StbyCrVirtDeviceAddr::VirtStaticAddr.val((addr + 1) as u32),
             );
         }
 
@@ -1243,17 +1245,15 @@ mod test {
         );
 
         // Recv
-        for _ in 0..repeat {
-            println!("Sending a read request to the target");
-            cmd.target_addr = I3C_TARGET_ADDR;
-            cmd.no_repeated_start = 1;
-            cmd.tid = 0;
-            cmd.pec = 0;
-            cmd.cmd_type = 1;
-            i3c_controller
-                .master_recv(&mut cmd, I3C_DATALEN)
-                .expect("Failed to start receive from target");
-        }
+        println!("Sending a read request to the target");
+        cmd.target_addr = I3C_TARGET_ADDR;
+        cmd.no_repeated_start = 1;
+        cmd.tid = 0;
+        cmd.pec = 0;
+        cmd.cmd_type = 1;
+        i3c_controller
+            .master_recv(&mut cmd, I3C_DATALEN)
+            .expect("Failed to start receive from target");
 
         println!(
             "I3C target status {:x}, interrupt status {:x}",
@@ -1270,7 +1270,7 @@ mod test {
         println!("Writing data back to controller: {:x?}", tx_data);
         send_packet(i3c_target, &tx_data);
 
-        let rx_data = i3c_controller
+        let rx_data: Vec<u8> = i3c_controller
             .master_recv_finish(None, &cmd, I3C_DATALEN)
             .expect("Failed to finish receiving data from target");
 

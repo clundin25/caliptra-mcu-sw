@@ -315,6 +315,7 @@ impl Controller {
         cmd.cmd_type = 1;
         println!("Controller: Broadcast CCC ENTDAA");
         self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENTDAA)?;
+        println!("Acknowledged");
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {
             let addr =
