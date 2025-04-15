@@ -26,9 +26,9 @@ impl Controller {
     /// Sets I3C Scl clock frequency.
     /// - s_clk_hz is Scl clock to be configured in Hz.
     /// - mode is the mode of operation I2C/I3C.
-    pub fn set_s_clk(&mut self, s_clk_hz: u32, mode: u8) {
+    pub fn set_s_clk(&mut self, input_clock_hz: u32, s_clk_hz: u32, mode: u8) {
         assert!(s_clk_hz > 0);
-        let t_high = (self.config.input_clock_hz)
+        let t_high = input_clock_hz
             .wrapping_add(s_clk_hz)
             .wrapping_sub(1)
             .wrapping_div(s_clk_hz)
@@ -36,9 +36,9 @@ impl Controller {
         let t_low = t_high;
         let mut t_hold = t_low.wrapping_mul(4).wrapping_div(10);
         let core_period_ns = 1_000_000_000_u32
-            .wrapping_add(self.config.input_clock_hz)
+            .wrapping_add(input_clock_hz)
             .wrapping_sub(1)
-            .wrapping_div(self.config.input_clock_hz);
+            .wrapping_div(input_clock_hz);
         if (self.regs().version.get() & 0xff00) >> 8 == 0 {
             t_hold = if t_hold < 5 { 5 } else { t_hold };
         } else {
@@ -68,11 +68,11 @@ impl Controller {
                 .wrapping_sub(1)
                 .wrapping_div(core_period_ns);
         } else {
-            od_t_low = 500000_u32
+            od_t_low = 500_u32
                 .wrapping_add(core_period_ns)
                 .wrapping_sub(1)
                 .wrapping_div(core_period_ns);
-            od_t_high = 41000_u32
+            od_t_high = 41_u32
                 .wrapping_add(core_period_ns)
                 .wrapping_sub(1)
                 .wrapping_div(core_period_ns);

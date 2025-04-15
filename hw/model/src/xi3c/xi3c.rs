@@ -17,6 +17,7 @@ pub const XI3C_BROADCAST_ADDRESS: u8 = 0x7e;
 pub(crate) const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;
 pub(crate) const XI3C_CCC_BRDCAST_DISEC: u8 = 0x1;
 pub(crate) const XI3C_CCC_BRDCAST_RSTDAA: u8 = 0x6;
+pub(crate) const XI3C_CCC_BRDCAST_ENTDAA: u8 = 0x7;
 
 /// BIT 4 - Resp Fifo not empty
 pub(crate) const XI3C_SR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
@@ -312,7 +313,8 @@ impl Controller {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        self.send_transfer_cmd(&mut cmd, 0x7)?;
+        println!("Controller: Broadcast CCC ENTDAA");
+        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENTDAA)?;
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {
             let addr =
@@ -328,7 +330,14 @@ impl Controller {
             cmd.pec = 0;
             cmd.cmd_type = 1;
 
-            let recv_buffer = self.master_recv_polled(None, &mut cmd, 9)?;
+            println!("Controller: Assigning dynamic address {:x}", addr);
+            let recv_buffer = match self.master_recv_polled(None, &mut cmd, 9) {
+                Ok(recv_buffer) => recv_buffer,
+                Err(err) => {
+                    println!("No ack received for assigning address");
+                    return Err(err);
+                }
+            };
 
             self.target_info_table[self.cur_device_count as usize].id = (recv_buffer[0] as u64)
                 << 40
