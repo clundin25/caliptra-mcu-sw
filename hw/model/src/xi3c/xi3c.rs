@@ -18,6 +18,7 @@ pub(crate) const XI3C_CCC_BRDCAST_ENEC: u8 = 0x0;
 pub(crate) const XI3C_CCC_BRDCAST_DISEC: u8 = 0x1;
 pub(crate) const XI3C_CCC_BRDCAST_RSTDAA: u8 = 0x6;
 pub(crate) const XI3C_CCC_BRDCAST_ENTDAA: u8 = 0x7;
+pub(crate) const XI3C_CCC_SETDASA: u8 = 0x87;
 
 /// BIT 4 - Resp Fifo not empty
 pub(crate) const XI3C_SR_RESP_NOT_EMPTY_MASK: u32 = 0x10;
@@ -94,6 +95,8 @@ pub struct Config {
     pub device_count: u8,
     pub ibi_capable: bool,
     pub hj_capable: bool,
+    pub entdaa_enable: bool,
+    pub known_static_addrs: Vec<u8>, // if entdaa is disabled, we have to know the static addresses to do SETDASA
 }
 
 #[derive(Copy, Clone, Default)]
@@ -158,6 +161,8 @@ impl Controller {
                 device_count: 0,
                 ibi_capable: false,
                 hj_capable: false,
+                entdaa_enable: false,
+                known_static_addrs: vec![],
             },
             ready: false,
             error: 0,
@@ -233,6 +238,8 @@ impl Controller {
         self.config.device_count = config.device_count;
         self.config.ibi_capable = config.ibi_capable;
         self.config.hj_capable = config.hj_capable;
+        self.config.entdaa_enable = config.entdaa_enable;
+        self.config.known_static_addrs = config.known_static_addrs.clone();
         self.cur_device_count = 0;
         // Indicate the instance is now ready to use, initialized without error
         self.ready = true;
@@ -251,7 +258,28 @@ impl Controller {
         self.enable(1);
         self.bus_init()?;
         if self.config.ibi_capable && self.config.device_count != 0 {
-            self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count)?;
+            if self.config.entdaa_enable {
+                self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count)?;
+            } else {
+                let static_addrs = self.config.known_static_addrs.clone();
+                println!("Controller: initializing dynamic addresses with SETDASA (static address: {:x?})", &static_addrs);
+                let mut cmd: Command = Command {
+                    cmd_type: 1,
+                    no_repeated_start: 0,
+                    pec: 0,
+                    target_addr: XI3C_BROADCAST_ADDRESS,
+                    rw: 0,
+                    byte_count: 1,
+                    tid: 2,
+                };
+                assert!(self.ready);
+                println!("Controller: Broadcast CCC SETDASA");
+                self.send_transfer_cmd(&mut cmd, XI3C_CCC_SETDASA)?;
+                println!("Acknowledged");
+                for (i, addr) in static_addrs.iter().enumerate() {
+                    self.dyna_addr_assign_static(*addr, DYNA_ADDR_LIST[i])?;
+                }
+            }
             self.config_ibi(self.config.device_count);
         }
         // Enable Hot join raising edge interrupt.
@@ -297,6 +325,34 @@ impl Controller {
         }
     }
 
+    /// Assign a dynamic address to a single static device using SETDASA
+    pub fn dyna_addr_assign_static(&mut self, static_addr: u8, dyn_addr: u8) -> Result<(), i32> {
+        let mut cmd: Command = Command {
+            cmd_type: 1,
+            no_repeated_start: 0,
+            pec: 0,
+            target_addr: static_addr,
+            rw: 0,
+            byte_count: 1,
+            tid: 3,
+        };
+
+        let addr = dyn_addr << 1;
+        println!(
+            "Controller: Assigning dynamic address with SETDASA private write {:x}",
+            addr
+        );
+        self.master_send_polled(&mut cmd, &[addr], 1)?;
+        println!("Acknowledged");
+
+        self.target_info_table[self.cur_device_count as usize].id = static_addr as u64;
+        self.target_info_table[self.cur_device_count as usize].dyna_addr = dyn_addr;
+        // TODO: should we get the DCR and BCR from the device?
+        self.cur_device_count += 1;
+        Ok(())
+    }
+
+    /// Assign dynamic addresses to all devices using ENTDAA
     pub fn dyna_addr_assign(&mut self, dyna_addr: &[u8], dev_count: u8) -> Result<(), i32> {
         let mut cmd: Command = Command {
             cmd_type: 0,

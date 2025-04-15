@@ -427,8 +427,10 @@ impl McuHwModel for ModelFpgaRealtime {
             rw_fifo_depth: 16,
             wr_threshold: 12,
             device_count: 1,
-            ibi_capable: false,
+            ibi_capable: true,
             hj_capable: false,
+            entdaa_enable: true,
+            known_static_addrs: vec![],
         };
 
         i3c_controller.set_s_clk(199_999_000, 12_500_000, 1);
@@ -845,7 +847,8 @@ mod test {
         regs.stdby_ctrl_mode_stby_cr_control.modify(
             StbyCrControl::StbyCrEnableInit.val(2) // enable the standby controller
                 + StbyCrControl::TargetXactEnable::SET // enable Target Transaction Interface
-                + StbyCrControl::DaaEntdaaEnable::SET // enable dynamic address assignment
+                + StbyCrControl::DaaEntdaaEnable::SET // enable ENTDAA dynamic address assignment
+                + StbyCrControl::DaaSetdasaEnable::SET // enable SETDASA dynamic address assignment
                 + StbyCrControl::BastCccIbiRing.val(0) // Set the IBI to use ring buffer 0
                 + StbyCrControl::PrimeAcceptGetacccr::CLEAR // // don't auto-accept primary controller role
                 + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
@@ -870,11 +873,12 @@ mod test {
         }
 
         // program a static address
-        println!("Setting static address");
+        println!("Setting static address to {:x}", addr);
         regs.stdby_ctrl_mode_stby_cr_device_addr.write(
             StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(addr as u32),
         );
         if recovery_enabled {
+            println!("Setting virtual device static address to {:x}", addr + 1);
             regs.stdby_ctrl_mode_stby_cr_virt_device_addr.write(
                 StbyCrVirtDeviceAddr::VirtStaticAddrValid::SET
                     + StbyCrVirtDeviceAddr::VirtStaticAddr.val((addr + 1) as u32),
@@ -1057,6 +1061,8 @@ mod test {
             device_count: 1,
             ibi_capable: false,
             hj_capable: false,
+            entdaa_enable: false,
+            known_static_addrs: vec![I3C_TARGET_ADDR],
         };
 
         i3c_controller.set_s_clk(AXI_CLOCK_HZ, I3C_CLOCK_HZ, 1);
@@ -1079,8 +1085,6 @@ mod test {
         println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
         println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
         println!("  thld start: {}", i3c_controller.regs().thd_start.get());
-
-        i3c_controller.bus_init().unwrap();
 
         const I3C_DATALEN: u16 = 90;
         let max_len = I3C_DATALEN.to_be_bytes();
@@ -1307,18 +1311,56 @@ mod test {
 
         let mut recovery_target_addr = I3C_TARGET_ADDR;
 
+        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
+        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
+        println!("XI3C HW version = {:x}", xi3c.version.get());
+
+        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: xi3c_controller_ptr,
+            input_clock_hz: AXI_CLOCK_HZ,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 2,
+            ibi_capable: true,
+            hj_capable: false,
+            entdaa_enable: false,
+            known_static_addrs: vec![I3C_TARGET_ADDR, I3C_TARGET_ADDR + 1],
+        };
+
+        i3c_controller.set_s_clk(AXI_CLOCK_HZ, I3C_CLOCK_HZ, 1);
+        i3c_controller
+            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
+            .unwrap();
+        println!("I3C controller timing registers:");
+        println!(
+            "  od scl high: {}",
+            i3c_controller.regs().od_scl_high_time.get()
+        );
+        println!(
+            "  od scl low: {}",
+            i3c_controller.regs().od_scl_low_time.get()
+        );
+        println!("  scl high: {}", i3c_controller.regs().scl_high_time.get());
+        println!("  scl low: {}", i3c_controller.regs().scl_low_time.get());
+        println!("  sda hold: {}", i3c_controller.regs().sda_hold_time.get());
+        println!("  tsu start: {}", i3c_controller.regs().tsu_start.get());
+        println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
+        println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
+        println!("  thld start: {}", i3c_controller.regs().thd_start.get());
+
         // check I3C target address
         if i3c_target
             .stdby_ctrl_mode_stby_cr_device_addr
             .read(StbyCrDeviceAddr::DynamicAddrValid)
             == 1
         {
-            println!(
-                "I3C target dynamic address: {:x}",
-                i3c_target
-                    .stdby_ctrl_mode_stby_cr_device_addr
-                    .read(StbyCrDeviceAddr::DynamicAddr) as u8,
-            );
+            let addr = i3c_target
+                .stdby_ctrl_mode_stby_cr_device_addr
+                .read(StbyCrDeviceAddr::DynamicAddr);
+            println!("I3C target dynamic address: {:x}", addr);
+            //recovery_target_addr = addr as u8;
         }
         if i3c_target
             .stdby_ctrl_mode_stby_cr_device_addr
@@ -1358,46 +1400,11 @@ mod test {
             );
         }
 
-        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
-        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
-        println!("XI3C HW version = {:x}", xi3c.version.get());
-
-        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
-        let xi3c_config = xi3c::Config {
-            device_id: 0,
-            base_address: xi3c_controller_ptr,
-            input_clock_hz: AXI_CLOCK_HZ,
-            rw_fifo_depth: 16,
-            wr_threshold: 12,
-            device_count: 2,
-            ibi_capable: true,
-            hj_capable: false,
-        };
-
-        i3c_controller.set_s_clk(AXI_CLOCK_HZ, I3C_CLOCK_HZ, 1);
-        i3c_controller
-            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
-            .unwrap();
-        println!("I3C controller timing registers:");
-        println!(
-            "  od scl high: {}",
-            i3c_controller.regs().od_scl_high_time.get()
-        );
-        println!(
-            "  od scl low: {}",
-            i3c_controller.regs().od_scl_low_time.get()
-        );
-        println!("  scl high: {}", i3c_controller.regs().scl_high_time.get());
-        println!("  scl low: {}", i3c_controller.regs().scl_low_time.get());
-        println!("  sda hold: {}", i3c_controller.regs().sda_hold_time.get());
-        println!("  tsu start: {}", i3c_controller.regs().tsu_start.get());
-        println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
-        println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
-        println!("  thld start: {}", i3c_controller.regs().thd_start.get());
-
-        i3c_controller.bus_init().unwrap();
-
         // Run the recovery flow.
+        println!(
+            "Starting recovery flow for target address {:x}",
+            recovery_target_addr
+        );
 
         let (caliptra_cpu_event_sender, from_bmc) = mpsc::channel();
         let (to_bmc, caliptra_cpu_event_recv) = mpsc::channel();
