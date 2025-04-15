@@ -87,6 +87,15 @@ impl FdInternal {
         }
     }
 
+    pub async fn set_fd_idle(&self, reason_code: GetStatusReasonCode) {
+        let mut inner = self.inner.lock().await;
+        if inner.state != FirmwareDeviceState::Idle {
+            inner.prev_state = inner.state.clone();
+            inner.state = FirmwareDeviceState::Idle;
+            inner.reason = Some(reason_code);
+        }
+    }
+
     pub async fn get_fd_state(&self) -> FirmwareDeviceState {
         let inner = self.inner.lock().await;
         inner.state.clone()

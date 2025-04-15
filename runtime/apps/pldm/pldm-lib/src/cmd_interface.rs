@@ -13,6 +13,10 @@ use pldm_common::protocol::base::{
 use pldm_common::protocol::firmware_update::FwUpdateCmd;
 use pldm_common::util::mctp_transport::PLDM_MSG_OFFSET;
 
+use libtock_console::Console;
+//use libtock_console::ConsoleWriter;
+use core::fmt::Write;
+
 pub type PldmCompletionErrorCode = u8;
 
 // Helper function to write a failure response message into payload
@@ -54,10 +58,10 @@ impl<'a, S: Syscalls> CmdInterface<'a, S> {
         msg_buf: &mut [u8],
     ) -> Result<(), MsgHandlerError> {
         // Receive msg from mctp transport
-        transport
-            .receive_request(msg_buf)
-            .await
-            .map_err(MsgHandlerError::Transport)?;
+        if let Err(e) = transport.receive_request(msg_buf).await {
+            writeln!(Console::<S>::writer(), "[xs debug]receive request error").unwrap();
+            return Err(MsgHandlerError::Transport(e));
+        }
 
         // Process the request
         let resp_len = self.process_request(msg_buf).await?;
@@ -71,6 +75,10 @@ impl<'a, S: Syscalls> CmdInterface<'a, S> {
 
     pub async fn is_start_initiator_mode(&self) -> bool {
         self.fd_ctx.is_start_initiator_mode().await
+    }
+
+    pub async fn is_stop_initiator_mode(&self) -> bool {
+        self.fd_ctx.is_stop_initiator_mode().await
     }
 
     // Handle the initiator mode to prepare the request to be sent out
@@ -190,6 +198,10 @@ impl<'a, S: Syscalls> CmdInterface<'a, S> {
                         self.fd_ctx.pass_component_rsp(payload).await
                     }
                     FwUpdateCmd::UpdateComponent => self.fd_ctx.update_component_rsp(payload).await,
+
+                    FwUpdateCmd::ActivateFirmware => {
+                        self.fd_ctx.activate_firmware_rsp(payload).await
+                    }
                     // Add more cmd handlers here
                     _ => generate_failure_response(
                         payload,

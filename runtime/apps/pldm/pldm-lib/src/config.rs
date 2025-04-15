@@ -91,3 +91,6 @@ pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
         &[component_parameter_entry],
     )
 });
+
+// This is the maximum time in seconds that UA will wait for self-activation. It is a test value for development.
+pub static TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS: u16 = 20;

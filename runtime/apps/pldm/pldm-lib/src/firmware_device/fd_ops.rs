@@ -172,6 +172,27 @@ pub trait FdOps {
         progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError>;
 
+    /// Activates new firmware.
+    ///
+    /// # Arguments
+    ///
+    /// * `self_contained_activation` - Indicates if self-contained activation is requested.
+    /// * `estimated_time` - A mutable reference to store the estimated time (in seconds)
+    ///   required to perform self-activation. This may be left as `None` if not needed.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<u8, FdOpsError>` - On success, returns a PLDM completion code.
+    ///   On failure, returns an `FdOpsError`.
+    ///
+    /// The device implementation is responsible for verifying that the expected components
+    /// have been updated. If not, it should return `PLDM_FWUP_INCOMPLETE_UPDATE`.
+    async fn activate(
+        &self,
+        self_contained_activation: u8,
+        estimated_time: &mut u16,
+    ) -> Result<u8, FdOpsError>;
+
     /// Retrieves the current timestamp in milliseconds.
     ///
     /// # Returns
@@ -282,8 +303,7 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
             unsafe {
                 CALL_COUNT += 1;
                 let new_value = match CALL_COUNT {
-                    1 => 30,
-                    2 => 60,
+                    1 => 40,
                     _ => 100,
                 };
                 let _ = progress_percent.set_value(new_value);
@@ -306,8 +326,7 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
             unsafe {
                 CALL_COUNT += 1;
                 let new_value = match CALL_COUNT {
-                    1 => 30,
-                    2 => 60,
+                    1 => 40,
                     _ => 100,
                 };
                 let _ = progress_percent.set_value(new_value);
@@ -316,6 +335,23 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         }
 
         // TODO: Implement the actual verification logic
+        todo!()
+    }
+
+    async fn activate(
+        &self,
+        self_contained_activation: u8,
+        estimated_time: &mut u16,
+    ) -> Result<u8, FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            if self_contained_activation == 1 {
+                *estimated_time = crate::config::TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS;
+            }
+            return Ok(0); // PLDM completion code for success
+        }
+
+        // TODO: Implement the actual activation logic
         todo!()
     }
 

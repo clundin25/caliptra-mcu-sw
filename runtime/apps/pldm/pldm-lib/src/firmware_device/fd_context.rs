@@ -6,6 +6,9 @@ use crate::firmware_device::fd_internal::{FdInternal, FdReqState};
 use crate::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsObject};
 use libtock_platform::Syscalls;
 use pldm_common::codec::PldmCodec;
+use pldm_common::message::firmware_update::activate_fw::{
+    ActivateFirmwareRequest, ActivateFirmwareResponse,
+};
 use pldm_common::message::firmware_update::get_fw_params::{
     FirmwareParameters, GetFirmwareParametersRequest, GetFirmwareParametersResponse,
 };
@@ -31,6 +34,7 @@ use pldm_common::message::firmware_update::request_fw_data::{
 };
 
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteRequest, ApplyResult};
+use pldm_common::message::firmware_update::get_status::GetStatusReasonCode;
 use pldm_common::message::firmware_update::verify_complete::{VerifyCompleteRequest, VerifyResult};
 
 use pldm_common::codec::PldmCodecError; // Added import for PldmCodecError
@@ -67,6 +71,10 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
 
     pub async fn is_start_initiator_mode(&self) -> bool {
         self.internal.get_fd_state().await == FirmwareDeviceState::Download
+    }
+
+    pub async fn is_stop_initiator_mode(&self) -> bool {
+        self.internal.get_fd_state().await == FirmwareDeviceState::ReadyXfer
     }
 
     pub async fn query_devid_rsp(&self, payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
@@ -353,6 +361,132 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                         .set_fd_state(FirmwareDeviceState::Download)
                         .await;
                 }
+                Ok(bytes)
+            }
+            Err(_) => {
+                generate_failure_response(payload, PldmBaseCompletionCode::InvalidLength as u8)
+            }
+        }
+    }
+
+    /*
+
+    LIBPLDM_CC_NONNULL
+    static int pldm_fd_activate_firmware(struct pldm_fd *fd,
+                         const struct pldm_header_info *hdr,
+                         const struct pldm_msg *req,
+                         size_t req_payload_len,
+                         struct pldm_msg *resp,
+                         size_t *resp_payload_len)
+    {
+        uint16_t estimated_time;
+        uint8_t ccode;
+        int rc;
+        bool self_contained;
+
+        rc = decode_activate_firmware_req(req, req_payload_len,
+                          &self_contained);
+        if (rc) {
+            return pldm_fd_reply_errno(rc, hdr, resp, resp_payload_len);
+        }
+
+        if (fd->state != PLDM_FD_STATE_READY_XFER) {
+            return pldm_fd_reply_cc(PLDM_FWUP_INVALID_STATE_FOR_COMMAND,
+                        hdr, resp, resp_payload_len);
+        }
+
+        estimated_time = 0;
+        ccode = fd->ops->activate(fd->ops_ctx, self_contained, &estimated_time);
+
+        if (ccode == PLDM_SUCCESS ||
+            ccode == PLDM_FWUP_ACTIVATION_NOT_REQUIRED) {
+            /* Transition through states so that the prev_state is correct */
+            pldm_fd_set_state(fd, PLDM_FD_STATE_ACTIVATE);
+            pldm_fd_set_idle(fd, PLDM_FD_ACTIVATE_FW);
+        }
+
+        if (ccode == PLDM_SUCCESS) {
+            const struct pldm_activate_firmware_resp resp_data = {
+                .estimated_time_activation = estimated_time,
+            };
+            rc = encode_activate_firmware_resp(hdr->instance, &resp_data,
+                               resp, resp_payload_len);
+            if (rc) {
+                return pldm_fd_reply_errno(rc, hdr, resp,
+                               resp_payload_len);
+            }
+        } else {
+            return pldm_fd_reply_cc(ccode, hdr, resp, resp_payload_len);
+        }
+
+        return 0;
+    }
+
+
+         */
+    pub async fn activate_firmware_rsp(
+        &self,
+        payload: &mut [u8],
+    ) -> Result<usize, MsgHandlerError> {
+        // Check if FD is in 'ReadyTransfer' state. Otherwise returns 'INVALID_STATE' completion code
+        if self.internal.get_fd_state().await != FirmwareDeviceState::ReadyXfer {
+            return generate_failure_response(
+                payload,
+                FwUpdateCompletionCode::InvalidStateForCommand as u8,
+            );
+        }
+
+        // Decode the request message
+        let req = ActivateFirmwareRequest::decode(payload).map_err(MsgHandlerError::Codec)?;
+        let self_contained = req.self_contained_activation_req;
+
+        // Validate self_contained value
+        if self_contained != 0 && self_contained != 1 {
+            return generate_failure_response(payload, PldmBaseCompletionCode::InvalidData as u8);
+        }
+
+        let mut estimated_time = 0u16;
+        let completion_code = self
+            .ops
+            .activate(self_contained, &mut estimated_time)
+            .await
+            .map_err(MsgHandlerError::FdOps)?;
+
+        // debug prints
+        writeln!(
+            Console::<S>::writer(),
+            "[xs debug]activate_fw_rsp: completion_code={}",
+            completion_code
+        )
+        .unwrap();
+
+        // Construct response
+        let resp =
+            ActivateFirmwareResponse::new(req.hdr.instance_id(), completion_code, estimated_time);
+
+        match resp.encode(payload) {
+            Ok(bytes) => {
+                if completion_code == PldmBaseCompletionCode::Success as u8
+                    || completion_code == FwUpdateCompletionCode::ActivationNotRequired as u8
+                {
+                    // Transition through states so that the prev_state is correct
+                    self.internal
+                        .set_fd_state(FirmwareDeviceState::Activate)
+                        .await;
+
+                    // Replace GetStatusReasonCode::ActivateFw with the correct type or value
+                    self.internal
+                        .set_fd_idle(GetStatusReasonCode::ActivateFw)
+                        .await;
+                }
+
+                writeln!(
+                    Console::<S>::writer(),
+                    "[xs debug]activate_fw_rsp: success! msg_bytes={}",
+                    bytes
+                )
+                .unwrap();
+
                 Ok(bytes)
             }
             Err(_) => {
@@ -799,66 +933,6 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         return Ok(msg_len);
     }
 
-    /*
-
-    LIBPLDM_CC_NONNULL
-    static int pldm_fd_progress_apply(struct pldm_fd *fd, struct pldm_msg *req,
-                      size_t *req_payload_len)
-    {
-        uint8_t instance_id;
-        int rc;
-
-        if (!pldm_fd_req_should_send(fd)) {
-            /* Nothing to do */
-            *req_payload_len = 0;
-            return 0;
-        }
-
-        if (!fd->req.complete) {
-            bool pending = false;
-            uint8_t res;
-            res = fd->ops->apply(fd->ops_ctx, &fd->update_comp, &pending,
-                         &fd->specific.apply.progress_percent);
-            if (pending) {
-                if (res == PLDM_FWUP_APPLY_SUCCESS) {
-                    /* Return without a ApplyComplete request.
-                    * Will call apply() again on next call */
-                    *req_payload_len = 0;
-                    return 0;
-                }
-                /* This is an API infraction by the implementer, return a distinctive failure */
-                res = PLDM_FWUP_VENDOR_APPLY_RESULT_RANGE_MAX;
-            }
-            fd->req.result = res;
-            fd->req.complete = true;
-            if (fd->req.result ==
-                PLDM_FWUP_APPLY_SUCCESS_WITH_ACTIVATION_METHOD) {
-                /* modified activation method isn't currently handled */
-                fd->req.result = PLDM_FWUP_APPLY_SUCCESS;
-            }
-        }
-
-        instance_id = pldm_fd_req_next_instance(&fd->req);
-        const struct pldm_apply_complete_req req_data = {
-            .apply_result = fd->req.result,
-            .comp_activation_methods_modification = { 0 },
-        };
-        rc = encode_apply_complete_req(instance_id, &req_data, req,
-                           req_payload_len);
-        if (rc) {
-            return rc;
-        }
-
-        /* Wait for response */
-        fd->req.state = PLDM_FD_REQ_SENT;
-        fd->req.instance_id = req->hdr.instance_id;
-        fd->req.command = req->hdr.command;
-        fd->req.sent_time = pldm_fd_now(fd);
-
-        return 0;
-    }
-
-         */
     async fn pldm_fd_progress_apply(&self, _payload: &mut [u8]) -> Result<usize, MsgHandlerError> {
         let mut cw = Console::<S>::writer(); // Debug usage
         writeln!(cw, "[xs debug]fd_progress_apply start").unwrap();
@@ -901,7 +975,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
             instance_id,
             PldmMsgType::Request,
             res,
-            ComponentActivationMethods(0), // Replace None with a valid instance
+            ComponentActivationMethods(0),
         );
         // Encode the request message
         let msg_len = apply_complete_req

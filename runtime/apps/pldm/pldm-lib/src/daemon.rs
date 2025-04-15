@@ -10,8 +10,11 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use libsyscall_caliptra::mctp::driver_num;
 
+use libtock_alarm::Alarm;
 use libtock_platform::Syscalls;
 use libtockasync::{self, TockExecutor};
+
+use crate::timer::AsyncAlarm;
 
 // Debug usage
 use core::fmt::Write;
@@ -154,12 +157,14 @@ pub async fn pldm_initiator<S: Syscalls>(
     .unwrap();
 
     while running.load(Ordering::SeqCst) {
+        if cmd_interface.is_stop_initiator_mode().await {
+            // sleep
+            AsyncAlarm::<S>::sleep(libtock_alarm::Milliseconds(1000)).await;
+            break;
+        }
         let _ = cmd_interface
             .initiate_firmware_request(&mut transport, &mut msg_buffer)
             .await;
-
-        // Sleep for a short duration to avoid busy waiting
-        // AsyncAlarm::<S>::sleep(Milliseconds(1)).await;
     }
 }
 
