@@ -20,6 +20,12 @@ pub enum VerifyResult {
     VendorDefined,
 }
 
+impl Default for VerifyResult {
+    fn default() -> Self {
+        VerifyResult::VerifyGenericError
+    }
+}
+
 impl TryFrom<u8> for VerifyResult {
     type Error = PldmError;
 

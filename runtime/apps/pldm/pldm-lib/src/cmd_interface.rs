@@ -15,10 +15,6 @@ use pldm_common::util::mctp_transport::PLDM_MSG_OFFSET;
 
 pub type PldmCompletionErrorCode = u8;
 
-// Debug usage
-use core::fmt::Write;
-use libtock_console::Console;
-
 // Helper function to write a failure response message into payload
 pub(crate) fn generate_failure_response(
     payload: &mut [u8],
@@ -95,18 +91,14 @@ impl<'a, S: Syscalls> CmdInterface<'a, S> {
             // Progress and generate request
             let req_len = self.fd_ctx.fd_progress(payload).await?;
 
+            if req_len == 0 {
+                return Ok(());
+            }
             // Send the request
             transport
                 .send_request(ua_eid, &msg_buf[..req_len + reserved_len])
                 .await
                 .map_err(MsgHandlerError::Transport)?;
-
-            writeln!(
-                Console::<S>::writer(),
-                "[xs debug]initiator mode: Sent request to UA: succeed, req_len = {}",
-                req_len + reserved_len
-            )
-            .unwrap();
         }
 
         // Wait for the response

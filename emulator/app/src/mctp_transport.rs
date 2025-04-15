@@ -88,7 +88,7 @@ impl PldmSocket for MctpPldmSocket {
         } else {
             let msg_tag = *self.response_msg_tag.lock().unwrap();
             mctp_util.set_src_eid(self.dest.0);
-            mctp_util.set_dest_eid(self.source.0);            
+            mctp_util.set_dest_eid(self.source.0);
             mctp_util.set_msg_tag(msg_tag & MCTP_TAG_MASK);
             mctp_util.send_response(
                 mctp_payload.as_mut_slice(),

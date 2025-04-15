@@ -60,7 +60,6 @@ impl<S: Syscalls, C: platform::subscribe::Config> AsyncAlarm<S, C> {
     pub async fn sleep_for<T: Convert>(time: T) -> Result<(), ErrorCode> {
         let freq = Self::get_frequency()?;
         let ticks = time.to_ticks(freq).0;
-        //writeln!(Console::<S>::writer(), "[xs debug]pldm timer: Sleeping for {} ticks", ticks).unwrap();
         let sub = TockSubscribe::subscribe::<S>(DRIVER_NUM, 0);
         S::command(DRIVER_NUM, command::SET_RELATIVE, ticks, 0)
             .to_result()

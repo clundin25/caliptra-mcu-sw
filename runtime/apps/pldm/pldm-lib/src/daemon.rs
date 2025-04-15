@@ -3,8 +3,6 @@
 use crate::cmd_interface::CmdInterface;
 use crate::config;
 use crate::firmware_device::fd_context::FirmwareDeviceContext;
-use crate::timer::AsyncAlarm;
-use libtock_alarm::Milliseconds;
 
 use crate::transport::MctpTransport;
 use core::sync::atomic::{AtomicBool, Ordering};

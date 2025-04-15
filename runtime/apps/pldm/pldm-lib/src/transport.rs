@@ -6,10 +6,6 @@ use pldm_common::util::mctp_transport::{
     MctpCommonHeader, MCTP_COMMON_HEADER_OFFSET, MCTP_PLDM_MSG_TYPE,
 };
 
-use libtock_console::Console;
-//use libtock_console::ConsoleWriter;
-use core::fmt::Write;
-
 pub enum PldmTransportType {
     Mctp,
 }
@@ -65,32 +61,14 @@ impl<S: Syscalls> MctpTransport<S> {
         // Reset msg buffer
         rsp.fill(0);
 
-        writeln!(
-            Console::<S>::writer(),
-            "[xs debug]pldm_mctp_transport: receive response start"
-        )
-        .unwrap();
-
         let (rsp_len, _msg_info) = if let Some(tag) = self.cur_req_ctx {
             self.mctp
                 .receive_response(rsp, tag)
                 .await
                 .map_err(|_| TransportError::ReceiveError)
         } else {
-            writeln!(
-                Console::<S>::writer(),
-                "[xs debug]pldm_mctp_transport ERROR: ResponseNoteExpected"
-            )
-            .unwrap();
             Err(TransportError::ResponseNotExpected)
         }?;
-
-        writeln!(
-            Console::<S>::writer(),
-            "[xs debug]pldm_mctp_transport: receive response: :rsp_len = {}",
-            rsp_len
-        )
-        .unwrap();
 
         if rsp_len == 0 {
             Err(TransportError::BufferTooSmall)?;

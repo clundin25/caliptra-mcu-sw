@@ -13,9 +13,15 @@ pub enum ApplyResult {
     ApplySuccess = 0x00,
     ApplySuccessWithActivationMethod = 0x01,
     ApplyFailureMemoryIssue = 0x02,
-    //ApplyTimeOut = 0x09,
-    //ApplyGenericError = 0x0a,
+    ApplyTimeOut = 0x09,
+    ApplyGenericError = 0x0a,
     VendorDefined,
+}
+
+impl Default for ApplyResult {
+    fn default() -> Self {
+        ApplyResult::ApplyGenericError
+    }
 }
 
 impl TryFrom<u8> for ApplyResult {
@@ -26,8 +32,8 @@ impl TryFrom<u8> for ApplyResult {
             0x00 => Ok(ApplyResult::ApplySuccess),
             0x01 => Ok(ApplyResult::ApplySuccessWithActivationMethod),
             0x02 => Ok(ApplyResult::ApplyFailureMemoryIssue),
-            //0x09 => Ok(ApplyResult::ApplyTimeOut),
-            //0x0a => Ok(ApplyResult::ApplyGenericError),
+            0x09 => Ok(ApplyResult::ApplyTimeOut),
+            0x0a => Ok(ApplyResult::ApplyGenericError),
             0xb0..=0xcf => Ok(ApplyResult::VendorDefined),
             _ => Err(PldmError::InvalidApplyResult),
         }

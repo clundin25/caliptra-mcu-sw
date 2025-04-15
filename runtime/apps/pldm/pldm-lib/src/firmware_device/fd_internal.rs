@@ -4,9 +4,7 @@ use crate::control_context::Tid;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use pldm_common::message::firmware_update::get_status::GetStatusReasonCode;
-use pldm_common::protocol::firmware_update::{
-    FirmwareDeviceState, PldmFdTime, UpdateOptionFlags, PLDM_FWUP_MAX_PADDING_SIZE,
-};
+use pldm_common::protocol::firmware_update::{FirmwareDeviceState, PldmFdTime, UpdateOptionFlags};
 use pldm_common::util::fw_component::FirmwareComponent;
 
 pub struct FdInternal {
@@ -216,6 +214,13 @@ impl FdInternal {
         let mut inner = self.inner.lock().await;
         if let FdSpecific::Verify(verify) = &mut inner.initiator_mode_specific {
             verify.progress_percent = progress;
+        }
+    }
+
+    pub async fn set_fd_apply_progress(&self, progress: u8) {
+        let mut inner = self.inner.lock().await;
+        if let FdSpecific::Apply(apply) = &mut inner.initiator_mode_specific {
+            apply.progress_percent = progress;
         }
     }
 

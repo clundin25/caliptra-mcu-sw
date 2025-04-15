@@ -1,7 +1,6 @@
 // Licensed under the Apache-2.0 license
 
 use crate::control_context::ProtocolCapability;
-use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_sync::lazy_lock::LazyLock;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::protocol::base::{PldmControlCmd, PldmSupportedType};

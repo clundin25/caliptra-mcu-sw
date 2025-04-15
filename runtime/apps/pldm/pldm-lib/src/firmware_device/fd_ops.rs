@@ -7,6 +7,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use libapi_caliptra::mailbox::Mailbox;
 use libtock_platform::Syscalls;
+use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
@@ -165,6 +166,12 @@ pub trait FdOps {
         progress_percent: &mut ProgressPercent,
     ) -> Result<VerifyResult, FdOpsError>;
 
+    async fn apply(
+        &self,
+        _component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<ApplyResult, FdOpsError>;
+
     /// Retrieves the current timestamp in milliseconds.
     ///
     /// # Returns
@@ -271,9 +278,41 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
     ) -> Result<VerifyResult, FdOpsError> {
         let _guard = self.inner.lock().await;
         if cfg!(feature = "pldm-lib-use-static-config") {
-            //let _ = progress_percent.set_value((progress_percent.value() + 40).min(100));
-            progress_percent.set_value(100);
+            static mut CALL_COUNT: usize = 0;
+            unsafe {
+                CALL_COUNT += 1;
+                let new_value = match CALL_COUNT {
+                    1 => 30,
+                    2 => 60,
+                    _ => 100,
+                };
+                let _ = progress_percent.set_value(new_value);
+            }
             return Ok(VerifyResult::VerifySuccess);
+        }
+
+        // TODO: Implement the actual verification logic
+        todo!()
+    }
+
+    async fn apply(
+        &self,
+        _component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<ApplyResult, FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            static mut CALL_COUNT: usize = 0;
+            unsafe {
+                CALL_COUNT += 1;
+                let new_value = match CALL_COUNT {
+                    1 => 30,
+                    2 => 60,
+                    _ => 100,
+                };
+                let _ = progress_percent.set_value(new_value);
+            }
+            return Ok(ApplyResult::ApplySuccess);
         }
 
         // TODO: Implement the actual verification logic
