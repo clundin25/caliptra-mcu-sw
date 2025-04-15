@@ -177,10 +177,6 @@ pub(crate) async fn handle_digests<'a, S: Syscalls>(
         Err(ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
     }
 
-    // TODO:
-    // 1. Initialize the hash context with the selected hash algorithm
-    // 2. Get hash size from the hash context
-
     let mut digests: [SpdmDigest; SPDM_MAX_CERT_CHAIN_SLOTS] =
         core::array::from_fn(|_| SpdmDigest::default());
 
