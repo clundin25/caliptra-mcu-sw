@@ -223,7 +223,11 @@ INCLUDE runtime/kernel_layout.ld
     get_apps_memory_offset(target_binary("runtime")).map(|apps_offset| (kernel_size, apps_offset))
 }
 
-pub fn runtime_build_with_apps(features: &[&str], output_name: Option<&str>) -> Result<()> {
+pub fn runtime_build_with_apps(
+    features: &[&str],
+    output_name: Option<&str>,
+    example_app: bool,
+) -> Result<()> {
     let mut app_offset = RAM_OFFSET as usize;
     let output_name = output_name.unwrap_or(DEFAULT_RUNTIME_NAME);
     let runtime_bin = target_binary(output_name);
@@ -242,7 +246,8 @@ pub fn runtime_build_with_apps(features: &[&str], output_name: Option<&str>) -> 
     let padding = app_offset - runtime_end_offset - INTERRUPT_TABLE_SIZE;
 
     // build the apps with the data memory at some incorrect offset
-    let apps_bin_len = apps_build_flat_tbf(app_offset, apps_memory_offset, features)?.len();
+    let apps_bin_len =
+        apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?.len();
     println!("Apps built: {} bytes", apps_bin_len);
 
     // re-link and place the apps and data RAM after the runtime binary
@@ -260,7 +265,7 @@ pub fn runtime_build_with_apps(features: &[&str], output_name: Option<&str>) -> 
     );
 
     // re-link the applications with the correct data memory offsets
-    let apps_bin = apps_build_flat_tbf(app_offset, apps_memory_offset, features)?;
+    let apps_bin = apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?;
     assert_eq!(
         apps_bin_len,
         apps_bin.len(),

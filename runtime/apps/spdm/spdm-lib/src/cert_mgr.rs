@@ -89,7 +89,7 @@ impl SpdmCertChainBaseBuffer {
         if cert_chain_data_len > config::MAX_CERT_CHAIN_DATA_SIZE
             || root_hash.len() > SPDM_MAX_HASH_SIZE
         {
-            return Err(DeviceCertsMgrError::CertDataBufferTooSmall);
+            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
         }
 
         let total_len =
@@ -142,11 +142,11 @@ impl AsRef<[u8]> for SpdmCertChainBuffer {
 }
 
 impl SpdmCertChainBuffer {
-    pub fn new(cert_chain_data: &[u8], root_hash: &[u8]) -> Result<Self, SpdmError> {
+    pub fn new(cert_chain_data: &[u8], root_hash: &[u8]) -> Result<Self, DeviceCertsMgrError> {
         if cert_chain_data.len() > config::MAX_CERT_CHAIN_DATA_SIZE
             || root_hash.len() > SPDM_MAX_HASH_SIZE
         {
-            Err(SpdmError::InvalidParam)?;
+            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
         }
 
         let total_len =
@@ -180,7 +180,7 @@ impl SpdmCertChainBuffer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum DeviceCertsMgrError {
     #[error("Unsupported slot ID")]
     UnsupportedSlotId,
@@ -269,7 +269,7 @@ impl DeviceCertsManager {
     /// # Returns
     /// - `Ok(())`: If the operation is successful.
     /// - `Err(DeviceCertsMgrError)`: An error if the operation fails.
-    fn get_cert_chain_slot_state(
+    pub fn get_cert_chain_slot_state(
         &self,
         slot_id: u8,
         cert_chain_slot_state: &mut CertChainSlotState,
@@ -438,6 +438,39 @@ impl DeviceCertsManager {
         hash_ctx.finalize(digest).await?;
 
         Ok(())
+    }
+
+    pub async fn construct_cert_chain_buffer<S: Syscalls>(
+        &self,
+        hash_type: BaseHashAlgoType,
+        slot_id: u8,
+    ) -> Result<SpdmCertChainBuffer, DeviceCertsMgrError> {
+        let mut cert_chain_data = SpdmCertChainData::default();
+        let mut root_hash = [0u8; SPDM_MAX_HASH_SIZE];
+        let root_cert_len = self.construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
+
+        let hash_algo: HashAlgoType = hash_type
+            .try_into()
+            .map_err(|_| DeviceCertsMgrError::InvalidParam("Invalid Hash type"))?;
+
+        if root_hash.len() < hash_algo.hash_size() {
+            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
+        }
+
+        // Get the hash of root_cert
+        HashContext::<S>::hash_all(
+            hash_algo,
+            &cert_chain_data.as_ref()[..root_cert_len],
+            &mut root_hash,
+        )
+        .await
+        .map_err(DeviceCertsMgrError::CryptoError)?;
+
+        // Construct the cert chain buffer
+        let cert_chain_buffer =
+            SpdmCertChainBuffer::new(cert_chain_data.as_ref(), root_hash.as_ref())?;
+
+        Ok(cert_chain_buffer)
     }
 }
 

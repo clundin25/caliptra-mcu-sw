@@ -95,8 +95,9 @@ impl<'a, S: Syscalls> SpdmContext<'a, S> {
             }
             ReqRespCode::GetDigests => {
                 digests_rsp::handle_digests(self, req_msg_header, req).await?
+            }
             ReqRespCode::GetCertificate => {
-                certificate_rsp::handle_certificates(self, req_msg_header, req)?
+                certificate_rsp::handle_certificates(self, req_msg_header, req).await?
             }
             _ => Err((false, CommandError::UnsupportedRequest))?,
         }
