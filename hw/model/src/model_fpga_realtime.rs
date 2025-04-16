@@ -1008,7 +1008,9 @@ mod test {
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
         let repeat = 3; // repeat messages this many times when sending
+
         let empty_wait_time = Some(Duration::from_millis(1)); // sleep this much before emptying the rx queue
+        let use_dynamic_addr = false;
 
         let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(0x44 / 4)) };
         println!("FPGA version: {:08x}", fpga_version);
@@ -1020,32 +1022,6 @@ mod test {
         }
         println!("Configuring I3C target");
         configure_i3c_target(i3c_target, I3C_TARGET_ADDR, false);
-
-        // check I3C target address
-        if i3c_target
-            .stdby_ctrl_mode_stby_cr_device_addr
-            .read(StbyCrDeviceAddr::DynamicAddrValid)
-            == 1
-        {
-            println!(
-                "I3C target dynamic address: {:x}",
-                i3c_target
-                    .stdby_ctrl_mode_stby_cr_device_addr
-                    .read(StbyCrDeviceAddr::DynamicAddr) as u8,
-            );
-        }
-        if i3c_target
-            .stdby_ctrl_mode_stby_cr_device_addr
-            .read(StbyCrDeviceAddr::StaticAddrValid)
-            == 1
-        {
-            println!(
-                "I3C target static address: {:x}",
-                i3c_target
-                    .stdby_ctrl_mode_stby_cr_device_addr
-                    .read(StbyCrDeviceAddr::StaticAddr) as u8,
-            );
-        }
 
         let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
         let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
@@ -1059,7 +1035,7 @@ mod test {
             rw_fifo_depth: 16,
             wr_threshold: 12,
             device_count: 1,
-            ibi_capable: false,
+            ibi_capable: use_dynamic_addr, // this needs to be true for dynamic addressing
             hj_capable: false,
             entdaa_enable: false,
             known_static_addrs: vec![I3C_TARGET_ADDR],
@@ -1086,6 +1062,35 @@ mod test {
         println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
         println!("  thld start: {}", i3c_controller.regs().thd_start.get());
 
+        // check I3C target address
+        let mut target_addr = I3C_TARGET_ADDR;
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::DynamicAddrValid)
+            == 1
+        {
+            let addr = i3c_target
+                .stdby_ctrl_mode_stby_cr_device_addr
+                .read(StbyCrDeviceAddr::DynamicAddr);
+            println!("I3C target dynamic address: {:x}", addr,);
+            if use_dynamic_addr {
+                target_addr = addr as u8;
+            }
+        }
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::StaticAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target static address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::StaticAddr) as u8,
+            );
+        }
+        println!("Using {:x} as target address", target_addr);
+
         const I3C_DATALEN: u16 = 90;
         let max_len = I3C_DATALEN.to_be_bytes();
         let mut tx_data = [0u8; I3C_DATALEN as usize];
@@ -1096,11 +1101,13 @@ mod test {
             no_repeated_start: 1,
             ..Default::default()
         };
-        const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
-        println!("Broadcast CCC SETAASA");
-        let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
-        assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
-        println!("Acknowledge received");
+        if !use_dynamic_addr {
+            const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
+            println!("Broadcast CCC SETAASA");
+            let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
+            assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
+            println!("Acknowledge received");
+        }
 
         cmd.no_repeated_start = 0;
         cmd.tid = 0;
@@ -1118,7 +1125,7 @@ mod test {
         println!("Acknowledge received");
 
         for _ in 0..repeat {
-            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.target_addr = target_addr;
             cmd.no_repeated_start = 1;
             cmd.tid = 0;
             cmd.pec = 0;
@@ -1176,7 +1183,7 @@ mod test {
         );
 
         for _ in 0..repeat {
-            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.target_addr = target_addr;
             cmd.no_repeated_start = 1;
             cmd.tid = 0;
             cmd.pec = 0;
@@ -1216,7 +1223,7 @@ mod test {
 
         // Send
         for _ in 0..repeat {
-            cmd.target_addr = I3C_TARGET_ADDR;
+            cmd.target_addr = target_addr;
             cmd.no_repeated_start = 1;
             cmd.tid = 0;
             cmd.pec = 0;
@@ -1248,9 +1255,13 @@ mod test {
             i3c_target.tti_interrupt_status.get()
         );
 
+        // let mut s = String::new();
+        // println!("Waiting on user to hit enter");
+        // std::io::stdin().read_line(&mut s).unwrap();
+
         // Recv
         println!("Sending a read request to the target");
-        cmd.target_addr = I3C_TARGET_ADDR;
+        cmd.target_addr = target_addr;
         cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;

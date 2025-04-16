@@ -340,7 +340,7 @@ impl Controller {
         let addr = dyn_addr << 1;
         println!(
             "Controller: Assigning dynamic address with SETDASA private write {:x}",
-            addr
+            addr >> 1
         );
         self.master_send_polled(&mut cmd, &[addr], 1)?;
         println!("Acknowledged");
