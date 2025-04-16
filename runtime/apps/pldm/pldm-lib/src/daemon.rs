@@ -3,6 +3,7 @@
 use crate::cmd_interface::CmdInterface;
 use crate::config;
 use crate::firmware_device::fd_context::FirmwareDeviceContext;
+use crate::firmware_device::fd_ops::FdOps;
 
 use crate::transport::MctpTransport;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -10,7 +11,6 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use libsyscall_caliptra::mctp::driver_num;
 
-use libtock_alarm::Alarm;
 use libtock_platform::Syscalls;
 use libtockasync::{self, TockExecutor};
 
@@ -44,20 +44,19 @@ pub enum PldmServiceError {
 /// * `cmd_interface` - The command interface used by the PLDM service.
 /// * `running` - An atomic boolean indicating whether the PLDM service is currently running.
 /// * `initiator_signal` - A signal used to activate the PLDM initiator task.
-pub struct PldmService<S: Syscalls> {
-    cmd_interface: CmdInterface<'static, S>,
+pub struct PldmService<'a, S: Syscalls> {
+    cmd_interface: CmdInterface<'a, S>,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
 }
 
 // Note: This implementation is a starting point for integration testing.
 // It will be extended and refactored to support additional PLDM commands in both responder and requester modes.
-impl<S: Syscalls> PldmService<S> {
-    pub fn init() -> Self {
+impl<'a, S: Syscalls> PldmService<'a, S> {
+    pub fn init(fdops: &'a dyn FdOps) -> Self {
         let cmd_interface = CmdInterface::new(
-            //driver_num::MCTP_PLDM,
             config::PLDM_PROTOCOL_CAPABILITIES.get(),
-            FirmwareDeviceContext::new(),
+            FirmwareDeviceContext::new(fdops),
         );
         Self {
             cmd_interface,
@@ -158,7 +157,6 @@ pub async fn pldm_initiator<S: Syscalls>(
 
     while running.load(Ordering::SeqCst) {
         if cmd_interface.is_stop_initiator_mode().await {
-            // sleep
             AsyncAlarm::<S>::sleep(libtock_alarm::Milliseconds(1000)).await;
             break;
         }

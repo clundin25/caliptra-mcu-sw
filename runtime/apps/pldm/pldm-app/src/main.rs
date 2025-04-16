@@ -14,6 +14,9 @@ use pldm_lib::timer::AsyncAlarm;
 #[allow(unused)]
 use pldm_lib::daemon::PldmService;
 
+#[allow(unused)]
+use pldm_lib::firmware_device::fd_ops_mock::FdOpsObject;
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
@@ -73,7 +76,8 @@ pub(crate) async fn async_main<S: Syscalls>() {
         feature = "test-pldm-fw-update-e2e"
     ))]
     {
-        let mut pldm_service = PldmService::<S>::init();
+        let fdops = FdOpsObject::<S>::new();
+        let mut pldm_service = PldmService::<S>::init(&fdops);
         writeln!(
             console_writer,
             "PLDM_APP: Starting PLDM service for testing..."

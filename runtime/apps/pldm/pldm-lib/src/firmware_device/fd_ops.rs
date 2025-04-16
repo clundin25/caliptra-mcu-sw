@@ -3,10 +3,6 @@
 extern crate alloc;
 use alloc::boxed::Box;
 use async_trait::async_trait;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::mutex::Mutex;
-use libapi_caliptra::mailbox::Mailbox;
-use libtock_platform::Syscalls;
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
@@ -14,10 +10,7 @@ use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_common::{
     message::firmware_update::get_fw_params::FirmwareParameters,
-    protocol::firmware_update::{
-        ComponentResponseCode, Descriptor, PldmFdTime, PLDM_FWUP_BASELINE_TRANSFER_SIZE,
-        PLDM_FWUP_MAX_PADDING_SIZE,
-    },
+    protocol::firmware_update::{ComponentResponseCode, Descriptor, PldmFdTime},
 };
 
 #[derive(Debug)]
@@ -33,44 +26,6 @@ pub enum FdOpsError {
 pub enum ComponentOperation {
     PassComponent,
     UpdateComponent,
-}
-
-/// Thread-safe object for firmware device operations (FdOps).
-pub struct FdOpsObject<S: Syscalls> {
-    inner: Mutex<NoopRawMutex, FdOpsInner<S>>,
-}
-
-/// A structure representing the operations for firmware device (FdOps).
-///
-/// This structure encapsulates the necessary components for performing
-/// firmware device operations, including a mailbox and an image loader.
-///
-/// # Type Parameters
-/// - `S`: A type that implements the `Syscalls` trait, which provides
-///   the necessary system call interfaces.
-///
-/// # Fields
-/// - `mailbox`: An instance of `Mailbox<S>`, used for communication.
-#[allow(dead_code)]
-struct FdOpsInner<S: Syscalls> {
-    mailbox: Mailbox<S>,
-    // Add more fields or APIs as needed
-}
-
-impl<S: Syscalls> Default for FdOpsObject<S> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<S: Syscalls> FdOpsObject<S> {
-    pub fn new() -> Self {
-        Self {
-            inner: Mutex::new(FdOpsInner {
-                mailbox: Mailbox::new(),
-            }),
-        }
-    }
 }
 
 /// Trait representing firmware device specific operations that can be performed by interacting with mailbox API etc.
@@ -141,7 +96,6 @@ pub trait FdOps {
         op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError>;
 
-
     async fn query_download_offset_and_length(
         &self,
         component: &FirmwareComponent,
@@ -167,10 +121,7 @@ pub trait FdOps {
     ) -> Result<TransferResult, FdOpsError>;
 
     // Query if download is complete
-    async fn is_download_complete(
-        &self,
-        component: &FirmwareComponent,
-    ) -> Result<bool, FdOpsError>;
+    async fn is_download_complete(&self, component: &FirmwareComponent) -> bool;
 
     async fn verify(
         &self,
@@ -211,200 +162,4 @@ pub trait FdOps {
     ///
     /// * `PldmFdTime` - The current timestamp in milliseconds.
     async fn now(&self) -> PldmFdTime;
-}
-
-#[async_trait(?Send)]
-impl<S: Syscalls> FdOps for FdOpsObject<S> {
-    async fn get_device_identifiers(
-        &self,
-        device_identifiers: &mut [Descriptor],
-    ) -> Result<usize, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            let dev_id = crate::config::DESCRIPTORS.get();
-            if device_identifiers.len() < dev_id.len() {
-                return Err(FdOpsError::DeviceIdentifiersError);
-            }
-            device_identifiers[..dev_id.len()].copy_from_slice(dev_id);
-            return Ok(dev_id.len());
-        }
-
-        // TODO: Implement the actual device identifiers retrieval logic
-        todo!()
-    }
-
-    async fn get_firmware_parms(
-        &self,
-        firmware_params: &mut FirmwareParameters,
-    ) -> Result<(), FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            let fw_params = crate::config::FIRMWARE_PARAMS.get();
-            *firmware_params = (*fw_params).clone();
-            return Ok(());
-        }
-
-        // TODO: Implement the actual firmware parameters retrieval via mailbox commands
-        todo!()
-    }
-
-    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            return Ok(PLDM_FWUP_BASELINE_TRANSFER_SIZE
-                .max(ua_transfer_size.min(crate::config::FD_MAX_XFER_SIZE)));
-        }
-
-        // TODO: Implement the actual transfer size retrieval logic
-        todo!()
-    }
-
-    async fn handle_component(
-        &self,
-        component: &FirmwareComponent,
-        fw_params: &FirmwareParameters,
-        op: ComponentOperation,
-    ) -> Result<ComponentResponseCode, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        let comp_resp_code = component.evaluate_update_eligibility(fw_params);
-        if op == ComponentOperation::PassComponent
-            || comp_resp_code != ComponentResponseCode::CompCanBeUpdated
-        {
-            return Ok(comp_resp_code);
-        }
-
-        // For the `UpdateComponent` operation, additional device-specific logic can be implemented here.
-        // Currently, the method simply returns `comp_resp_code` as `CompCanBeUpdated` if the component passes the evaluation.
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            return Ok(comp_resp_code);
-        }
-
-        // For `UpdateComponent` operation, device specific logic might be extended from here.
-        todo!()
-    }
-
-
-    async fn query_download_offset_and_length(
-        &self,
-        component: &FirmwareComponent,
-    ) -> Result<(usize, usize), FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            if let Some(image_size) = component.comp_image_size {
-                let offset = 0; // Assuming download starts at offset 0
-                let length = image_size as usize + PLDM_FWUP_MAX_PADDING_SIZE as usize;
-
-                return Ok((offset, length));
-            } else {
-                return Err(FdOpsError::ComponentError);
-            }
-        }
-
-        // TODO: Implement the actual firmware data handling logic
-        todo!()
-    }
-
-    async fn download_fw_data(
-        &self,
-        offset: usize,
-        data: &[u8],
-        component: &FirmwareComponent,
-    ) -> Result<TransferResult, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            if offset + data.len()
-                > (component.comp_image_size.unwrap() as usize
-                    + PLDM_FWUP_MAX_PADDING_SIZE as usize)
-            {
-                return Err(FdOpsError::FwDownloadError);
-            }
-            return Ok(TransferResult::TransferSuccess);
-        }
-
-        // TODO: Implement the actual firmware data handling logic
-        todo!()
-    }
-
-     // Query if download is complete
-     async fn is_download_complete(
-        &self,
-        component: &FirmwareComponent,
-    ) -> Result<bool, FdOpsError> {
-        // This function checks if the firmware download is complete for the given component.
-        todo!()
-    }
-
-    async fn verify(
-        &self,
-        _component: &FirmwareComponent,
-        progress_percent: &mut ProgressPercent,
-    ) -> Result<VerifyResult, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            static mut CALL_COUNT: usize = 0;
-            unsafe {
-                CALL_COUNT += 1;
-                let new_value = match CALL_COUNT {
-                    1 => 40,
-                    _ => 100,
-                };
-                let _ = progress_percent.set_value(new_value);
-            }
-            return Ok(VerifyResult::VerifySuccess);
-        }
-
-        // TODO: Implement the actual verification logic
-        todo!()
-    }
-
-    async fn apply(
-        &self,
-        _component: &FirmwareComponent,
-        progress_percent: &mut ProgressPercent,
-    ) -> Result<ApplyResult, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            static mut CALL_COUNT: usize = 0;
-            unsafe {
-                CALL_COUNT += 1;
-                let new_value = match CALL_COUNT {
-                    1 => 40,
-                    _ => 100,
-                };
-                let _ = progress_percent.set_value(new_value);
-            }
-            return Ok(ApplyResult::ApplySuccess);
-        }
-
-        // TODO: Implement the actual verification logic
-        todo!()
-    }
-
-    async fn activate(
-        &self,
-        self_contained_activation: u8,
-        estimated_time: &mut u16,
-    ) -> Result<u8, FdOpsError> {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            if self_contained_activation == 1 {
-                *estimated_time = crate::config::TEST_SELF_ACTIVATION_MAX_TIME_IN_SECONDS;
-            }
-            return Ok(0); // PLDM completion code for success
-        }
-
-        // TODO: Implement the actual activation logic
-        todo!()
-    }
-
-    async fn now(&self) -> PldmFdTime {
-        let _guard = self.inner.lock().await;
-        if cfg!(feature = "pldm-lib-use-static-config") {
-            let current_time = crate::timer::AsyncAlarm::<S>::get_milliseconds().unwrap();
-            return current_time;
-        }
-
-        // TODO: Implement the actual logic to return the platform timestamp.
-        todo!()
-    }
 }

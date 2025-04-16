@@ -2419,7 +2419,6 @@ dependencies = [
  "embassy-executor",
  "embassy-sync",
  "embedded-alloc",
- "libapi-caliptra",
  "libsyscall-caliptra",
  "libtock_alarm",
  "libtock_console",

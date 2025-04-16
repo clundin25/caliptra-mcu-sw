@@ -8,16 +8,14 @@ edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-libapi-caliptra.workspace = true
-libsyscall-caliptra.workspace = true
-libtockasync.workspace = true
-libtock_platform.workspace = true
-libtock_runtime.workspace = true
 embassy-executor.workspace = true
 embassy-sync.workspace = true
-pldm-common.workspace = true
-
+libsyscall-caliptra.workspace = true
+libtockasync.workspace = true
 libtock_alarm.workspace = true
+libtock_platform.workspace = true
+libtock_runtime.workspace = true
+pldm-common.workspace = true
 
 #TODO: remove when checking in
 libtock_console.workspace = true

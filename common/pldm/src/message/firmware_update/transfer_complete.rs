@@ -14,7 +14,6 @@ pub enum TransferResult {
     TransferErrorImageCorrupt = 0x01,
     TransferErrorVersionMismatch = 0x02,
     FdAbortedTransfer = 0x03,
-
     TransferTimeOut = 0x09,
     TransferGenericError = 0x0a,
     FdAbortedTransferLowPowerState = 0x0b,

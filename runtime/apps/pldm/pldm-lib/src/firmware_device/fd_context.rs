@@ -3,7 +3,7 @@
 use crate::cmd_interface::generate_failure_response;
 use crate::error::MsgHandlerError;
 use crate::firmware_device::fd_internal::{FdInternal, FdReqState};
-use crate::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsObject};
+use crate::firmware_device::fd_ops::{ComponentOperation, FdOps};
 use libtock_platform::Syscalls;
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::firmware_update::activate_fw::{
@@ -53,19 +53,21 @@ use pldm_common::util::fw_component::FirmwareComponent;
 use core::fmt::Write;
 use libtock_console::Console;
 
-use super::fd_internal::{FdApply, FdDownload, FdSpecific, FdVerify};
+use super::fd_internal::{ApplyState, DownloadState, InitiatorModeState, VerifyState};
 
-pub struct FirmwareDeviceContext<S: Syscalls> {
-    ops: FdOpsObject<S>,
+pub struct FirmwareDeviceContext<'a, S: Syscalls> {
+    ops: &'a dyn FdOps,
     internal: FdInternal,
+    _marker: core::marker::PhantomData<S>,
 }
 
-impl<S: Syscalls> FirmwareDeviceContext<S> {
+impl<'a, S: Syscalls> FirmwareDeviceContext<'a, S> {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(ops: &'a dyn FdOps) -> Self {
         Self {
-            ops: FdOpsObject::new(),
+            ops: ops,
             internal: FdInternal::default(),
+            _marker: core::marker::PhantomData,
         }
     }
 
@@ -349,7 +351,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
             Ok(bytes) => {
                 if comp_resp_code == ComponentResponseCode::CompCanBeUpdated {
                     self.internal
-                        .set_initiator_mode(FdSpecific::Download(FdDownload::default()))
+                        .set_initiator_mode(InitiatorModeState::Download(DownloadState::default()))
                         .await;
                     // Set up the req for download.
                     self.internal
@@ -558,36 +560,23 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         }
 
         // Handle the received data
-        let (dl_offset, dl_length) = self.internal.get_fd_dowload_info().await.unwrap();
+        let (offset, length) = self.internal.get_fd_download_state().await.unwrap();
 
-        // Retrieve fw data from the payload buffer
-        let data_offset = core::mem::size_of::<RequestFirmwareDataResponseFixed>();
-        if data_offset + dl_length as usize > payload.len() {
-            return Err(MsgHandlerError::Codec(PldmCodecError::BufferTooShort));
-        }
+        // Extract firmware data from payload
+        let fw_data = payload[core::mem::size_of::<RequestFirmwareDataResponseFixed>()..]
+            .get(..length as usize)
+            .ok_or_else(|| MsgHandlerError::Codec(PldmCodecError::BufferTooShort))?;
 
-        let data: &[u8] = &payload[data_offset..data_offset + dl_length as usize];
+        let fw_component = &self.internal.get_component().await;
         let res = self
             .ops
-            .download_fw_data(
-                dl_offset as usize,
-                data,
-                &self.internal.get_component().await,
-            )
+            .download_fw_data(offset as usize, fw_data, fw_component)
             .await
             .map_err(MsgHandlerError::FdOps)?;
 
         if res == TransferResult::TransferSuccess {
-            let dl_offset = dl_offset + dl_length;
-            // Move to next offset
-            self.internal.set_fd_dl_offset(dl_offset).await;
-
-            // XS added: Invoke another request if there is more data to download
-            self.internal
-                .set_fd_req(FdReqState::Ready, false, None, None, None, None)
-                .await;
-
-            if dl_offset == self.internal.get_component().await.comp_image_size.unwrap() {
+            // Check if the download is complete.
+            if self.ops.is_download_complete(fw_component).await {
                 // Mark as complete, next progress() call will send the TransferComplete request
                 self.internal
                     .set_fd_req(
@@ -598,6 +587,11 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                         None,
                         None,
                     )
+                    .await;
+            } else {
+                // Invoke another request if there is more data to download
+                self.internal
+                    .set_fd_req(FdReqState::Ready, false, None, None, None, None)
                     .await;
             }
         } else {
@@ -634,7 +628,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         if fd_req.result == Some(TransferResult::TransferSuccess as u8) {
             // Switch to Verify
             self.internal
-                .set_initiator_mode(FdSpecific::Verify(FdVerify::default()))
+                .set_initiator_mode(InitiatorModeState::Verify(VerifyState::default()))
                 .await;
             self.internal
                 .set_fd_req(FdReqState::Ready, false, None, None, None, None)
@@ -683,7 +677,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         if fd_req.result == Some(VerifyResult::VerifySuccess as u8) {
             // Switch to Apply
             self.internal
-                .set_initiator_mode(FdSpecific::Apply(FdApply::default()))
+                .set_initiator_mode(InitiatorModeState::Apply(ApplyState::default()))
                 .await;
             self.internal
                 .set_fd_req(FdReqState::Ready, false, None, None, None, None)
@@ -786,15 +780,47 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
 
             return Ok(msg_len);
         } else {
-            if let Some((offset, length)) = self.internal.get_fd_dowload_info().await {
+            let (requested_offset, requested_length) = self
+                .ops
+                .query_download_offset_and_length(&self.internal.get_component().await)
+                .await
+                .map_err(MsgHandlerError::FdOps)?;
+
+            // Get requested offset and length for download from application
+            writeln!(
+                Console::<S>::writer(),
+                "[xs debug]progress download: offset={} request_dl_length={}",
+                requested_offset,
+                requested_length
+            )
+            .unwrap();
+
+            if let Some((chunk_offset, chunk_length)) = self
+                .internal
+                .get_fd_download_chunk(requested_offset as u32, requested_length as u32)
+                .await
+            {
                 let msg_len = RequestFirmwareDataRequest::new(
                     instance_id,
                     PldmMsgType::Request,
-                    offset,
-                    length,
+                    chunk_offset,
+                    chunk_length,
                 )
                 .encode(payload)
                 .map_err(MsgHandlerError::Codec)?;
+
+                // Store offset and length into the internal state
+                self.internal
+                    .set_fd_download_state(chunk_offset, chunk_length)
+                    .await;
+
+                writeln!(
+                    Console::<S>::writer(),
+                    "[xs debug]progress download: offset={} chunk_length={}",
+                    chunk_offset,
+                    chunk_length
+                )
+                .unwrap();
 
                 // Set fd req state to sent
                 let req_sent_timestamp = self.ops.now().await;
@@ -833,7 +859,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                 .await
                 .map_err(MsgHandlerError::FdOps)?;
 
-            // Set the progress percent to FdVerify
+            // Set the progress percent to VerifyState
             self.internal
                 .set_fd_verify_progress(progress_percent.value())
                 .await;
@@ -896,7 +922,7 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
                 .await
                 .map_err(MsgHandlerError::FdOps)?;
 
-            // Set the progress percent to FdApply
+            // Set the progress percent to ApplyState
             self.internal
                 .set_fd_apply_progress(progress_percent.value())
                 .await;

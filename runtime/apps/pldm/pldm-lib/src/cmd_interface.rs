@@ -34,14 +34,14 @@ pub(crate) fn generate_failure_response(
 
 pub struct CmdInterface<'a, S: Syscalls> {
     ctrl_ctx: ControlContext<'a>,
-    fd_ctx: FirmwareDeviceContext<S>,
+    fd_ctx: FirmwareDeviceContext<'a, S>,
     busy: AtomicBool,
 }
 
 impl<'a, S: Syscalls> CmdInterface<'a, S> {
     pub fn new(
         protocol_capabilities: &'a [ProtocolCapability],
-        fd_ctx: FirmwareDeviceContext<S>,
+        fd_ctx: FirmwareDeviceContext<'a, S>,
     ) -> Self {
         let ctrl_ctx = ControlContext::new(protocol_capabilities);
         Self {
