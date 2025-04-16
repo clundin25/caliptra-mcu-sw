@@ -1880,6 +1880,7 @@ dependencies = [
  "libsyscall-caliptra",
  "libtock_platform",
  "libtock_unittest",
+ "romtime",
  "thiserror-no-std",
  "zerocopy 0.8.23",
 ]

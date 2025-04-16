@@ -19,4 +19,6 @@ pub enum CryptoError {
     InvalidOperation(&'static str),
     #[error("Invalid response")]
     InvalidResponse,
+    #[error("Unprovisioned CSR")]
+    UnprovisionedCsr,
 }

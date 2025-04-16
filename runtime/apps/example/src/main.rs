@@ -166,6 +166,8 @@ pub(crate) async fn async_main<S: Syscalls>() {
     #[cfg(feature = "test-caliptra-crypto")]
     {
         test_caliptra_crypto::test_caliptra_sha::<S>().await;
+        test_caliptra_crypto::test_get_idev_csr::<S>().await;
+        romtime::test_exit(0);
     }
 
     writeln!(console_writer, "app finished").unwrap();

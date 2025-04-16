@@ -6,6 +6,9 @@ use caliptra_api::{mailbox::MailboxRespHeader, CaliptraApiError, SocManager};
 use registers_generated::{mbox, soc};
 use ureg::RealMmioMut;
 
+use crate::println;
+use core::fmt::Write;
+
 pub struct CaliptraSoC {
     _private: (), // ensure that this struct cannot be instantiated directly except through new
 }
@@ -89,9 +92,19 @@ impl CaliptraSoC {
         resp_size: usize,
     ) -> core::result::Result<Option<CaliptraMailboxResponse>, CaliptraApiError> {
         if resp_size < mem::size_of::<MailboxRespHeader>() {
+            println!(
+                "Mailbox response too small: {} < {}",
+                resp_size,
+                mem::size_of::<MailboxRespHeader>()
+            );
             return Err(CaliptraApiError::MailboxRespTypeTooSmall);
         }
         if resp_min_size < mem::size_of::<MailboxRespHeader>() {
+            println!(
+                "Mailbox response min size too small: {} < {}",
+                resp_min_size,
+                mem::size_of::<MailboxRespHeader>()
+            );
             return Err(CaliptraApiError::MailboxRespTypeTooSmall);
         }
 

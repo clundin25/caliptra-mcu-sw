@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use libapi_caliptra::crypto::cert_mgr::{CerMgrContext, IDEV_CSR_MAX_SIZE};
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 
 use core::fmt::write;
@@ -32,7 +33,6 @@ pub async fn test_caliptra_sha<S: Syscalls>() {
     test_sha::<S>(data1, HashAlgoType::SHA512, &expected_sha_512).await;
 
     println!("SHA test completed successfully");
-    test_exit(0);
 }
 
 async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &[u8]) {
@@ -67,4 +67,33 @@ async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &
     }
 
     println!("SHA test for {:?} passed", algo);
+}
+
+// test get idev_csr
+pub async fn test_get_idev_csr<S: Syscalls>() {
+    println!("Starting Caliptra mailbox get idev csr test");
+
+    let mut cert_mgr = CerMgrContext::<S>::new();
+    let mut csr_der = [0u8; IDEV_CSR_MAX_SIZE];
+    let result = cert_mgr.get_idev_csr(&mut csr_der).await;
+    match result {
+        Ok(size) => {
+            println!("Retrieved CSR of size: {}", size);
+            if size > IDEV_CSR_MAX_SIZE {
+                println!("CSR retrieval failed: size exceeds maximum");
+                test_exit(1);
+            }
+            if size == 0 {
+                println!("CSR retrieval failed: size is zero");
+                test_exit(1);
+            }
+
+            println!("CSR data: {:?}", &csr_der[..size]);
+        }
+        Err(e) => {
+            println!("Failed to get CSR with error: {:?}", e);
+            test_exit(1);
+        }
+    }
+    println!("Get idev csr test completed successfully");
 }
