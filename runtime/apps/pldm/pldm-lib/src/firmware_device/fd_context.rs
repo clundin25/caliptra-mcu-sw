@@ -369,61 +369,6 @@ impl<S: Syscalls> FirmwareDeviceContext<S> {
         }
     }
 
-    /*
-
-    LIBPLDM_CC_NONNULL
-    static int pldm_fd_activate_firmware(struct pldm_fd *fd,
-                         const struct pldm_header_info *hdr,
-                         const struct pldm_msg *req,
-                         size_t req_payload_len,
-                         struct pldm_msg *resp,
-                         size_t *resp_payload_len)
-    {
-        uint16_t estimated_time;
-        uint8_t ccode;
-        int rc;
-        bool self_contained;
-
-        rc = decode_activate_firmware_req(req, req_payload_len,
-                          &self_contained);
-        if (rc) {
-            return pldm_fd_reply_errno(rc, hdr, resp, resp_payload_len);
-        }
-
-        if (fd->state != PLDM_FD_STATE_READY_XFER) {
-            return pldm_fd_reply_cc(PLDM_FWUP_INVALID_STATE_FOR_COMMAND,
-                        hdr, resp, resp_payload_len);
-        }
-
-        estimated_time = 0;
-        ccode = fd->ops->activate(fd->ops_ctx, self_contained, &estimated_time);
-
-        if (ccode == PLDM_SUCCESS ||
-            ccode == PLDM_FWUP_ACTIVATION_NOT_REQUIRED) {
-            /* Transition through states so that the prev_state is correct */
-            pldm_fd_set_state(fd, PLDM_FD_STATE_ACTIVATE);
-            pldm_fd_set_idle(fd, PLDM_FD_ACTIVATE_FW);
-        }
-
-        if (ccode == PLDM_SUCCESS) {
-            const struct pldm_activate_firmware_resp resp_data = {
-                .estimated_time_activation = estimated_time,
-            };
-            rc = encode_activate_firmware_resp(hdr->instance, &resp_data,
-                               resp, resp_payload_len);
-            if (rc) {
-                return pldm_fd_reply_errno(rc, hdr, resp,
-                               resp_payload_len);
-            }
-        } else {
-            return pldm_fd_reply_cc(ccode, hdr, resp, resp_payload_len);
-        }
-
-        return 0;
-    }
-
-
-         */
     pub async fn activate_firmware_rsp(
         &self,
         payload: &mut [u8],

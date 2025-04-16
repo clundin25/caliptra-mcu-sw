@@ -141,6 +141,12 @@ pub trait FdOps {
         op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError>;
 
+
+    async fn query_download_offset_and_length(
+        &self,
+        component: &FirmwareComponent,
+    ) -> Result<(usize, usize), FdOpsError>;
+
     /// Handles firmware data downloading operations.
     ///
     /// # Arguments
@@ -159,6 +165,12 @@ pub trait FdOps {
         data: &[u8],
         component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError>;
+
+    // Query if download is complete
+    async fn is_download_complete(
+        &self,
+        component: &FirmwareComponent,
+    ) -> Result<bool, FdOpsError>;
 
     async fn verify(
         &self,
@@ -271,6 +283,27 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         todo!()
     }
 
+
+    async fn query_download_offset_and_length(
+        &self,
+        component: &FirmwareComponent,
+    ) -> Result<(usize, usize), FdOpsError> {
+        let _guard = self.inner.lock().await;
+        if cfg!(feature = "pldm-lib-use-static-config") {
+            if let Some(image_size) = component.comp_image_size {
+                let offset = 0; // Assuming download starts at offset 0
+                let length = image_size as usize + PLDM_FWUP_MAX_PADDING_SIZE as usize;
+
+                return Ok((offset, length));
+            } else {
+                return Err(FdOpsError::ComponentError);
+            }
+        }
+
+        // TODO: Implement the actual firmware data handling logic
+        todo!()
+    }
+
     async fn download_fw_data(
         &self,
         offset: usize,
@@ -289,6 +322,15 @@ impl<S: Syscalls> FdOps for FdOpsObject<S> {
         }
 
         // TODO: Implement the actual firmware data handling logic
+        todo!()
+    }
+
+     // Query if download is complete
+     async fn is_download_complete(
+        &self,
+        component: &FirmwareComponent,
+    ) -> Result<bool, FdOpsError> {
+        // This function checks if the firmware download is complete for the given component.
         todo!()
     }
 
