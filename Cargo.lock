@@ -1873,10 +1873,20 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 name = "libapi-caliptra"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "embassy-executor",
+ "embassy-sync",
+ "embedded-alloc",
  "futures",
  "libsyscall-caliptra",
+ "libtock_console",
  "libtock_platform",
+ "libtock_runtime",
  "libtock_unittest",
+ "libtockasync",
+ "pldm-common",
+ "pldm-lib",
+ "romtime",
  "zerocopy 0.8.23",
 ]
 
@@ -2375,7 +2385,9 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embassy-executor",
+ "embassy-sync",
  "embedded-alloc",
+ "libapi-caliptra",
  "libsyscall-caliptra",
  "libtock",
  "libtock_console",
@@ -2384,6 +2396,7 @@ dependencies = [
  "libtock_runtime",
  "libtock_unittest",
  "libtockasync",
+ "pldm-common",
  "pldm-lib",
  "portable-atomic",
 ]
@@ -2419,8 +2432,8 @@ dependencies = [
  "embassy-executor",
  "embassy-sync",
  "embedded-alloc",
- "libapi-caliptra",
  "libsyscall-caliptra",
+ "libtock_console",
  "libtock_platform",
  "libtock_runtime",
  "libtock_unittest",

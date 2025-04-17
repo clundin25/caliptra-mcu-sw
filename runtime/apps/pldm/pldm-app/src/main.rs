@@ -11,6 +11,9 @@ use libtock_platform::Syscalls;
 #[allow(unused)]
 use pldm_lib::daemon::PldmService;
 
+use libapi_caliptra::image_loading::{ImageLoaderAPI, ImageSource};
+use pldm_common::protocol::firmware_update::{Descriptor, DescriptorType};
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
@@ -37,9 +40,19 @@ async fn start() {
     async_main::<libtock_runtime::TockSyscalls>().await;
 }
 
+pub const DEVICE_UUID: [u8; 16] = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+];
+static DESCRIPTOR: embassy_sync::lazy_lock::LazyLock<[Descriptor; 1]> =
+    embassy_sync::lazy_lock::LazyLock::new(|| {
+        [Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID).unwrap()]
+    });
+
 #[cfg(not(target_arch = "riscv32"))]
 #[embassy_executor::task]
 async fn start() {
+    use pldm_common::protocol::firmware_update::DescriptorType;
+
     async_main::<libtock_unittest::fake::Syscalls>().await;
 }
 
@@ -47,27 +60,7 @@ pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "PLDM_APP: Hello PLDM async world!").unwrap();
 
-    #[cfg(any(
-        feature = "test-pldm-discovery",
-        feature = "test-pldm-fw-update",
-        feature = "test-pldm-fw-update-e2e"
-    ))]
-    {
-        let mut pldm_service = PldmService::<S>::init();
-        writeln!(
-            console_writer,
-            "PLDM_APP: Starting PLDM service for testing..."
-        )
-        .unwrap();
-        if let Err(e) = pldm_service.start().await {
-            writeln!(
-                console_writer,
-                "PLDM_APP: Error starting PLDM service: {:?}",
-                e
-            )
-            .unwrap();
-        }
-
-        writeln!(console_writer, "PLDM_APP: PLDM service stopped").unwrap();
-    }
+    let image_loader: ImageLoaderAPI<S> =
+        ImageLoaderAPI::new(ImageSource::Pldm(&DESCRIPTOR.get()[..]));
+    image_loader.load_and_authorize(1).await.unwrap();
 }

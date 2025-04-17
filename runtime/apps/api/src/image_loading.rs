@@ -1,33 +1,130 @@
 // Licensed under the Apache-2.0 license
-
+extern crate alloc;
+use async_trait::async_trait;
+use alloc::boxed::Box;
 use crate::mailbox::{
     AuthorizeAndStashRequest, GetImageLoadAddressRequest, GetImageLocationOffsetRequest,
     GetImageSizeRequest, Mailbox, MailboxRequest, MailboxRequestType, MailboxResponse,
     AUTHORIZED_IMAGE,
 };
+
 use libsyscall_caliptra::dma::{AXIAddr, DMASource, DMATransaction, DMA as DMASyscall};
 use libsyscall_caliptra::flash::{driver_num, SpiFlash as FlashSyscall};
 use libtock_platform::ErrorCode;
 use libtock_platform::Syscalls;
+use libtockasync::TockExecutor;
+
+use pldm_common::protocol::firmware_update::Descriptor;
+use pldm_lib::daemon::PldmService;
+
+use core::fmt::Write;
+use libtock_console::Console;
+use romtime::println;
+
+pub struct PldmInstance<S: Syscalls> {
+    pub pldm_service: Option<PldmService<S>>,
+    pub executor: TockExecutor,
+}
 
 pub struct ImageLoaderAPI<S: Syscalls> {
     mailbox_api: Mailbox<S>,
+    source: ImageSource,
+    pldm: Option<PldmInstance<S>>,
 }
 
 /// This is the size of the buffer used for DMA transfers.
 const MAX_TRANSFER_SIZE: usize = 1024;
+#[derive(Debug, Clone, Copy)]
+pub enum ImageSource {
+    // Image is located in Flash
+    Flash,
+    // Image is retrieved via PLDM
+    // PLDM Descriptors should be specified.
+    Pldm(&'static [Descriptor]),
+}
 
 impl<S: Syscalls> Default for ImageLoaderAPI<S> {
     fn default() -> Self {
-        Self::new()
+        Self::new(ImageSource::Flash)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum State {
+    Start,
+    Initializing,
+    Downloading,
+    Done,
+}
+
+// declare lazy static StudFdOps
+// static mut PLDM_FD_OPS: StubFdOps = StubFdOps::new();
+static PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Start);
+
+static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
+
+#[cfg(target_arch = "riscv32")]
+#[embassy_executor::task]
+pub async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
+    pldm_service::<libtock_runtime::TockSyscalls>(pldm_ops).await;
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+#[embassy_executor::task]
+async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
+    pldm_service::<libtock_unittest::fake::Syscalls>(pldm_ops).await;
+}
+
+pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
+    let mut pldm_service_init = PldmService::<S>::init(pldm_ops);
+    let mut console_writer = Console::<S>::writer();
+    writeln!(console_writer, "PLDM_APP:pldm_service").unwrap();
+    pldm_service_init.start().await;
 }
 
 impl<S: Syscalls> ImageLoaderAPI<S> {
     /// Creates a new instance of the ImageLoaderAPI.
-    pub fn new() -> Self {
+    pub fn new(source: ImageSource) -> Self {
+        let mut console_writer = Console::<S>::writer();
+        writeln!(
+            console_writer,
+            "PLDM_APP: Marco Test descriptor source {:?}",
+            source
+        )
+        .unwrap();
+
+        let pldm: Option<PldmInstance<S>> = None;
+        if let ImageSource::Pldm(descriptors) = &source {
+            if descriptors.is_empty() {
+                panic!("PLDM descriptors cannot be empty");
+            }
+            let mut STUD_FD_OPS: StubFdOps = StubFdOps::new(descriptors);
+            
+      
+        let STUD_FD_OPS: &'static mut StubFdOps =
+            unsafe { core::mem::transmute(&mut STUD_FD_OPS) };
+
+            EXECUTOR
+                .get()
+                .spawner()
+                .spawn(pldm_service_task(STUD_FD_OPS))
+                .unwrap();
+
+            writeln!(console_writer, "Waiting for PLDM to initialize...");
+            loop {
+                EXECUTOR.get().poll();
+                let state = PLDM_STATE.lock(|state| *state);
+                if state == State::Initializing {
+                    break;
+                }
+            }
+            writeln!(console_writer, "PLDM initialized");
+        }
+
         Self {
             mailbox_api: Mailbox::new(),
+            source,
+            pldm,
         }
     }
 
@@ -153,5 +250,75 @@ impl<S: Syscalls> ImageLoaderAPI<S> {
         }
 
         Ok(())
+    }
+}
+
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::lazy_lock::LazyLock;
+use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
+use pldm_common::protocol::firmware_update::{
+    ComponentResponseCode, PldmFdTime, PLDM_FWUP_BASELINE_TRANSFER_SIZE,
+};
+use pldm_common::util::fw_component::FirmwareComponent;
+use pldm_lib::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
+
+/// Stub implementation of the FdOps trait for testing and development purposes.
+pub struct StubFdOps {
+    descriptors: &'static [Descriptor],
+}
+
+impl StubFdOps {
+    /// Creates a new instance of the StubFdOps.
+    pub const fn new(descriptors: &'static [Descriptor]) -> Self {
+        Self { descriptors }
+    }
+}
+
+#[async_trait(?Send)]
+impl FdOps for StubFdOps {
+    async fn get_device_identifiers(
+        &self,
+        device_identifiers: &mut [Descriptor],
+    ) -> Result<usize, FdOpsError> {
+///        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+ //       writeln!(console_writer, "StubFdOps::get_device_identifiers called").unwrap();
+        self.descriptors
+            .iter()
+            .enumerate()
+            .for_each(|(i, descriptor)| {
+                if i < device_identifiers.len() {
+                    device_identifiers[i] = *descriptor;
+                }
+            });
+        Ok(self.descriptors.len())
+    }
+
+    async fn get_firmware_parms(
+        &self,
+        firmware_params: &mut FirmwareParameters,
+    ) -> Result<(), FdOpsError> {
+        Ok(())
+    }
+
+    async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
+        // Return the minimum of requested and baseline transfer size
+        let size = core::cmp::min(ua_transfer_size, PLDM_FWUP_BASELINE_TRANSFER_SIZE);
+        Ok(size)
+    }
+
+    async fn handle_component(
+        &self,
+        _component: &FirmwareComponent,
+        _fw_params: &FirmwareParameters,
+        _op: ComponentOperation,
+    ) -> Result<ComponentResponseCode, FdOpsError> {
+        // Always return success response code for stub
+        Ok(ComponentResponseCode::CompCanBeUpdated)
+    }
+
+    async fn now(&self) -> PldmFdTime {
+        // Return a dummy timestamp (e.g., 123456 ms)
+        PldmFdTime::from_le(123_456)
     }
 }
