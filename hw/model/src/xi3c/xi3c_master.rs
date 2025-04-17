@@ -63,7 +63,7 @@ impl Controller {
             self.regs()
                 .od_scl_low_time
                 .set(t_low.wrapping_sub(2) & 0x3ffff);
-            tcas_min = 600000_u32 // TODO: this seems off by 1000
+            tcas_min = 600_u32
                 .wrapping_add(core_period_ns)
                 .wrapping_sub(1)
                 .wrapping_div(core_period_ns);
@@ -88,7 +88,7 @@ impl Controller {
             self.regs()
                 .od_scl_low_time
                 .set(od_t_low.wrapping_sub(2) & 0x3ffff);
-            tcas_min = 260000_u32 // TODO: this seems off by 1000
+            tcas_min = 39_u32
                 .wrapping_add(core_period_ns)
                 .wrapping_sub(1)
                 .wrapping_div(core_period_ns);

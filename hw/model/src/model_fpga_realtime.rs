@@ -809,18 +809,18 @@ mod test {
         // values of all of these set to 0-5 seem to work for receiving data correctly
         // 6-7 gets corrupted data but will ACK
         // 8+ will fail to ACK
-        regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_r_reg.set(1); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_f_reg.set(1); // rise time of both SDA and SCL in clock units
 
         // if this is set to 6+ then ACKs start failing
-        regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
+        regs.soc_mgmt_if_t_hd_dat_reg.set(1); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(1); // data setup time in clock units
 
-        regs.soc_mgmt_if_t_high_reg.set(0); // High period of the SCL in clock units
-        regs.soc_mgmt_if_t_low_reg.set(0); // Low period of the SCL in clock units
-        regs.soc_mgmt_if_t_hd_sta_reg.set(0); // Hold time for (repeated) START in clock units
-        regs.soc_mgmt_if_t_su_sta_reg.set(0); // Setup time for repeated START in clock units
-        regs.soc_mgmt_if_t_su_sto_reg.set(0); // Setup time for STOP in clock units
+        regs.soc_mgmt_if_t_high_reg.set(1); // High period of the SCL in clock units
+        regs.soc_mgmt_if_t_low_reg.set(1); // Low period of the SCL in clock units
+        regs.soc_mgmt_if_t_hd_sta_reg.set(1); // Hold time for (repeated) START in clock units
+        regs.soc_mgmt_if_t_su_sta_reg.set(1); // Setup time for repeated START in clock units
+        regs.soc_mgmt_if_t_su_sto_reg.set(1); // Setup time for STOP in clock units
 
         println!(
             "Timing register t_r: {}, t_f: {}, t_hd_dat: {}, t_su_dat: {}, t_high: {}, t_low: {}, t_hd_sta: {}, t_su_sta: {}, t_su_sto: {}",
@@ -997,6 +997,7 @@ mod test {
         }
     }
 
+    // tests writes
     #[test]
     fn test_xi3c() {
         const AXI_CLOCK_HZ: u32 = 199_999_000;
@@ -1007,7 +1008,7 @@ mod test {
         let i3c_target_raw = dev1.map_mapping(2).unwrap();
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
-        let repeat = 3; // repeat messages this many times when sending
+        let repeat = 1; // repeat messages this many times when sending
 
         let empty_wait_time = Some(Duration::from_millis(1)); // sleep this much before emptying the rx queue
         let use_dynamic_addr = false;
@@ -1091,7 +1092,7 @@ mod test {
         }
         println!("Using {:x} as target address", target_addr);
 
-        const I3C_DATALEN: u16 = 90;
+        const I3C_DATALEN: u16 = 50;
         let max_len = I3C_DATALEN.to_be_bytes();
         let mut tx_data = [0u8; I3C_DATALEN as usize];
 
@@ -1109,7 +1110,7 @@ mod test {
             println!("Acknowledge received");
         }
 
-        cmd.no_repeated_start = 0;
+        cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.rw = 0;
@@ -1168,7 +1169,7 @@ mod test {
         /*
          * Set Max read length
          */
-        cmd.no_repeated_start = 0;
+        cmd.no_repeated_start = 1;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.rw = 0;
@@ -1258,6 +1259,119 @@ mod test {
         // let mut s = String::new();
         // println!("Waiting on user to hit enter");
         // std::io::stdin().read_line(&mut s).unwrap();
+    }
+
+    #[test]
+    fn test_xi3c_write() {
+        const AXI_CLOCK_HZ: u32 = 199_999_000;
+        const I3C_CLOCK_HZ: u32 = 12_500_000;
+        let dev0 = UioDevice::blocking_new(0).unwrap();
+        let dev1 = UioDevice::blocking_new(1).unwrap();
+        let wrapper = dev0.map_mapping(0).unwrap() as *mut u32;
+        let i3c_target_raw = dev1.map_mapping(2).unwrap();
+        let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
+        const I3C_TARGET_ADDR: u8 = 0x5a;
+        let use_dynamic_addr = false;
+
+        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(0x44 / 4)) };
+        println!("FPGA version: {:08x}", fpga_version);
+
+        println!("Bring SS out of reset");
+        unsafe {
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0);
+            core::ptr::write_volatile(wrapper.offset(0x30 / 4), 0x3);
+        }
+        println!("Configuring I3C target");
+        configure_i3c_target(i3c_target, I3C_TARGET_ADDR, false);
+
+        let xi3c_controller_ptr = dev0.map_mapping(3).unwrap() as *mut u32;
+        let xi3c: &xi3c::XI3c = unsafe { &*(xi3c_controller_ptr as *const xi3c::XI3c) };
+        println!("XI3C HW version = {:x}", xi3c.version.get());
+
+        let mut i3c_controller = xi3c::Controller::new(xi3c_controller_ptr);
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: xi3c_controller_ptr,
+            input_clock_hz: AXI_CLOCK_HZ,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: use_dynamic_addr, // this needs to be true for dynamic addressing
+            hj_capable: false,
+            entdaa_enable: false,
+            known_static_addrs: vec![I3C_TARGET_ADDR],
+        };
+
+        i3c_controller.set_s_clk(AXI_CLOCK_HZ, I3C_CLOCK_HZ, 1);
+        i3c_controller
+            .cfg_initialize(&xi3c_config, xi3c_controller_ptr as usize)
+            .unwrap();
+        println!("I3C controller timing registers:");
+        println!(
+            "  od scl high: {}",
+            i3c_controller.regs().od_scl_high_time.get()
+        );
+        println!(
+            "  od scl low: {}",
+            i3c_controller.regs().od_scl_low_time.get()
+        );
+        println!("  scl high: {}", i3c_controller.regs().scl_high_time.get());
+        println!("  scl low: {}", i3c_controller.regs().scl_low_time.get());
+        println!("  sda hold: {}", i3c_controller.regs().sda_hold_time.get());
+        println!("  tsu start: {}", i3c_controller.regs().tsu_start.get());
+        println!("  tsu stop: {}", i3c_controller.regs().tsu_stop.get());
+        println!("  bus free time: {}", i3c_controller.regs().bus_idle.get());
+        println!("  thld start: {}", i3c_controller.regs().thd_start.get());
+
+        // check I3C target address
+        let mut target_addr = I3C_TARGET_ADDR;
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::DynamicAddrValid)
+            == 1
+        {
+            let addr = i3c_target
+                .stdby_ctrl_mode_stby_cr_device_addr
+                .read(StbyCrDeviceAddr::DynamicAddr);
+            println!("I3C target dynamic address: {:x}", addr,);
+            if use_dynamic_addr {
+                target_addr = addr as u8;
+            }
+        }
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::StaticAddrValid)
+            == 1
+        {
+            println!(
+                "I3C target static address: {:x}",
+                i3c_target
+                    .stdby_ctrl_mode_stby_cr_device_addr
+                    .read(StbyCrDeviceAddr::StaticAddr) as u8,
+            );
+        }
+        println!("Using {:x} as target address", target_addr);
+
+        const I3C_DATALEN: u16 = 50;
+        let mut tx_data = [0u8; I3C_DATALEN as usize];
+
+        let mut cmd = xi3c::Command {
+            cmd_type: 1,
+            no_repeated_start: 1,
+            ..Default::default()
+        };
+        if !use_dynamic_addr {
+            const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
+            println!("Broadcast CCC SETAASA");
+            let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
+            assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
+            println!("Acknowledge received");
+        }
+
+        // Fill data to buffer
+        for i in 0..I3C_DATALEN as usize {
+            tx_data[i] = i as u8; // Test data
+        }
 
         // Recv
         println!("Sending a read request to the target");
