@@ -2,6 +2,7 @@
 extern crate alloc;
 use async_trait::async_trait;
 use alloc::boxed::Box;
+use embassy_executor::Spawner;
 use embassy_sync::signal::Signal;
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -54,12 +55,6 @@ pub enum ImageSource {
     Pldm(&'static [Descriptor]),
 }
 
-impl<'a, S: Syscalls> Default for ImageLoaderAPI<'a, S> {
-    fn default() -> Self {
-        Self::new(ImageSource::Flash)
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
     NotRunning,
@@ -82,21 +77,21 @@ static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::n
 
 #[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
-pub async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
-    pldm_service::<libtock_runtime::TockSyscalls>(pldm_ops).await;
+pub async fn pldm_service_task(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
+    pldm_service::<libtock_runtime::TockSyscalls>(pldm_ops, spawner).await;
 }
 
 #[cfg(not(target_arch = "riscv32"))]
 #[embassy_executor::task]
-async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
-    pldm_service::<libtock_unittest::fake::Syscalls>(pldm_ops).await;
+async fn pldm_service_task(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
+    pldm_service::<libtock_unittest::fake::Syscalls>(pldm_ops, spawner).await;
 }
 
-pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
-    let mut pldm_service_init = PldmService::<S>::init(pldm_ops, EXECUTOR.get().spawner());
+pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps, spawner: Spawner) {
+    let mut pldm_service_init = PldmService::<S>::init(pldm_ops, spawner);
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "IMAGE_LOADING:pldm_service").unwrap();
-    pldm_service_init.start().await;
+    pldm_service_init.start().await.unwrap();
 }
 
 
@@ -136,7 +131,7 @@ pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
 
 impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// Creates a new instance of the ImageLoaderAPI.
-    pub fn new(source: ImageSource) -> Self {
+    pub fn new(source: ImageSource, spawner: Spawner) -> Self {
         let mut console_writer = Console::<S>::writer();
         writeln!(
             console_writer,
@@ -156,24 +151,22 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         let STUD_FD_OPS: &'static mut StubFdOps =
             unsafe { core::mem::transmute(&mut STUD_FD_OPS) };
 
-            EXECUTOR
-                .get()
-                .spawner()
-                .spawn(pldm_service_task(STUD_FD_OPS))
+            spawner
+                .spawn(pldm_service_task(STUD_FD_OPS, spawner))
                 .unwrap();
 
-            writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...");
+/*
+            writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
             loop {
-                writeln!(console_writer, "IMAGE_LOADING: before poll");
-                EXECUTOR.get().poll();
-                writeln!(console_writer, "IMAGE_LOADING: after poll");
                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
                 if state != State::Initializing {
                     writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
                     break;
                 }
             }
-            writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
+             */
+            writeln!(console_writer, "IMAGE_LOADING: PLDM initialized").unwrap();
+
         }
 
         Self {

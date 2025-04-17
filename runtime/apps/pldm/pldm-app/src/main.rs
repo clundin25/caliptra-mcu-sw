@@ -8,11 +8,13 @@
 use core::fmt::Write;
 use libtock_console::Console;
 use libtock_platform::Syscalls;
+use libtockasync::TockExecutor;
 #[allow(unused)]
 use pldm_lib::daemon::PldmService;
 
 use libapi_caliptra::image_loading::{ImageLoaderAPI, ImageSource};
 use pldm_common::protocol::firmware_update::{Descriptor, DescriptorType};
+use embassy_sync::lazy_lock::LazyLock;
 
 #[cfg(target_arch = "riscv32")]
 mod riscv;
@@ -48,6 +50,9 @@ static DESCRIPTOR: embassy_sync::lazy_lock::LazyLock<[Descriptor; 1]> =
         [Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID).unwrap()]
     });
 
+
+static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
+
 #[cfg(not(target_arch = "riscv32"))]
 #[embassy_executor::task]
 async fn start() {
@@ -56,11 +61,37 @@ async fn start() {
     async_main::<libtock_unittest::fake::Syscalls>().await;
 }
 
+
+#[cfg(target_arch = "riscv32")]
+#[embassy_executor::task]
+pub async fn image_loading_task() {
+    image_loading::<libtock_runtime::TockSyscalls>().await;
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+#[embassy_executor::task]
+async fn image_loading_task() {
+    image_loading::<libtock_unittest::fake::Syscalls>().await;
+}
+
+pub async fn image_loading<S: Syscalls>() {
+    let image_loader: ImageLoaderAPI<S> =
+        ImageLoaderAPI::new(ImageSource::Pldm(&DESCRIPTOR.get()[..]), EXECUTOR.get().spawner());
+    image_loader.load_and_authorize(1).await.unwrap();
+}
+
+
 pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "PLDM_APP: Hello PLDM async world!").unwrap();
+    EXECUTOR
+    .get()
+    .spawner()
+    .spawn(image_loading_task())
+    .unwrap();
 
-    let image_loader: ImageLoaderAPI<S> =
-        ImageLoaderAPI::new(ImageSource::Pldm(&DESCRIPTOR.get()[..]));
-    image_loader.load_and_authorize(1).await.unwrap();
+
+    loop {
+        EXECUTOR.get().poll();
+    }
 }
