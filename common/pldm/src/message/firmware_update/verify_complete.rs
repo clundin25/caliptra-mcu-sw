@@ -15,7 +15,15 @@ pub enum VerifyResult {
     VerifyErrorVersionMismatch = 0x02,
     VerifyFailedFdSecurityChecks = 0x03,
     VerifyErrorImageIncomplete = 0x04,
+    VerifiyTimeOut = 0x09,
+    VerifyGenericError = 0x0a,
     VendorDefined,
+}
+
+impl Default for VerifyResult {
+    fn default() -> Self {
+        VerifyResult::VerifyGenericError
+    }
 }
 
 impl TryFrom<u8> for VerifyResult {
@@ -28,6 +36,8 @@ impl TryFrom<u8> for VerifyResult {
             0x02 => Ok(VerifyResult::VerifyErrorVersionMismatch),
             0x03 => Ok(VerifyResult::VerifyFailedFdSecurityChecks),
             0x04 => Ok(VerifyResult::VerifyErrorImageIncomplete),
+            0x09 => Ok(VerifyResult::VerifiyTimeOut),
+            0x0a => Ok(VerifyResult::VerifyGenericError),
             0x90..=0xaf => Ok(VerifyResult::VendorDefined),
             _ => Err(PldmError::InvalidVerifyResult),
         }

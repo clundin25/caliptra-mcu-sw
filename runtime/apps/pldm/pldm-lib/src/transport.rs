@@ -60,6 +60,7 @@ impl<S: Syscalls> MctpTransport<S> {
     pub async fn receive_response<'a>(&mut self, rsp: &'a mut [u8]) -> Result<(), TransportError> {
         // Reset msg buffer
         rsp.fill(0);
+
         let (rsp_len, _msg_info) = if let Some(tag) = self.cur_req_ctx {
             self.mctp
                 .receive_response(rsp, tag)
