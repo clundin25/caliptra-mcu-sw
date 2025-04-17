@@ -2,6 +2,10 @@
 extern crate alloc;
 use async_trait::async_trait;
 use alloc::boxed::Box;
+use pldm_common::message::firmware_update::apply_complete::ApplyResult;
+use pldm_common::message::firmware_update::get_status::ProgressPercent;
+use pldm_common::message::firmware_update::transfer_complete::TransferResult;
+use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use crate::mailbox::{
     AuthorizeAndStashRequest, GetImageLoadAddressRequest, GetImageLocationOffsetRequest,
     GetImageSizeRequest, Mailbox, MailboxRequest, MailboxRequestType, MailboxResponse,
@@ -21,15 +25,15 @@ use core::fmt::Write;
 use libtock_console::Console;
 use romtime::println;
 
-pub struct PldmInstance<S: Syscalls> {
-    pub pldm_service: Option<PldmService<S>>,
+pub struct PldmInstance<'a, S: Syscalls> {
+    pub pldm_service: Option<PldmService<'a, S>>,
     pub executor: TockExecutor,
 }
 
-pub struct ImageLoaderAPI<S: Syscalls> {
+pub struct ImageLoaderAPI<'a, S: Syscalls> {
     mailbox_api: Mailbox<S>,
     source: ImageSource,
-    pldm: Option<PldmInstance<S>>,
+    pldm: Option<PldmInstance<'a, S>>,
 }
 
 /// This is the size of the buffer used for DMA transfers.
@@ -43,7 +47,7 @@ pub enum ImageSource {
     Pldm(&'static [Descriptor]),
 }
 
-impl<S: Syscalls> Default for ImageLoaderAPI<S> {
+impl<'a, S: Syscalls> Default for ImageLoaderAPI<'a, S> {
     fn default() -> Self {
         Self::new(ImageSource::Flash)
     }
@@ -82,7 +86,7 @@ pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
     pldm_service_init.start().await;
 }
 
-impl<S: Syscalls> ImageLoaderAPI<S> {
+impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// Creates a new instance of the ImageLoaderAPI.
     pub fn new(source: ImageSource) -> Self {
         let mut console_writer = Console::<S>::writer();
@@ -320,5 +324,52 @@ impl FdOps for StubFdOps {
     async fn now(&self) -> PldmFdTime {
         // Return a dummy timestamp (e.g., 123456 ms)
         PldmFdTime::from_le(123_456)
+    }
+
+    
+    async fn query_download_offset_and_length(
+        &self,
+        component: &FirmwareComponent,
+    ) -> Result<(usize, usize), FdOpsError> {
+
+        Ok((0, 0))
+    }
+
+    async fn download_fw_data(
+        &self,
+        offset: usize,
+        data: &[u8],
+        component: &FirmwareComponent,
+    ) -> Result<TransferResult, FdOpsError> {
+
+        Ok(TransferResult::TransferSuccess)
+    }
+
+    async fn is_download_complete(&self, component: &FirmwareComponent) -> bool {
+        true
+    }
+
+    async fn verify(
+        &self,
+        _component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<VerifyResult, FdOpsError> {
+        Ok(VerifyResult::VerifySuccess)
+    }
+
+    async fn apply(
+        &self,
+        _component: &FirmwareComponent,
+        progress_percent: &mut ProgressPercent,
+    ) -> Result<ApplyResult, FdOpsError> {
+        Ok(ApplyResult::ApplySuccess)
+    }
+
+    async fn activate(
+        &self,
+        self_contained_activation: u8,
+        estimated_time: &mut u16,
+    ) -> Result<u8, FdOpsError> {
+        Ok(0) // PLDM completion code for success
     }
 }
