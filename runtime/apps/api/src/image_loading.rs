@@ -68,6 +68,7 @@ pub enum State {
 // static mut PLDM_FD_OPS: StubFdOps = StubFdOps::new();
 static mut PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Initializing);
 static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static MAIN_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
 static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
     initial_offset: 0,
@@ -131,7 +132,7 @@ pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
 
 impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// Creates a new instance of the ImageLoaderAPI.
-    pub fn new(source: ImageSource, spawner: Spawner) -> Self {
+    pub async fn new(source: ImageSource, spawner: Spawner) -> Self {
         let mut console_writer = Console::<S>::writer();
         writeln!(
             console_writer,
@@ -154,6 +155,8 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             spawner
                 .spawn(pldm_service_task(STUD_FD_OPS, spawner))
                 .unwrap();
+
+                MAIN_SIGNAL.wait().await;
 
 /*
             writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
@@ -409,6 +412,7 @@ impl FdOps for StubFdOps {
                 *state = State::DownloadingToc;
                 writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",*state).unwrap();
 //                is_yield = true;
+                    MAIN_SIGNAL.signal(());
                 
             }
         }

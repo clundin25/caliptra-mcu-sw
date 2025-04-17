@@ -76,7 +76,7 @@ async fn image_loading_task() {
 
 pub async fn image_loading<S: Syscalls>() {
     let image_loader: ImageLoaderAPI<S> =
-        ImageLoaderAPI::new(ImageSource::Pldm(&DESCRIPTOR.get()[..]), EXECUTOR.get().spawner());
+        ImageLoaderAPI::new(ImageSource::Pldm(&DESCRIPTOR.get()[..]), EXECUTOR.get().spawner()).await;
     image_loader.load_and_authorize(1).await.unwrap();
 }
 
