@@ -170,7 +170,6 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
                 if state != State::Initializing {
                     writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
-                    YIELD_SIGNAL.signal(());
                     break;
                 }
             }
@@ -194,6 +193,20 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// - `Err(ErrorCode)`: Indication of the failure to load or authorize the image.
     pub async fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
 
+        let mut console_writer = Console::<S>::writer();
+        writeln!(
+            console_writer,
+            "IMAGE_LOADING: load_and_authorize{:?}",
+            image_id
+        )
+        .unwrap();
+
+        unsafe {
+            let download_ctx = DOWNLOAD_CTX.get_mut();
+            download_ctx.initial_offset = 0;
+            download_ctx.total_length = 100;
+            download_ctx.current_offset = 0;
+        }
 
 
 /*
