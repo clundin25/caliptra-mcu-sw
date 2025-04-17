@@ -7,6 +7,7 @@ use crate::firmware_device::fd_ops::FdOps;
 
 use crate::transport::MctpTransport;
 use core::sync::atomic::{AtomicBool, Ordering};
+use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use libsyscall_caliptra::mctp::driver_num;
@@ -45,6 +46,7 @@ pub enum PldmServiceError {
 /// * `running` - An atomic boolean indicating whether the PLDM service is currently running.
 /// * `initiator_signal` - A signal used to activate the PLDM initiator task.
 pub struct PldmService<'a, S: Syscalls> {
+    spawner : Spawner,
     cmd_interface: CmdInterface<'a, S>,
     running: &'static AtomicBool,
     initiator_signal: &'static Signal<CriticalSectionRawMutex, ()>,
@@ -53,12 +55,13 @@ pub struct PldmService<'a, S: Syscalls> {
 // Note: This implementation is a starting point for integration testing.
 // It will be extended and refactored to support additional PLDM commands in both responder and requester modes.
 impl<'a, S: Syscalls> PldmService<'a, S> {
-    pub fn init(fdops: &'a dyn FdOps) -> Self {
+    pub fn init(fdops: &'a dyn FdOps, spawner : Spawner) -> Self {
         let cmd_interface = CmdInterface::new(
             config::PLDM_PROTOCOL_CAPABILITIES.get(),
             FirmwareDeviceContext::new(fdops),
         );
         Self {
+            spawner,
             cmd_interface,
             running: {
                 static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -78,15 +81,10 @@ impl<'a, S: Syscalls> PldmService<'a, S> {
 
         self.running.store(true, Ordering::SeqCst);
 
-        let mut responder_executor = TockExecutor::new();
-        let responder_executor: &'static mut TockExecutor =
-            unsafe { core::mem::transmute(&mut responder_executor) };
-
         let cmd_interface: &'static CmdInterface<'static, libtock_runtime::TockSyscalls> =
             unsafe { core::mem::transmute(&self.cmd_interface) };
 
-        responder_executor
-            .spawner()
+        self.spawner
             .spawn(pldm_responder_task(
                 cmd_interface,
                 self.running,
@@ -94,28 +92,14 @@ impl<'a, S: Syscalls> PldmService<'a, S> {
             ))
             .unwrap();
 
-        let mut initiator_executor = TockExecutor::new();
-        let initiator_executor: &'static mut TockExecutor =
-            unsafe { core::mem::transmute(&mut initiator_executor) };
-        initiator_executor
-            .spawner()
+        self.spawner
             .spawn(pldm_initiator_task(
                 cmd_interface,
                 self.running,
                 self.initiator_signal,
             ))
             .unwrap();
-        let mut console_writer = Console::<S>::writer();
-        loop {
-            writeln!(
-                console_writer,
-                "[xs debug]pldm_dameon: responder_poll");
-            responder_executor.poll();
-            writeln!(
-                console_writer,
-                "[xs debug]pldm_dameon: initiator_poll");
-            initiator_executor.poll();
-        }
+        Ok(())
     }
 
     pub fn stop(&mut self) {

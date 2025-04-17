@@ -37,6 +37,12 @@ pub struct ImageLoaderAPI<'a, S: Syscalls> {
     pldm: Option<PldmInstance<'a, S>>,
 }
 
+pub struct DownloadCtx {
+    pub initial_offset: usize,
+    pub total_length: usize,
+    pub current_offset: usize,
+}
+
 /// This is the size of the buffer used for DMA transfers.
 const MAX_TRANSFER_SIZE: usize = 1024;
 #[derive(Debug, Clone, Copy)]
@@ -68,6 +74,11 @@ pub enum State {
 static mut PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Initializing);
 static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
+static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
+    initial_offset: 0,
+    total_length: 0,
+    current_offset: 0,
+});
 
 #[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
@@ -82,7 +93,7 @@ async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
 }
 
 pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
-    let mut pldm_service_init = PldmService::<S>::init(pldm_ops);
+    let mut pldm_service_init = PldmService::<S>::init(pldm_ops, EXECUTOR.get().spawner());
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "IMAGE_LOADING:pldm_service").unwrap();
     pldm_service_init.start().await;
@@ -185,13 +196,14 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
 
 
-
+/*
         let offset = self.get_image_offset(image_id).await?;
         let img_size = self.get_image_size(image_id).await?;
         let load_address = self.get_image_load_address(image_id).await?;
         self.load_image(load_address, offset as usize, img_size)
             .await?;
         self.authorize_image(image_id).await?;
+ */
         Ok(())
     }
 
@@ -381,16 +393,24 @@ impl FdOps for StubFdOps {
     ) -> Result<(usize, usize), FdOpsError> {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:query_download_offset_and_length called").unwrap();
+
+        
+        let mut is_yield = false;
         unsafe {
             let state = PLDM_STATE.get_mut();
-            writeln!(console_writer, "IMAGE_LOADING:state {:?}",*state).unwrap();
+            writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",*state).unwrap();
             if *state == State::Initializing {
                 *state = State::DownloadingToc;
-                writeln!(console_writer, "IMAGE_LOADING:state {:?} yielding",*state).unwrap();
-                YIELD_SIGNAL.wait().await;
+                writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",*state).unwrap();
+//                is_yield = true;
+                
             }
-
         }
+        if (is_yield) {
+            writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();;
+            YIELD_SIGNAL.wait().await;
+        }
+
 
         Ok((0, 0))
     }

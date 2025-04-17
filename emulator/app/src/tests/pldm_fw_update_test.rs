@@ -4,6 +4,7 @@
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::mctp_transport::MctpPldmSocket;
@@ -152,14 +153,14 @@ impl PldmFwUpdateTest {
         // Device will not send the RequestUpdate response so UA will stop at RequestUpdateSent state.
         // Modify this as more commands are supported by the device.
         // Note that the UA state machine will not progress if it receives an unexpected response from the device.
-        let res = self.wait_for_state_transition(update_sm::States::Apply);
+        let res = self.wait_for_state_transition(update_sm::States::Done);
 
         self.daemon.as_mut().unwrap().stop();
 
         res
     }
 
-    pub fn run(socket: MctpPldmSocket, running: Arc<AtomicBool>) {
+    pub fn run(socket: MctpPldmSocket, running: Arc<AtomicBool>) -> JoinHandle<()>{
         std::thread::spawn(move || {
             print!("Emulator: Running PLDM Loopback Test: ",);
             let mut test = PldmFwUpdateTest::new(socket, running);
@@ -170,6 +171,6 @@ impl PldmFwUpdateTest {
                 println!("Passed");
             }
             test.running.store(false, Ordering::Relaxed);
-        });
+        })
     }
 }
