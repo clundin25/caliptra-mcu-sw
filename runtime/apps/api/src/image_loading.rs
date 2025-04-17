@@ -18,7 +18,7 @@ use libtock_platform::ErrorCode;
 use libtock_platform::Syscalls;
 use libtockasync::TockExecutor;
 
-use pldm_common::protocol::firmware_update::Descriptor;
+use pldm_common::protocol::firmware_update::{ComponentActivationMethods, ComponentClassification, ComponentParameterEntry, Descriptor, FirmwareDeviceCapability, PldmFirmwareString, PldmFirmwareVersion};
 use pldm_lib::daemon::PldmService;
 
 use core::fmt::Write;
@@ -85,6 +85,41 @@ pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
     writeln!(console_writer, "PLDM_APP:pldm_service").unwrap();
     pldm_service_init.start().await;
 }
+
+
+pub const PLDM_PROTOCOL_CAP_COUNT: usize = 2;
+pub const FD_DESCRIPTORS_COUNT: usize = 1;
+pub const FD_FW_COMPONENTS_COUNT: usize = 1;
+pub const FD_MAX_XFER_SIZE: usize = 512; // Arbitrary limit and change as needed.
+pub const DEFAULT_FD_T1_TIMEOUT: PldmFdTime = 120000; // FD_T1 update mode idle timeout, range is [60s, 120s].
+pub const DEFAULT_FD_T2_RETRY_TIME: PldmFdTime = 5000; // FD_T2 retry request for firmware data, range is [1s, 5s].
+pub const INSTANCE_ID_COUNT: u8 = 32;
+pub static FIRMWARE_PARAMS: LazyLock<FirmwareParameters> = LazyLock::new(|| {
+    let active_firmware_string = PldmFirmwareString::new("UTF-8", "soc-fw-1.0").unwrap();
+    let active_firmware_version =
+        PldmFirmwareVersion::new(0x12345678, &active_firmware_string, Some("20250210"));
+    let pending_firmware_string = PldmFirmwareString::new("UTF-8", "soc-fw-1.1").unwrap();
+    let pending_firmware_version =
+        PldmFirmwareVersion::new(0x87654321, &pending_firmware_string, Some("20250213"));
+    let comp_activation_methods = ComponentActivationMethods(0x0001);
+    let capabilities_during_update = FirmwareDeviceCapability(0x0010);
+    let component_parameter_entry = ComponentParameterEntry::new(
+        ComponentClassification::Firmware,
+        0x0001,
+        0,
+        &active_firmware_version,
+        &pending_firmware_version,
+        comp_activation_methods,
+        capabilities_during_update,
+    );
+    FirmwareParameters::new(
+        capabilities_during_update,
+        FD_FW_COMPONENTS_COUNT as u16,
+        &active_firmware_string,
+        &pending_firmware_string,
+        &[component_parameter_entry],
+    )
+});
 
 impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// Creates a new instance of the ImageLoaderAPI.
@@ -285,8 +320,8 @@ impl FdOps for StubFdOps {
         &self,
         device_identifiers: &mut [Descriptor],
     ) -> Result<usize, FdOpsError> {
-///        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
- //       writeln!(console_writer, "StubFdOps::get_device_identifiers called").unwrap();
+        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+        writeln!(console_writer, "StubFdOps::get_device_identifiers called").unwrap();
         self.descriptors
             .iter()
             .enumerate()
@@ -302,7 +337,10 @@ impl FdOps for StubFdOps {
         &self,
         firmware_params: &mut FirmwareParameters,
     ) -> Result<(), FdOpsError> {
+        let fw_params = FIRMWARE_PARAMS.get();
+        *firmware_params = (*fw_params).clone();
         Ok(())
+
     }
 
     async fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
