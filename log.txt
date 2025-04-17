@@ -1,0 +1,39 @@
+
+running 1 test
+test test::test_pldm_fw_update_e2e has been running for over 60 seconds
+Loaded ROM File "/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/rom.bin" of size 5800
+Starting I3C Socket, port 65534
+Emulator: Running PLDM Loopback Test: 2025-04-17T18:28:29.719Z INFO  [pldm_ua::daemon] PldmDaemon is running...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+2025-04-17T18:28:34.030Z INFO  [pldm_ua::update_sm] Component id: 1 is in applicable components
+2025-04-17T18:28:34.030Z INFO  [pldm_ua::update_sm] Component id: 1, Package timestamp : 305419897 , Device timestamp : 305419896
+2025-04-17T18:28:34.030Z INFO  [pldm_ua::update_sm] Component id: 1 will be updated,
+2025-04-17T18:28:34.160Z INFO  [pldm_ua::update_sm] RequestUpdate response success
+2025-04-17T18:28:34.479Z INFO  [pldm_ua::update_sm] UpdateComponent response success, start download
+2025-04-17T18:28:34.651Z ERROR [pldm_ua::update_sm] RequestFirmwareDataRequest length is invalid
+2025-04-17T18:28:34.780Z ERROR [pldm_ua::update_sm] Transfer complete failed
+test test::test_pldm_fw_update_e2e ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 84.72s
+
+
+running 1 test
+Loaded ROM File "/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/rom.bin" of size 5800
+Starting I3C Socket, port 65534
+Emulator: Running PLDM Loopback Test: 2025-04-17T18:30:01.027Z INFO  [pldm_ua::daemon] PldmDaemon is running...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+MCTP_UTIL: IBI not received. Retrying...
+2025-04-17T18:30:05.386Z INFO  [pldm_ua::update_sm] Component id: 1 is in applicable components
+2025-04-17T18:30:05.386Z INFO  [pldm_ua::update_sm] Component id: 1, Package timestamp : 305419897 , Device timestamp : 305419896
+2025-04-17T18:30:05.386Z INFO  [pldm_ua::update_sm] Component id: 1 will be updated,
+2025-04-17T18:30:05.521Z INFO  [pldm_ua::update_sm] RequestUpdate response success
+2025-04-17T18:30:05.830Z INFO  [pldm_ua::update_sm] UpdateComponent response success, start download
+2025-04-17T18:30:06.020Z ERROR [pldm_ua::update_sm] RequestFirmwareDataRequest length is invalid
+2025-04-17T18:30:06.160Z ERROR [pldm_ua::update_sm] Transfer complete failed

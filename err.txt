@@ -1,0 +1,698 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running unittests src/lib.rs (target/debug/deps/tests_integration-0551491ad64460fe)
+       Fresh core v0.0.0 (/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core)
+       Fresh rustc-std-workspace-core v1.99.0 (/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/rustc-std-workspace-core)
+       Fresh compiler_builtins v0.1.134
+       Fresh unicode-ident v1.0.14
+       Fresh proc-macro2 v1.0.92
+       Fresh tock-registers v0.9.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh ureg v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh tock-cells v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh ufmt-write v0.1.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh tock-tbf v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh autocfg v1.4.0
+       Fresh caliptra-error v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh enum_primitive v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh tickv v2.0.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh caliptra-emu-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh bitflags v2.6.0
+       Fresh bitfield v0.14.0
+       Fresh quote v1.0.37
+       Fresh caliptra-registers-latest v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh kernel v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh riscv-csr v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Dirty runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime): the file `runtime/layout.ld` has changed (1744914577.996441989s, 1m 59s after last build at 1744914458.775210875s)
+   Compiling runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime)
+       Fresh syn v2.0.90
+       Fresh syn v1.0.109
+       Fresh caliptra-registers v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh paste v1.0.15
+       Fresh capsules-core v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh capsules-system v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh riscv v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh ufmt-macros v0.3.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh zeroize_derive v1.4.2
+       Fresh zerocopy-derive v0.8.23
+       Fresh caliptra-cfi-derive v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh memoffset v0.8.0
+       Fresh capsules-extra v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh rv32i v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+     Running `/home/visayamv/projects/caliptra-mcu-sw/target/release/build/runtime-bc80004545785811/build-script-build`
+       Fresh ufmt v0.2.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh zeroize v1.8.1
+       Fresh zerocopy v0.8.23
+       Fresh components v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh caliptra-cfi-lib v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh registers-generated v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/registers/generated-firmware)
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `registers-generated` (lib) generated 2 warnings
+       Fresh caliptra-lms-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-image-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-api-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-api v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh romtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/romtime)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+       Fresh flash-driver v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/flash)
+       Fresh i3c-driver v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/i3c)
+warning: `flash-driver` (lib) generated 2 warnings (2 duplicates)
+warning: `i3c-driver` (lib) generated 2 warnings (2 duplicates)
+       Fresh capsules-runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/capsules)
+warning: `capsules-runtime` (lib) generated 2 warnings (2 duplicates)
+     Running `/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name runtime --edition=2021 runtime/src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=s -C lto -C codegen-units=1 -C debuginfo=2 --cfg 'feature="default"' --cfg 'feature="test-pldm-fw-update-e2e"' --check-cfg 'cfg(docsrs)' --check-cfg 'cfg(feature, values("default", "test-caliptra-mailbox", "test-exit-immediately", "test-flash-ctrl-erase-page", "test-flash-ctrl-init", "test-flash-ctrl-read-write-page", "test-flash-storage-erase", "test-flash-storage-read-write", "test-flash-usermode", "test-i3c-constant-writes", "test-i3c-simple", "test-mctp-capsule-loopback", "test-mctp-ctrl-cmds", "test-mctp-user-loopback", "test-pldm-discovery", "test-pldm-fw-update", "test-pldm-fw-update-e2e", "test-pldm-request-response", "test-spdm-validator"))' -C metadata=edb446f1a1291d5f -C extra-filename=-edb446f1a1291d5f --out-dir /home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps --target riscv32imc-unknown-none-elf -L dependency=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps -L dependency=/home/visayamv/projects/caliptra-mcu-sw/target/release/deps --extern capsules_core=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_core-29217697ac963c85.rlib --extern capsules_extra=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_extra-67f138e452206e1e.rlib --extern capsules_runtime=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_runtime-01b13925f6fec1a7.rlib --extern capsules_system=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_system-105946ad51a236a5.rlib --extern 'noprelude:compiler_builtins=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcompiler_builtins-8391dc39c9e674e1.rlib' --extern components=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcomponents-ff471bf9feb09498.rlib --extern 'noprelude:core=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcore-b056ab877c04c1e1.rlib' --extern flash_driver=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libflash_driver-1dab507781619342.rlib --extern i3c_driver=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libi3c_driver-9a67eb44e855d42c.rlib --extern kernel=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libkernel-744a830e72832812.rlib --extern registers_generated=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libregisters_generated-bbd9a486446ca98c.rlib --extern riscv=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libriscv-babad212bba08bca.rlib --extern riscv_csr=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libriscv_csr-e6a1e31c64f418e1.rlib --extern romtime=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libromtime-7c570d41b42b21e1.rlib --extern rv32i=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/librv32i-87c50750caa3a38d.rlib --extern tock_registers=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libtock_registers-877303e7d4a2ea5e.rlib -Z unstable-options -C link-arg=-T/home/visayamv/projects/caliptra-mcu-sw/runtime/layout.ld -C link-arg=-L/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/runtime -C panic=abort -C target-feature=+relax,+unaligned-scalar-mem,+zba,+zbb,+zbc,+zbs -C force-frame-pointers=no -C relocation-model=static -C symbol-mangling-version=v0 -C linker=rust-lld -C linker-flavor=ld.lld -C link-arg=-nmagic -C link-arg=-icf=all`
+warning: `runtime` (bin "runtime") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 5.71s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+   Compiling example-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/example)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+warning: `registers-generated` (lib) generated 2 warnings (2 duplicates)
+warning: `pldm-common` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `example-app` (bin "example-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.89s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+   Compiling spdm-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/spdm/spdm-app)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `spdm-lib` (lib) generated 2 warnings (2 duplicates)
+warning: `spdm-app` (bin "spdm-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.30s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+   Compiling pldm-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/pldm/pldm-app)
+warning: `pldm-common` (lib) generated 2 warnings (2 duplicates)
+warning: `registers-generated` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+warning: `pldm-lib` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `romtime::println`
+  --> runtime/apps/api/src/image_loading.rs:26:5
+   |
+26 | use romtime::println;
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused attribute
+ --> runtime/apps/api/src/lib.rs:4:1
+  |
+4 | #![no_std]
+  | ^^^^^^^^^^ help: remove this attribute
+  |
+note: attribute also specified here
+ --> runtime/apps/api/src/lib.rs:2:38
+  |
+2 | #![cfg_attr(target_arch = "riscv32", no_std)]
+  |                                      ^^^^^^
+  = note: `#[warn(unused_attributes)]` on by default
+
+warning: unreachable statement
+   --> runtime/apps/api/src/image_loading.rs:159:13
+    |
+152 | /             loop {
+153 | |                 EXECUTOR.get().poll();
+154 | |                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
+155 | |                 if state == State::Initializing {
+156 | |                     continue;
+157 | |                 }
+158 | |             }
+    | |_____________- any code following this expression is unreachable
+159 |               writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` on by default
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:369:9
+    |
+369 |         component: &FirmwareComponent,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `data`
+   --> runtime/apps/api/src/image_loading.rs:385:9
+    |
+385 |         data: &[u8],
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:386:9
+    |
+386 |         component: &FirmwareComponent,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+
+warning: unused variable: `offset`
+   --> runtime/apps/api/src/image_loading.rs:384:9
+    |
+384 |         offset: usize,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:392:42
+    |
+392 |     async fn is_download_complete(&self, component: &FirmwareComponent) -> bool {
+    |                                          ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+
+warning: unused variable: `progress_percent`
+   --> runtime/apps/api/src/image_loading.rs:399:9
+    |
+399 |         progress_percent: &mut ProgressPercent,
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_percent`
+
+warning: unused variable: `progress_percent`
+   --> runtime/apps/api/src/image_loading.rs:407:9
+    |
+407 |         progress_percent: &mut ProgressPercent,
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_percent`
+
+warning: unused variable: `estimated_time`
+   --> runtime/apps/api/src/image_loading.rs:415:9
+    |
+415 |         estimated_time: &mut u16,
+    |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_estimated_time`
+
+warning: unused variable: `self_contained_activation`
+   --> runtime/apps/api/src/image_loading.rs:414:9
+    |
+414 |         self_contained_activation: u8,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_self_contained_activation`
+
+warning: fields `source` and `pldm` are never read
+  --> runtime/apps/api/src/image_loading.rs:35:5
+   |
+33 | pub struct ImageLoaderAPI<'a, S: Syscalls> {
+   |            -------------- fields in this struct
+34 |     mailbox_api: Mailbox<S>,
+35 |     source: ImageSource,
+   |     ^^^^^^
+36 |     pldm: Option<PldmInstance<'a, S>>,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: unused `Result` that must be used
+  --> runtime/apps/api/src/image_loading.rs:85:5
+   |
+85 |     pldm_service_init.start().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+   = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+85 |     let _ = pldm_service_init.start().await;
+   |     +++++++
+
+warning: variable `STUD_FD_OPS` should have a snake case name
+   --> runtime/apps/api/src/image_loading.rs:139:21
+    |
+139 |             let mut STUD_FD_OPS: StubFdOps = StubFdOps::new(descriptors);
+    |                     ^^^^^^^^^^^ help: convert the identifier to snake case: `stud_fd_ops`
+    |
+    = note: `#[warn(non_snake_case)]` on by default
+
+warning: variable `STUD_FD_OPS` should have a snake case name
+   --> runtime/apps/api/src/image_loading.rs:142:13
+    |
+142 |         let STUD_FD_OPS: &'static mut StubFdOps =
+    |             ^^^^^^^^^^^ help: convert the identifier to snake case: `stud_fd_ops`
+
+warning: unused `Result` that must be used
+   --> runtime/apps/api/src/image_loading.rs:151:13
+    |
+151 |             writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...");
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: creating a shared reference to mutable static is discouraged
+   --> runtime/apps/api/src/image_loading.rs:154:38
+    |
+154 |                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` on by default
+
+warning: unused `Result` that must be used
+   --> runtime/apps/api/src/image_loading.rs:159:13
+    |
+159 |             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: creating a mutable reference to mutable static is discouraged
+   --> runtime/apps/api/src/image_loading.rs:372:25
+    |
+372 |             let state = PLDM_STATE.get_mut();
+    |                         ^^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+
+warning: `libapi-caliptra` (lib) generated 22 warnings (2 duplicates) (run `cargo fix --lib -p libapi-caliptra` to apply 2 suggestions)
+warning: `pldm-app` (bin "pldm-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.01s
+       Fresh core v0.0.0 (/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core)
+       Fresh rustc-std-workspace-core v1.99.0 (/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/rustc-std-workspace-core)
+       Fresh unicode-ident v1.0.14
+       Fresh autocfg v1.4.0
+       Fresh compiler_builtins v0.1.134
+       Dirty runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime): the file `runtime/layout.ld` has changed (1744914586.966239986s, 8s after last build at 1744914578.463127264s)
+   Compiling runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime)
+       Fresh proc-macro2 v1.0.92
+       Fresh tock-registers v0.9.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh ureg v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh tock-cells v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh tock-tbf v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh ufmt-write v0.1.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh caliptra-error v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh paste v1.0.15
+       Fresh enum_primitive v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh tickv v2.0.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh caliptra-emu-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh bitflags v2.6.0
+       Fresh bitfield v0.14.0
+     Running `/home/visayamv/projects/caliptra-mcu-sw/target/release/build/runtime-bc80004545785811/build-script-build`
+       Fresh quote v1.0.37
+       Fresh caliptra-registers-latest v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh kernel v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh memoffset v0.8.0
+       Fresh riscv-csr v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh syn v2.0.90
+       Fresh syn v1.0.109
+       Fresh caliptra-registers v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh capsules-core v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh capsules-system v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh riscv v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh zeroize_derive v1.4.2
+       Fresh ufmt-macros v0.3.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh zerocopy-derive v0.8.23
+       Fresh caliptra-cfi-derive v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh capsules-extra v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh rv32i v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh zeroize v1.8.1
+       Fresh ufmt v0.2.0 (https://github.com/korran/ufmt.git?rev=1d0743c1ffffc68bc05ca8eeb81c166192863f33#1d0743c1)
+       Fresh zerocopy v0.8.23
+       Fresh components v0.1.0 (https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae81)
+       Fresh caliptra-cfi-lib v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh registers-generated v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/registers/generated-firmware)
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `registers-generated` (lib) generated 2 warnings
+       Fresh caliptra-lms-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-image-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-api-types v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh caliptra-api v0.1.0 (https://github.com/chipsalliance/caliptra-sw?rev=4b6987efd1a2be2a6e05acbea7622e20264acdb7#4b6987ef)
+       Fresh romtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/romtime)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+       Fresh flash-driver v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/flash)
+       Fresh i3c-driver v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/i3c)
+warning: `flash-driver` (lib) generated 2 warnings (2 duplicates)
+warning: `i3c-driver` (lib) generated 2 warnings (2 duplicates)
+       Fresh capsules-runtime v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/capsules)
+warning: `capsules-runtime` (lib) generated 2 warnings (2 duplicates)
+     Running `/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc --crate-name runtime --edition=2021 runtime/src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=s -C lto -C codegen-units=1 -C debuginfo=2 --cfg 'feature="default"' --cfg 'feature="test-pldm-fw-update-e2e"' --check-cfg 'cfg(docsrs)' --check-cfg 'cfg(feature, values("default", "test-caliptra-mailbox", "test-exit-immediately", "test-flash-ctrl-erase-page", "test-flash-ctrl-init", "test-flash-ctrl-read-write-page", "test-flash-storage-erase", "test-flash-storage-read-write", "test-flash-usermode", "test-i3c-constant-writes", "test-i3c-simple", "test-mctp-capsule-loopback", "test-mctp-ctrl-cmds", "test-mctp-user-loopback", "test-pldm-discovery", "test-pldm-fw-update", "test-pldm-fw-update-e2e", "test-pldm-request-response", "test-spdm-validator"))' -C metadata=edb446f1a1291d5f -C extra-filename=-edb446f1a1291d5f --out-dir /home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps --target riscv32imc-unknown-none-elf -L dependency=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps -L dependency=/home/visayamv/projects/caliptra-mcu-sw/target/release/deps --extern capsules_core=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_core-29217697ac963c85.rlib --extern capsules_extra=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_extra-67f138e452206e1e.rlib --extern capsules_runtime=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_runtime-01b13925f6fec1a7.rlib --extern capsules_system=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcapsules_system-105946ad51a236a5.rlib --extern 'noprelude:compiler_builtins=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcompiler_builtins-8391dc39c9e674e1.rlib' --extern components=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcomponents-ff471bf9feb09498.rlib --extern 'noprelude:core=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libcore-b056ab877c04c1e1.rlib' --extern flash_driver=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libflash_driver-1dab507781619342.rlib --extern i3c_driver=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libi3c_driver-9a67eb44e855d42c.rlib --extern kernel=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libkernel-744a830e72832812.rlib --extern registers_generated=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libregisters_generated-bbd9a486446ca98c.rlib --extern riscv=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libriscv-babad212bba08bca.rlib --extern riscv_csr=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libriscv_csr-e6a1e31c64f418e1.rlib --extern romtime=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libromtime-7c570d41b42b21e1.rlib --extern rv32i=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/librv32i-87c50750caa3a38d.rlib --extern tock_registers=/home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/deps/libtock_registers-877303e7d4a2ea5e.rlib -Z unstable-options -C link-arg=-T/home/visayamv/projects/caliptra-mcu-sw/runtime/layout.ld -C link-arg=-L/home/visayamv/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/runtime -C panic=abort -C target-feature=+relax,+unaligned-scalar-mem,+zba,+zbb,+zbc,+zbs -C force-frame-pointers=no -C relocation-model=static -C symbol-mangling-version=v0 -C linker=rust-lld -C linker-flavor=ld.lld -C link-arg=-nmagic -C link-arg=-icf=all`
+warning: `runtime` (bin "runtime") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 6.48s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+   Compiling example-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/example)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+warning: `registers-generated` (lib) generated 2 warnings (2 duplicates)
+warning: `pldm-common` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `example-app` (bin "example-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1.05s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+   Compiling spdm-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/spdm/spdm-app)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `spdm-lib` (lib) generated 2 warnings (2 duplicates)
+warning: `spdm-app` (bin "spdm-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.56s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `libtock_platform` (lib) generated 2 warnings
+warning: `libtock_runtime` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_low_level_debug` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_console` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_rng` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_alarm` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_small_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock_debug_panic` (lib) generated 2 warnings (2 duplicates)
+warning: `libtock` (lib) generated 2 warnings (2 duplicates)
+   Compiling pldm-app v0.1.0 (/home/visayamv/projects/caliptra-mcu-sw/runtime/apps/pldm/pldm-app)
+warning: `registers-generated` (lib) generated 2 warnings (2 duplicates)
+warning: `pldm-common` (lib) generated 2 warnings (2 duplicates)
+warning: `libtockasync` (lib) generated 2 warnings (2 duplicates)
+warning: `libsyscall-caliptra` (lib) generated 2 warnings (2 duplicates)
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+warning: `pldm-lib` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `romtime::println`
+  --> runtime/apps/api/src/image_loading.rs:26:5
+   |
+26 | use romtime::println;
+   |     ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused attribute
+ --> runtime/apps/api/src/lib.rs:4:1
+  |
+4 | #![no_std]
+  | ^^^^^^^^^^ help: remove this attribute
+  |
+note: attribute also specified here
+ --> runtime/apps/api/src/lib.rs:2:38
+  |
+2 | #![cfg_attr(target_arch = "riscv32", no_std)]
+  |                                      ^^^^^^
+  = note: `#[warn(unused_attributes)]` on by default
+
+warning: unreachable statement
+   --> runtime/apps/api/src/image_loading.rs:159:13
+    |
+152 | /             loop {
+153 | |                 EXECUTOR.get().poll();
+154 | |                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
+155 | |                 if state == State::Initializing {
+156 | |                     continue;
+157 | |                 }
+158 | |             }
+    | |_____________- any code following this expression is unreachable
+159 |               writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` on by default
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:369:9
+    |
+369 |         component: &FirmwareComponent,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `data`
+   --> runtime/apps/api/src/image_loading.rs:385:9
+    |
+385 |         data: &[u8],
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:386:9
+    |
+386 |         component: &FirmwareComponent,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+
+warning: unused variable: `offset`
+   --> runtime/apps/api/src/image_loading.rs:384:9
+    |
+384 |         offset: usize,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_offset`
+
+warning: unused variable: `component`
+   --> runtime/apps/api/src/image_loading.rs:392:42
+    |
+392 |     async fn is_download_complete(&self, component: &FirmwareComponent) -> bool {
+    |                                          ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_component`
+
+warning: unused variable: `progress_percent`
+   --> runtime/apps/api/src/image_loading.rs:399:9
+    |
+399 |         progress_percent: &mut ProgressPercent,
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_percent`
+
+warning: unused variable: `progress_percent`
+   --> runtime/apps/api/src/image_loading.rs:407:9
+    |
+407 |         progress_percent: &mut ProgressPercent,
+    |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_progress_percent`
+
+warning: unused variable: `estimated_time`
+   --> runtime/apps/api/src/image_loading.rs:415:9
+    |
+415 |         estimated_time: &mut u16,
+    |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_estimated_time`
+
+warning: unused variable: `self_contained_activation`
+   --> runtime/apps/api/src/image_loading.rs:414:9
+    |
+414 |         self_contained_activation: u8,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_self_contained_activation`
+
+warning: fields `source` and `pldm` are never read
+  --> runtime/apps/api/src/image_loading.rs:35:5
+   |
+33 | pub struct ImageLoaderAPI<'a, S: Syscalls> {
+   |            -------------- fields in this struct
+34 |     mailbox_api: Mailbox<S>,
+35 |     source: ImageSource,
+   |     ^^^^^^
+36 |     pldm: Option<PldmInstance<'a, S>>,
+   |     ^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: unused `Result` that must be used
+  --> runtime/apps/api/src/image_loading.rs:85:5
+   |
+85 |     pldm_service_init.start().await;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+   = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+85 |     let _ = pldm_service_init.start().await;
+   |     +++++++
+
+warning: variable `STUD_FD_OPS` should have a snake case name
+   --> runtime/apps/api/src/image_loading.rs:139:21
+    |
+139 |             let mut STUD_FD_OPS: StubFdOps = StubFdOps::new(descriptors);
+    |                     ^^^^^^^^^^^ help: convert the identifier to snake case: `stud_fd_ops`
+    |
+    = note: `#[warn(non_snake_case)]` on by default
+
+warning: variable `STUD_FD_OPS` should have a snake case name
+   --> runtime/apps/api/src/image_loading.rs:142:13
+    |
+142 |         let STUD_FD_OPS: &'static mut StubFdOps =
+    |             ^^^^^^^^^^^ help: convert the identifier to snake case: `stud_fd_ops`
+
+warning: unused `Result` that must be used
+   --> runtime/apps/api/src/image_loading.rs:151:13
+    |
+151 |             writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...");
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: creating a shared reference to mutable static is discouraged
+   --> runtime/apps/api/src/image_loading.rs:154:38
+    |
+154 |                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` on by default
+
+warning: unused `Result` that must be used
+   --> runtime/apps/api/src/image_loading.rs:159:13
+    |
+159 |             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this `Result` may be an `Err` variant, which should be handled
+    = note: this warning originates in the macro `writeln` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: creating a mutable reference to mutable static is discouraged
+   --> runtime/apps/api/src/image_loading.rs:372:25
+    |
+372 |             let state = PLDM_STATE.get_mut();
+    |                         ^^^^^^^^^^^^^^^^^^^^ mutable reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html>
+    = note: mutable references to mutable statics are dangerous; it's undefined behavior if any other pointer to the static is used or if any other reference is created for the static while the mutable reference lives
+
+warning: `libapi-caliptra` (lib) generated 22 warnings (2 duplicates) (run `cargo fix --lib -p libapi-caliptra` to apply 2 suggestions)
+warning: `pldm-app` (bin "pldm-app") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.33s
+warning: unstable feature specified for `-Ctarget-feature`: `relax`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: unstable feature specified for `-Ctarget-feature`: `unaligned-scalar-mem`
+  |
+  = note: this feature is not stably supported; its behavior can change in the future
+
+warning: `registers-generated` (lib) generated 2 warnings
+warning: `romtime` (lib) generated 2 warnings (2 duplicates)
+warning: `mcu-rom-common` (lib) generated 2 warnings (2 duplicates)
+warning: `mcu-rom-emulator` (bin "mcu-rom-emulator") generated 2 warnings (2 duplicates)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.21s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.29s
+     Running `target/release/emulator --rom /home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/rom.bin --firmware /home/visayamv/projects/caliptra-mcu-sw/target/riscv32imc-unknown-none-elf/release/runtime-test-pldm-fw-update-e2e.bin --i3c-port 65534`
+[mcu-rom] Hello from ROM
+[mcu-rom] Caliptra flow status 40000000
+[mcu-rom] Waiting for Caliptra to be ready for fuses
+[mcu-rom] Writing fuses to Caliptra
+[mcu-fuse-write] Writing fuse key vendor PK hash: 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+[mcu-rom] Fuses written to Caliptra
+[mcu-rom] Starting recovery flow
+[mcu-rom] Recovery flow complete
+[mcu-rom] Finished common initialization
+[mcu-rom] Jumping to firmware
+MCU initialization complete.
+Entering main loop.
+Hello world! from PLDM main
+PLDM_APP: Hello PLDM async world!
+IMAGE_LOADING: Marco Test descriptor source Pldmtock$ ([Descriptor { descriptor_type: 2, descriptor_length: 16, descriptor_data: [1, 2,  3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 0, 0, 0, 0 , 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 , 0, 0, 0] }])
+IMAGE_LOADING: Waiting for PLDM to initialize...
+IMAGE_LOADING:pldm_service
+[xs debug]pldm_dameon: responder task started
+Hello world! from SPDM main
+SPDM_APP: Hello SPDM async world!
+SPDM_APP: Running SPDM-APP...
+Hello world! from main
+Hello async world!
+Timer frequency: 1000000
+Sleeping for 1 millisecond
+Sleeping for 1000 ticks
+Async sleep done Ok(())
+async sleeper woke
+Sleeping for 1 millisecond
+Sleeping for 1000 ticks
+Async sleep done Ok(())
+async sleeper woke
+Sleeping for 1 millisecond
+Sleeping for 1000 ticks
+Async sleep done Ok(())
+async sleeper woke
+Sleeping for 1 millisecond
+Sleeping for 1000 ticks
+Async sleep done Ok(())MCTPDriver::receive no pending rx operation
+
+async sleeper woke
+Sleeping for 1 millisecond
+Sleeping for 1000 ticks
+Async sleep done Ok(())
+async sleeper woke
+app finished
+ IMAGE_LOADING:get_device_identifiers called
+[xs debug]pldm_dameon: Initiator task started
+[xs debug]progress download: offset=0 request_dl_length=0
+[xs debug]progress download: offset=0 chunk_length=0
+[xs debug]wait for UA to cancel
+ 

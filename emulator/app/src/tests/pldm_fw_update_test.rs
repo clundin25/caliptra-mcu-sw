@@ -130,7 +130,7 @@ impl PldmFwUpdateTest {
 
     pub fn test_fw_update(&mut self) -> Result<(), ()> {
         // Initialize log level to info (only once)
-        let _ = SimpleLogger::new().with_level(LevelFilter::Debug).init();
+        let _ = SimpleLogger::new().with_level(LevelFilter::Info).init();
 
         // Run the PLDM daemon
         self.daemon = Some(

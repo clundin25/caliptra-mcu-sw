@@ -105,9 +105,15 @@ impl<'a, S: Syscalls> PldmService<'a, S> {
                 self.initiator_signal,
             ))
             .unwrap();
-
+        let mut console_writer = Console::<S>::writer();
         loop {
+            writeln!(
+                console_writer,
+                "[xs debug]pldm_dameon: responder_poll");
             responder_executor.poll();
+            writeln!(
+                console_writer,
+                "[xs debug]pldm_dameon: initiator_poll");
             initiator_executor.poll();
         }
     }

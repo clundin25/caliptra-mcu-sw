@@ -2,6 +2,7 @@
 extern crate alloc;
 use async_trait::async_trait;
 use alloc::boxed::Box;
+use embassy_sync::signal::Signal;
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
@@ -55,16 +56,17 @@ impl<'a, S: Syscalls> Default for ImageLoaderAPI<'a, S> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
-    Start,
+    NotRunning,
+    StartingPldmService,
     Initializing,
-    Downloading,
+    DownloadingToc,
     Done,
 }
 
 // declare lazy static StudFdOps
 // static mut PLDM_FD_OPS: StubFdOps = StubFdOps::new();
-static PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Start);
-
+static mut PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Initializing);
+static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
 
 #[cfg(target_arch = "riscv32")]
@@ -82,7 +84,7 @@ async fn pldm_service_task(pldm_ops: &'static dyn FdOps) {
 pub async fn pldm_service<S: Syscalls>(pldm_ops: &'static dyn FdOps) {
     let mut pldm_service_init = PldmService::<S>::init(pldm_ops);
     let mut console_writer = Console::<S>::writer();
-    writeln!(console_writer, "PLDM_APP:pldm_service").unwrap();
+    writeln!(console_writer, "IMAGE_LOADING:pldm_service").unwrap();
     pldm_service_init.start().await;
 }
 
@@ -127,7 +129,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         let mut console_writer = Console::<S>::writer();
         writeln!(
             console_writer,
-            "PLDM_APP: Marco Test descriptor source {:?}",
+            "IMAGE_LOADING: Marco Test descriptor source {:?}",
             source
         )
         .unwrap();
@@ -149,15 +151,19 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
                 .spawn(pldm_service_task(STUD_FD_OPS))
                 .unwrap();
 
-            writeln!(console_writer, "Waiting for PLDM to initialize...");
+            writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...");
             loop {
+                writeln!(console_writer, "IMAGE_LOADING: before poll");
                 EXECUTOR.get().poll();
-                let state = PLDM_STATE.lock(|state| *state);
-                if state == State::Initializing {
+                writeln!(console_writer, "IMAGE_LOADING: after poll");
+                let state = unsafe { PLDM_STATE.lock(|state| *state) };
+                if state != State::Initializing {
+                    writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
+                    YIELD_SIGNAL.signal(());
                     break;
                 }
             }
-            writeln!(console_writer, "PLDM initialized");
+            writeln!(console_writer, "IMAGE_LOADING: PLDM initialized");
         }
 
         Self {
@@ -176,6 +182,10 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     /// - `Ok()`: Image has been loaded and authorized succesfully.
     /// - `Err(ErrorCode)`: Indication of the failure to load or authorize the image.
     pub async fn load_and_authorize(&self, image_id: u32) -> Result<(), ErrorCode> {
+
+
+
+
         let offset = self.get_image_offset(image_id).await?;
         let img_size = self.get_image_size(image_id).await?;
         let load_address = self.get_image_load_address(image_id).await?;
@@ -321,7 +331,7 @@ impl FdOps for StubFdOps {
         device_identifiers: &mut [Descriptor],
     ) -> Result<usize, FdOpsError> {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
-        writeln!(console_writer, "StubFdOps::get_device_identifiers called").unwrap();
+        writeln!(console_writer, "IMAGE_LOADING:get_device_identifiers called").unwrap();
         self.descriptors
             .iter()
             .enumerate()
@@ -369,6 +379,18 @@ impl FdOps for StubFdOps {
         &self,
         component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
+        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+        writeln!(console_writer, "IMAGE_LOADING:query_download_offset_and_length called").unwrap();
+        unsafe {
+            let state = PLDM_STATE.get_mut();
+            writeln!(console_writer, "IMAGE_LOADING:state {:?}",*state).unwrap();
+            if *state == State::Initializing {
+                *state = State::DownloadingToc;
+                writeln!(console_writer, "IMAGE_LOADING:state {:?} yielding",*state).unwrap();
+                YIELD_SIGNAL.wait().await;
+            }
+
+        }
 
         Ok((0, 0))
     }
