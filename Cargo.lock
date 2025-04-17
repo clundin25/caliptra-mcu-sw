@@ -2375,6 +2375,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embassy-executor",
+ "embassy-sync",
  "embedded-alloc",
  "libsyscall-caliptra",
  "libtock",

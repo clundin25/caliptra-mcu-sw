@@ -5,17 +5,22 @@
 #![feature(impl_trait_in_assoc_type)]
 #![allow(static_mut_refs)]
 
+use embassy_sync::lazy_lock::LazyLock;
+use libtockasync::TockExecutor;
 use core::fmt::Write;
 use libtock::alarm::Milliseconds;
 use libtock_console::Console;
 use libtock_platform::Syscalls;
 use pldm_lib::timer::AsyncAlarm;
 
+static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
+
 #[allow(unused)]
 use pldm_lib::daemon::PldmService;
 
 #[allow(unused)]
 use pldm_lib::firmware_device::fd_ops_mock::FdOpsObject;
+use pldm_lib::firmware_device::fd_ops::FdOps;
 
 #[cfg(target_arch = "riscv32")]
 mod riscv;
@@ -49,6 +54,39 @@ async fn start() {
     async_main::<libtock_unittest::fake::Syscalls>().await;
 }
 
+#[cfg(target_arch = "riscv32")]
+#[embassy_executor::task]
+pub async fn pldm_service_task() {
+    pldm_service::<libtock_runtime::TockSyscalls>().await;
+}
+
+#[cfg(not(target_arch = "riscv32"))]
+#[embassy_executor::task]
+async fn pldm_service_task() {
+    pldm_service::<libtock_unittest::fake::Syscalls>().await;
+}
+
+pub async fn pldm_service<S: Syscalls>() {
+    let mut console_writer = Console::<S>::writer();
+    let fdops = FdOpsObject::<S>::new();
+    let mut pldm_service = PldmService::<S>::init(&fdops, EXECUTOR.get().spawner());
+    writeln!(
+        console_writer,
+        "PLDM_APP: Starting PLDM service for testing..."
+    )
+    .unwrap();
+    if let Err(e) = pldm_service.start().await {
+        writeln!(
+            console_writer,
+            "PLDM_APP: Error starting PLDM service: {:?}",
+            e
+        )
+        .unwrap();
+    }
+
+}
+
+
 pub(crate) async fn async_main<S: Syscalls>() {
     let mut console_writer = Console::<S>::writer();
     writeln!(console_writer, "PLDM_APP: Hello PLDM async world!").unwrap();
@@ -67,31 +105,18 @@ pub(crate) async fn async_main<S: Syscalls>() {
     )
     .unwrap();
 
+    EXECUTOR.get().spawner().spawn(pldm_service_task()).unwrap();
+
     // sleep for 1 second
     AsyncAlarm::<S>::sleep(Milliseconds(1000)).await;
 
-    #[cfg(any(
-        feature = "test-pldm-discovery",
-        feature = "test-pldm-fw-update",
-        feature = "test-pldm-fw-update-e2e"
-    ))]
-    {
-        let fdops = FdOpsObject::<S>::new();
-        let mut pldm_service = PldmService::<S>::init(&fdops);
-        writeln!(
-            console_writer,
-            "PLDM_APP: Starting PLDM service for testing..."
-        )
-        .unwrap();
-        if let Err(e) = pldm_service.start().await {
-            writeln!(
-                console_writer,
-                "PLDM_APP: Error starting PLDM service: {:?}",
-                e
-            )
-            .unwrap();
-        }
-
-        writeln!(console_writer, "PLDM_APP: PLDM service stopped").unwrap();
+    loop {
+        EXECUTOR.get().poll();
     }
+
+
+        
+
+        
+
 }
