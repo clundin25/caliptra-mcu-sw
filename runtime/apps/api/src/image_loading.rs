@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 extern crate alloc;
-use crate::flash_image::{FlashHeader, FlashChecksums};
+use core::cell::{Ref, RefCell};
+use crate::flash_image::{FlashChecksums, FlashHeader, ImageInfo};
 use async_trait::async_trait;
 use alloc::boxed::Box;
 use embassy_executor::Spawner;
@@ -45,6 +46,9 @@ pub struct DownloadCtx {
     pub current_offset: usize,
     pub total_downloaded: usize,
     pub download_complete: bool,
+    pub header: [u8; core::mem::size_of::<FlashHeader>()],
+    pub checksums: [u8; core::mem::size_of::<FlashChecksums>()],
+    pub image_info: [u8; core::mem::size_of::<ImageInfo>()],
 }
 
 /// This is the size of the buffer used for DMA transfers.
@@ -72,7 +76,7 @@ pub enum State {
 
 // declare lazy static StudFdOps
 // static mut PLDM_FD_OPS: StubFdOps = StubFdOps::new();
-static mut PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Initializing);
+static PLDM_STATE: Mutex<CriticalSectionRawMutex, RefCell<State>> = Mutex::new(RefCell::new(State::Initializing));
 static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static MAIN_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
@@ -80,7 +84,12 @@ static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::n
     current_offset: 0,
     total_downloaded: 0,
     download_complete: false,
+    header: [0; core::mem::size_of::<FlashHeader>()],
+    checksums: [0; core::mem::size_of::<FlashChecksums>()],
+    image_info: [0; core::mem::size_of::<ImageInfo>()],
 });
+
+static MY_VAR : Mutex<CriticalSectionRawMutex, RefCell<u32>> = Mutex::new(RefCell::new(0));
 
 #[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
@@ -164,13 +173,13 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
             writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
             loop {
-
-                let state = unsafe { PLDM_STATE.lock(|state| *state) };
+                MAIN_SIGNAL.wait().await; 
+                let state = PLDM_STATE.lock(|state| *state.borrow());
                 if state != State::Initializing {
                     writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
                     break;
                 }
-                MAIN_SIGNAL.wait().await;                
+                               
             }
 
             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized").unwrap();
@@ -186,12 +195,13 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
             // Wait for DownloadingHeader to be ready
             loop {
-                let state = unsafe { PLDM_STATE.lock(|state| *state) };
+                MAIN_SIGNAL.wait().await;
+                let state = PLDM_STATE.lock(|state| *state.borrow());
                 if state != State::DownloadingHeader {
                     writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
                     break;
                 }
-                MAIN_SIGNAL.wait().await;
+                
             }
 
         }
@@ -228,11 +238,11 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             download_ctx.total_length = 100;
             download_ctx.current_offset = 500;
             download_ctx.total_downloaded = 0;
-            let state = PLDM_STATE.get_mut();
-            *state = State::DownloadingImage;
         }
 
-
+        PLDM_STATE.lock(|state| {
+            *state.borrow_mut() = State::DownloadingImage;
+        });
         YIELD_SIGNAL.signal(());
         MAIN_SIGNAL.wait().await;
         writeln!(console_writer, "IMAGE_LOADING: 6 proceeding").unwrap();
@@ -368,7 +378,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
     }
 }
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::lazy_lock::LazyLock;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
@@ -448,23 +458,30 @@ impl FdOps for StubFdOps {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:query_download_offset_and_length called").unwrap();
 
-        unsafe {
-            let state = PLDM_STATE.get_mut();
-            writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",*state).unwrap();
-            if *state == State::Initializing {
-                *state = State::DownloadingHeader;
-                writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",*state).unwrap();
 
-                    MAIN_SIGNAL.signal(());
+        let should_yield = PLDM_STATE.lock(|state| {
+            let mut state = *state.borrow_mut();
+            writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
+            if state == State::Initializing {
+                state = State::DownloadingHeader;
+                writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",state).unwrap();
+
+                    
                     writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();;
-                    YIELD_SIGNAL.wait().await;
-                    writeln!(console_writer, "IMAGE_LOADING:4 proceeding").unwrap();;
+                    
+                    return true;
                 
-            } else if *state == State::ImageDownloadReady {
-                YIELD_SIGNAL.wait().await;
-                writeln!(console_writer, "IMAGE_LOADING:5 proceeding").unwrap();;
+            } else if state == State::ImageDownloadReady {
+                return true;
             }
+            return false;
+        });
+        if should_yield {
+            MAIN_SIGNAL.signal(());
+            YIELD_SIGNAL.wait().await;
+            writeln!(console_writer, "IMAGE_LOADING:4 proceeding").unwrap();;
         }
+
         let download_ctx = unsafe { DOWNLOAD_CTX.lock(|ctx| *ctx) };
         let offset = download_ctx.current_offset;
         let length = download_ctx.total_length;
@@ -482,24 +499,41 @@ impl FdOps for StubFdOps {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:download_fw_data called offset {} length {}", offset, data.len()).unwrap();
 
+
         // update DOWNLOAD_CTX
         unsafe {
-            let mut download_ctx = DOWNLOAD_CTX.get_mut();
+            let download_ctx = DOWNLOAD_CTX.get_mut();
             download_ctx.total_downloaded += data.len();
             if download_ctx.total_downloaded >= download_ctx.total_length {
                 writeln!(console_writer, "IMAGE_LOADING: download complete").unwrap();
-                let mut state = PLDM_STATE.get_mut();
-                if *state == State::DownloadingToc {
-                    *state = State::ImageDownloadReady;
-                    writeln!(console_writer, "IMAGE_LOADING: image_download ready").unwrap();
-                    MAIN_SIGNAL.signal(());
-                }
-                else if *state == State::DownloadingImage {
-                    *state = State::ImageDownloadComplete;
-                    writeln!(console_writer, "IMAGE_LOADING: image_download complete").unwrap();
+
+                let should_yield = PLDM_STATE.lock(|state| {
+                    let mut state = *state.borrow_mut();
+                    if state == State::DownloadingHeader {
+                        state = State::DownloadingToc;
+                        writeln!(console_writer, "IMAGE_LOADING: download toc").unwrap();
+                        
+                    }  else if state == State::DownloadingToc {
+                        state = State::ImageDownloadReady;
+                        writeln!(console_writer, "IMAGE_LOADING: image_download ready").unwrap();
+                        
+                        return true;
+                    }
+                    else if state == State::DownloadingImage {
+                        state = State::ImageDownloadComplete;
+                        writeln!(console_writer, "IMAGE_LOADING: image_download complete").unwrap();
+                        return true;
+                    }
+                    return false;
+                });
+
+                if should_yield {
                     MAIN_SIGNAL.signal(());
                     YIELD_SIGNAL.wait().await;
+                    writeln!(console_writer, "IMAGE_LOADING: 7 proceeding").unwrap();
                 }
+
+
             } else {
                 writeln!(console_writer, "IMAGE_LOADING: downloaded {}/{}", download_ctx.total_downloaded, download_ctx.total_length).unwrap();
                 download_ctx.current_offset += data.len();
