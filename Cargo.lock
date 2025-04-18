@@ -2980,6 +2980,7 @@ dependencies = [
  "libtock_console",
  "libtock_platform",
  "rand",
+ "romtime",
  "thiserror-no-std",
  "zerocopy 0.8.23",
 ]

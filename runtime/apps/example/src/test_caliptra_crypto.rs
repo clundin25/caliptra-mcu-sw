@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use libapi_caliptra::crypto::cert_mgr::{CerMgrContext, IDEV_CSR_MAX_SIZE};
+use libapi_caliptra::crypto::cert_mgr::{CertMgrContext, IDEV_CSR_MAX_SIZE};
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 
 use core::fmt::write;
@@ -73,7 +73,7 @@ async fn test_sha<S: Syscalls>(data: &[u8], algo: HashAlgoType, expected_hash: &
 pub async fn test_get_idev_csr<S: Syscalls>() {
     println!("Starting Caliptra mailbox get idev csr test");
 
-    let mut cert_mgr = CerMgrContext::<S>::new();
+    let mut cert_mgr = CertMgrContext::<S>::new();
     let mut csr_der = [0u8; IDEV_CSR_MAX_SIZE];
     let result = cert_mgr.get_idev_csr(&mut csr_der).await;
     match result {

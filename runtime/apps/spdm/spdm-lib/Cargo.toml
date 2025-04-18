@@ -14,6 +14,7 @@ libsyscall-caliptra.workspace = true
 libtock_platform.workspace = true
 libtock_console.workspace = true
 thiserror-no-std.workspace = true
+romtime.workspace = true
 
 [dev-dependencies]
 rand.workspace = true

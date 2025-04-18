@@ -12,13 +12,18 @@ pub const IDEV_CSR_MAX_SIZE: usize = GetIdevCsrResp::DATA_MAX_SIZE;
 use core::fmt::Write;
 use romtime::println;
 
-pub struct CerMgrContext<S: Syscalls> {
+
+pub enum CertType {
+    Ecc,
+}
+
+pub struct CertMgrContext<S: Syscalls> {
     mbox: Mailbox<S>,
 }
 
-impl<S: Syscalls> CerMgrContext<S> {
+impl<S: Syscalls> CertMgrContext<S> {
     pub fn new() -> Self {
-        CerMgrContext {
+        CertMgrContext {
             mbox: Mailbox::<S>::new(),
         }
     }

@@ -15,13 +15,16 @@ use crate::state::State;
 use crate::transport::MctpTransport;
 use libtock_platform::Syscalls;
 
+use libtock_console::ConsoleWriter;
+
 pub struct SpdmContext<'a, S: Syscalls> {
     transport: &'a mut MctpTransport<S>,
     pub(crate) supported_versions: &'a [SpdmVersion],
     pub(crate) state: State,
     pub(crate) local_capabilities: DeviceCapabilities,
     pub(crate) local_algorithms: LocalDeviceAlgorithms<'a>,
-    pub(crate) device_certs_manager: &'a DeviceCertsManager,
+    pub(crate) device_certs_manager: &'a DeviceCertsManager<'a>,
+    pub(crate) cw: &'a mut ConsoleWriter<S>,
 }
 
 impl<'a, S: Syscalls> SpdmContext<'a, S> {
@@ -31,6 +34,7 @@ impl<'a, S: Syscalls> SpdmContext<'a, S> {
         local_capabilities: DeviceCapabilities,
         local_algorithms: LocalDeviceAlgorithms<'a>,
         device_certs_manager: &'a DeviceCertsManager,
+        cw: &'a mut ConsoleWriter<S>,
     ) -> SpdmResult<Self> {
         validate_supported_versions(supported_versions)?;
 
@@ -43,6 +47,7 @@ impl<'a, S: Syscalls> SpdmContext<'a, S> {
             local_capabilities,
             local_algorithms,
             device_certs_manager,
+            cw,
         })
     }
 

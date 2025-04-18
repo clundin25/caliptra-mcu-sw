@@ -9,11 +9,13 @@ use core::fmt::Write;
 use libsyscall_caliptra::mctp::driver_num;
 use libtock_console::{Console, ConsoleWriter};
 use libtock_platform::Syscalls;
-use spdm_lib::cert_mgr::DeviceCertsManager;
+use spdm_lib::cert_mgr::{CertSlotInfo, DeviceCertsManager, SpdmCertModel, EccCertChainBuffer};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::context::SpdmContext;
 use spdm_lib::protocol::*;
 use spdm_lib::transport::MctpTransport;
+
+mod config;
 
 // Caliptra supported SPDM versions
 const SPDM_VERSIONS: &[SpdmVersion] = &[
@@ -32,9 +34,6 @@ static HASH_PRIORITY_TABLE: &[BaseHashAlgoType] = &[
     BaseHashAlgoType::TpmAlgSha384,
     BaseHashAlgoType::TpmAlgSha256,
 ];
-
-// Only support slot 0 for now. Adjust this when we support multiple slots.
-pub const CERT_CHAIN_SLOT_MASK: u8 = 0x01;
 
 #[cfg(target_arch = "riscv32")]
 mod riscv;
@@ -109,7 +108,33 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         },
     };
 
-    let device_certs_mgr = DeviceCertsManager::new(CERT_CHAIN_SLOT_MASK, CERT_CHAIN_SLOT_MASK);
+    let slot0_ecc_cert_buf = EccCertChainBuffer::new();
+
+    let slot0_cert_info = CertSlotInfo::new(
+        &config::SLOT0_ECC_DEVID_CERT_CHAIN,
+        &slot0_ecc_cert_buf,
+        0,
+        Some(SpdmCertModel::AliasCertModel),
+        None,
+        None,
+    );
+
+    let cert_slots = [slot0_cert_info];
+
+
+    let device_certs_mgr = match DeviceCertsManager::new(
+        config::CERT_CHAIN_SLOT_MASK,
+        config::CERT_CHAIN_SLOT_MASK,
+        &cert_slots,
+    ) {
+        Ok(mgr) => mgr,
+        Err(e) => {
+            writeln!(cw, "SPDM_APP: Failed to create device certs manager: {:?}", e).unwrap();
+            return;
+        }
+    };
+
+    let mut lib_console_writer = Console::<S>::writer();
 
     let mut ctx = match SpdmContext::new(
         SPDM_VERSIONS,
@@ -117,6 +142,7 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         local_capabilities,
         local_algorithms,
         &device_certs_mgr,
+        &mut lib_console_writer,
     ) {
         Ok(ctx) => ctx,
         Err(e) => {

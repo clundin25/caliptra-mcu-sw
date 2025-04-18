@@ -25,4 +25,4 @@ pub mod transport;
 pub mod cert_mgr;
 
 // Configuration
-pub mod config;
+// pub mod config;

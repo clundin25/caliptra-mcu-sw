@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::{CertChainSlotState, SPDM_MAX_CERT_CHAIN_SLOTS};
+use crate::cert_mgr::{SPDM_MAX_CERT_CHAIN_SLOTS};
 use crate::codec::{Codec, CodecError, CodecResult, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
-use crate::config::MAX_SPDM_CERT_PORTION_LEN;
 use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult, SpdmError, SpdmResult};
 use crate::protocol::common::SpdmMsgHdr;
@@ -12,7 +11,11 @@ use crate::state::ConnectionState;
 use libtock_platform::Syscalls;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
+use core::fmt::Write;
+
 const GET_CERTIFICATE_REQUEST_ATTRIBUTES_SLOT_SIZE_REQUESTED: u8 = 0x01;
+// Maximum size of a certificate portion in bytes. Adjust as needed.
+pub const MAX_SPDM_CERT_PORTION_LEN: usize = 512;
 
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(packed)]
@@ -63,7 +66,7 @@ impl<'a> GetCertificateResp<'a> {
         cert_chain_portion: &'a [u8],
         remainder_length: u16,
     ) -> SpdmResult<Self> {
-        if cert_chain_portion.len() > crate::config::MAX_SPDM_CERT_PORTION_LEN {
+        if cert_chain_portion.len() > MAX_SPDM_CERT_PORTION_LEN {
             return Err(SpdmError::InvalidParam);
         }
         let common = GetCertificateRespCommon {
@@ -139,7 +142,7 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
     let slot_mask = 1 << slot_id;
     let (_, provisioned_slot_mask) = ctx
         .device_certs_manager
-        .get_cert_chain_slot_mask()
+        .cert_chain_slot_mask()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
     if provisioned_slot_mask & slot_mask == 0 {
         return Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None));
@@ -149,14 +152,28 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
         .get_select_hash_algo()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
+    let hash_algo = hash_type.try_into().map_err(|_| {
+        ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)
+    })?;
+
     let cert_chain_buffer = ctx
         .device_certs_manager
-        .construct_cert_chain_buffer::<S>(hash_type, slot_id)
+        .construct_cert_chain_buffer::<S>(ctx, hash_algo, slot_id)
         .await
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
+
     let mut offset = req.offset;
     let mut length = req.length;
+    
+    writeln!(
+        ctx.cw,
+        "SPDM_LIB: GetCertificate: slot_id={}, offset={}, length={}, cert_chain_buffer.length={}\n",
+        slot_id,
+        offset,
+        length,
+        cert_chain_buffer.length
+    ).unwrap();
 
     // When SlotSizeRequested=1b in the GET_CERTIFICATE request, the Responder shall return
     // the number of bytes available for certificate chain storage in the RemainderLength field of the response.
@@ -194,14 +211,10 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
     // Set the param2 field if the connection version is V13 or higher and multi-key capability is supported
     let mut param2 = 0;
     if connection_version >= SpdmVersion::V13 && ctx.local_capabilities.flags.multi_key_cap() != 0 {
-        let mut cert_chain_slot_state = CertChainSlotState::default();
-        ctx.device_certs_manager
-            .get_cert_chain_slot_state(slot_id, &mut cert_chain_slot_state)
-            .map_err(|_| {
-                ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
-            })?;
+        let cert_chain_slot_info = ctx.device_certs_manager.cert_chain_slot_info(slot_id).map_err(|_| 
+            ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
 
-        if let Some(cert_model) = cert_chain_slot_state.cert_model {
+        if let Some(cert_model) = cert_chain_slot_info.cert_model {
             param2 = cert_model as u8;
         }
     }

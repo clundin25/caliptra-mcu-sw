@@ -168,7 +168,7 @@ pub(crate) async fn handle_digests<'a, S: Syscalls>(
     // Get the supported and provisioned slot masks.
     let (supported_mask, provisioned_mask) = ctx
         .device_certs_manager
-        .get_cert_chain_slot_mask()
+        .cert_chain_slot_mask()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
     // No slots provisioned
@@ -186,8 +186,16 @@ pub(crate) async fn handle_digests<'a, S: Syscalls>(
 
     for (slot_id, digest) in digests.iter_mut().take(slot_cnt).enumerate() {
         digest.length = caliptra_hash_algo.hash_size() as u8;
-        ctx.device_certs_manager
-            .cert_chain_digest::<S>(slot_id as u8, hash_algo, &mut digest.data)
+
+        let cert_slot_info = ctx
+            .device_certs_manager
+            .cert_chain_slot_info(slot_id as u8)
+            .map_err(|_| {
+                ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)
+            })?;
+
+        cert_slot_info
+            .cert_chain_digest::<S>(ctx, caliptra_hash_algo, &mut digest.data)
             .await
             .map_err(|_| {
                 ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)
