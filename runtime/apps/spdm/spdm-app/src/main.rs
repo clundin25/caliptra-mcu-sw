@@ -35,6 +35,9 @@ static HASH_PRIORITY_TABLE: &[BaseHashAlgoType] = &[
     BaseHashAlgoType::TpmAlgSha256,
 ];
 
+// Only support slot 0 for now. Adjust this when we support multiple slots.
+pub const CERT_CHAIN_SLOT_MASK: u8 = 0x01;
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
