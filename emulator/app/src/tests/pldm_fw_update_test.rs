@@ -73,10 +73,10 @@ lazy_static! {
 
             // Define the firmware image binary data of size 256 bytes
             // First 128 bytes are 0x55, next 128 bytes are 0xAA
-            size: 256,
+            size: 4096,
             image_data: {
                 let mut data = vec![0x55u8; 128];
-                data.extend(vec![0xAAu8; 128]);
+                data.extend(vec![0xAAu8; 4096]);
                 Some(data)
             },
             ..Default::default()

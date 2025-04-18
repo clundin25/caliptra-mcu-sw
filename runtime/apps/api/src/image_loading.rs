@@ -38,10 +38,12 @@ pub struct ImageLoaderAPI<'a, S: Syscalls> {
     pldm: Option<PldmInstance<'a, S>>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct DownloadCtx {
-    pub initial_offset: usize,
     pub total_length: usize,
     pub current_offset: usize,
+    pub total_downloaded: usize,
+    pub download_complete: bool,
 }
 
 /// This is the size of the buffer used for DMA transfers.
@@ -61,6 +63,9 @@ pub enum State {
     StartingPldmService,
     Initializing,
     DownloadingToc,
+    ImageDownloadReady,
+    DownloadingImage,
+    ImageDownloadComplete,
     Done,
 }
 
@@ -71,9 +76,10 @@ static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static MAIN_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
 static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
-    initial_offset: 0,
     total_length: 0,
     current_offset: 0,
+    total_downloaded: 0,
+    download_complete: false,
 });
 
 #[cfg(target_arch = "riscv32")]
@@ -156,19 +162,37 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
                 .spawn(pldm_service_task(STUD_FD_OPS, spawner))
                 .unwrap();
 
-                MAIN_SIGNAL.wait().await;
-
-/*
             writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
             loop {
+
                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
                 if state != State::Initializing {
                     writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
                     break;
                 }
+                MAIN_SIGNAL.wait().await;                
             }
-             */
+
             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized").unwrap();
+
+            unsafe {
+                let download_ctx = DOWNLOAD_CTX.get_mut();
+                download_ctx.total_length = 100;
+                download_ctx.current_offset = 0;
+                download_ctx.total_downloaded = 0;
+            }
+    
+            YIELD_SIGNAL.signal(());
+
+            // Wait for DownloadToc to be ready
+            loop {
+                let state = unsafe { PLDM_STATE.lock(|state| *state) };
+                if state != State::DownloadingToc {
+                    writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
+                    break;
+                }
+                MAIN_SIGNAL.wait().await;
+            }
 
         }
 
@@ -192,17 +216,26 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         let mut console_writer = Console::<S>::writer();
         writeln!(
             console_writer,
-            "IMAGE_LOADING: load_and_authorize{:?}",
+            "IMAGE_LOADING: load_and_authorize {:?}",
             image_id
         )
         .unwrap();
+    
+
 
         unsafe {
             let download_ctx = DOWNLOAD_CTX.get_mut();
-            download_ctx.initial_offset = 0;
             download_ctx.total_length = 100;
-            download_ctx.current_offset = 0;
+            download_ctx.current_offset = 500;
+            download_ctx.total_downloaded = 0;
+            let state = PLDM_STATE.get_mut();
+            *state = State::DownloadingImage;
         }
+
+
+        YIELD_SIGNAL.signal(());
+        MAIN_SIGNAL.wait().await;
+        writeln!(console_writer, "IMAGE_LOADING: 6 proceeding").unwrap();
 
 
 /*
@@ -321,6 +354,18 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
         Ok(())
     }
+
+
+    pub async fn finalize(&self) -> Result<(), ErrorCode> {
+        // Finalize the image loading process.
+        // This could involve sending a completion signal or performing cleanup tasks.
+        unsafe {
+            let download_ctx = DOWNLOAD_CTX.get_mut();
+            download_ctx.download_complete = true;
+        }
+        YIELD_SIGNAL.signal(());
+        Ok(())
+    }
 }
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -403,26 +448,29 @@ impl FdOps for StubFdOps {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:query_download_offset_and_length called").unwrap();
 
-        
-        let mut is_yield = false;
         unsafe {
             let state = PLDM_STATE.get_mut();
             writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",*state).unwrap();
             if *state == State::Initializing {
                 *state = State::DownloadingToc;
                 writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",*state).unwrap();
-//                is_yield = true;
+
                     MAIN_SIGNAL.signal(());
+                    writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();;
+                    YIELD_SIGNAL.wait().await;
+                    writeln!(console_writer, "IMAGE_LOADING:4 proceeding").unwrap();;
                 
+            } else if *state == State::ImageDownloadReady {
+                YIELD_SIGNAL.wait().await;
+                writeln!(console_writer, "IMAGE_LOADING:5 proceeding").unwrap();;
             }
         }
-        if (is_yield) {
-            writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();;
-            YIELD_SIGNAL.wait().await;
-        }
-
-
-        Ok((0, 0))
+        let download_ctx = unsafe { DOWNLOAD_CTX.lock(|ctx| *ctx) };
+        let offset = download_ctx.current_offset;
+        let length = download_ctx.total_length;
+        writeln!(console_writer, "IMAGE_LOADING:5 offset {:?} length {:?}",offset,length).unwrap();
+        
+        Ok((offset, PLDM_FWUP_BASELINE_TRANSFER_SIZE))
     }
 
     async fn download_fw_data(
@@ -431,12 +479,40 @@ impl FdOps for StubFdOps {
         data: &[u8],
         component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
+        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+        writeln!(console_writer, "IMAGE_LOADING:download_fw_data called offset {} length {}", offset, data.len()).unwrap();
 
+        // update DOWNLOAD_CTX
+        unsafe {
+            let mut download_ctx = DOWNLOAD_CTX.get_mut();
+            download_ctx.total_downloaded += data.len();
+            if download_ctx.total_downloaded >= download_ctx.total_length {
+                writeln!(console_writer, "IMAGE_LOADING: download complete").unwrap();
+                let mut state = PLDM_STATE.get_mut();
+                if *state == State::DownloadingToc {
+                    *state = State::ImageDownloadReady;
+                    writeln!(console_writer, "IMAGE_LOADING: image_download ready").unwrap();
+                    MAIN_SIGNAL.signal(());
+                }
+                else if *state == State::DownloadingImage {
+                    *state = State::ImageDownloadComplete;
+                    writeln!(console_writer, "IMAGE_LOADING: image_download complete").unwrap();
+                    MAIN_SIGNAL.signal(());
+                    YIELD_SIGNAL.wait().await;
+                }
+            } else {
+                writeln!(console_writer, "IMAGE_LOADING: downloaded {}/{}", download_ctx.total_downloaded, download_ctx.total_length).unwrap();
+                download_ctx.current_offset += data.len();
+            }
+            
+            
+        }
         Ok(TransferResult::TransferSuccess)
     }
 
     async fn is_download_complete(&self, component: &FirmwareComponent) -> bool {
-        true
+        let download_ctx = unsafe { DOWNLOAD_CTX.lock(|ctx| *ctx) };
+        download_ctx.download_complete
     }
 
     async fn verify(
@@ -444,6 +520,7 @@ impl FdOps for StubFdOps {
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<VerifyResult, FdOpsError> {
+        *progress_percent = ProgressPercent::new(100).unwrap();
         Ok(VerifyResult::VerifySuccess)
     }
 
@@ -452,6 +529,7 @@ impl FdOps for StubFdOps {
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError> {
+        *progress_percent = ProgressPercent::new(100).unwrap();
         Ok(ApplyResult::ApplySuccess)
     }
 
@@ -460,6 +538,7 @@ impl FdOps for StubFdOps {
         self_contained_activation: u8,
         estimated_time: &mut u16,
     ) -> Result<u8, FdOpsError> {
+        *estimated_time = 0;
         Ok(0) // PLDM completion code for success
     }
 }
