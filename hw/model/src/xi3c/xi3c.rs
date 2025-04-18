@@ -85,6 +85,11 @@ register_structs! {
     }
 }
 
+pub enum Ccc {
+    Byte(u8),
+    Data(Vec<u8>),
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub device_id: u16,
@@ -194,7 +199,7 @@ impl Controller {
         cmd.cmd_type = 1;
         // Disable Target Events
         println!("Broadcast CCC DISEC");
-        let result = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_DISEC);
+        let result = self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_DISEC));
         if result.is_ok() {
             println!("Acknowledge received");
         }
@@ -205,7 +210,7 @@ impl Controller {
         cmd.cmd_type = 1;
         // Enable Target Events
         println!("Broadcast CCC ENEC");
-        let result = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENEC);
+        let result = self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_ENEC));
         if result.is_ok() {
             println!("Acknowledge received");
         }
@@ -216,7 +221,7 @@ impl Controller {
         cmd.cmd_type = 1;
         // Reset Dynamic Address assigned to all the I3C Targets
         println!("Broadcast CCC RSTDAA");
-        let result = self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_RSTDAA);
+        let result = self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_RSTDAA));
         if result.is_ok() {
             println!("Acknowledge received");
         }
@@ -274,7 +279,7 @@ impl Controller {
                 };
                 assert!(self.ready);
                 println!("Controller: Broadcast CCC SETDASA");
-                self.send_transfer_cmd(&mut cmd, XI3C_CCC_SETDASA)?;
+                self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_SETDASA))?;
                 println!("Acknowledged");
                 for (i, addr) in static_addrs.iter().enumerate() {
                     self.dyna_addr_assign_static(*addr, DYNA_ADDR_LIST[i])?;
@@ -370,7 +375,7 @@ impl Controller {
         cmd.pec = 0;
         cmd.cmd_type = 1;
         println!("Controller: Broadcast CCC ENTDAA");
-        self.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_ENTDAA)?;
+        self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_ENTDAA))?;
         println!("Acknowledged");
         let mut index = 0;
         while index < dev_count as u16 && index < 108 {

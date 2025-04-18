@@ -9,7 +9,7 @@
 use crate::xi3c::xi3c::{XI3C_BROADCAST_ADDRESS, XST_SEND_ERROR};
 
 use super::xi3c::{
-    Command, Controller, ErrorHandler, DYNA_ADDR_LIST, MAX_TIMEOUT_US, XI3C_INTR_HJ_MASK,
+    Ccc, Command, Controller, ErrorHandler, DYNA_ADDR_LIST, MAX_TIMEOUT_US, XI3C_INTR_HJ_MASK,
     XI3C_INTR_IBI_MASK, XI3C_INTR_WR_FIFO_ALMOST_FULL_MASK, XI3C_SR_RD_FIFO_NOT_EMPTY_MASK,
     XI3C_SR_RESP_NOT_EMPTY_MASK, XST_NO_DATA, XST_RECV_ERROR,
 };
@@ -118,13 +118,21 @@ impl Controller {
         ((response_data & 0x1e0) >> 5) as i32
     }
 
-    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, data: u8) -> Result<(), i32> {
+    pub fn send_transfer_cmd(&mut self, cmd: &mut Command, data: Ccc) -> Result<(), i32> {
         assert!(self.ready);
 
-        self.write_tx_fifo(&[data]);
+        match data {
+            Ccc::Byte(byte) => {
+                cmd.byte_count = 1;
+                self.write_tx_fifo(&[byte]);
+            }
+            Ccc::Data(data) => {
+                cmd.byte_count = data.len() as u16;
+                self.write_tx_fifo(&data);
+            }
+        }
         cmd.target_addr = XI3C_BROADCAST_ADDRESS;
         cmd.rw = 0;
-        cmd.byte_count = 1;
         self.fill_cmd_fifo(cmd);
         if self.get_response() != 0 {
             return Err(XST_SEND_ERROR);

@@ -8,4 +8,4 @@ mod xi3c;
 mod xi3c_master;
 
 #[allow(unused)]
-pub use xi3c::{Command, Config, Controller, XI3c};
+pub use xi3c::{Ccc, Command, Config, Controller, XI3c};

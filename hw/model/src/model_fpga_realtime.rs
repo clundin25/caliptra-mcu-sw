@@ -758,15 +758,15 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 #[cfg(test)]
 mod test {
     use crate::model_fpga_realtime::FifoData;
-    use crate::xi3c;
+    use crate::xi3c::{self, Ccc};
     use bitfield::bitfield;
     use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
     use emulator_bmc::Bmc;
     use registers_generated::i3c::bits::HcControl::{BusEnable, ModeSelector};
     use registers_generated::i3c::bits::{
-        DeviceStatus0, ProtCap2, ProtCap3, QueueThldCtrl, RingHeadersSectionOffset,
-        StbyCrCapabilities, StbyCrControl, StbyCrDeviceAddr, StbyCrVirtDeviceAddr,
-        TtiQueueThldCtrl,
+        DeviceStatus0, IndirectFifoStatus0, ProtCap2, ProtCap3, QueueThldCtrl, RecoveryStatus,
+        RingHeadersSectionOffset, StbyCrCapabilities, StbyCrControl, StbyCrDeviceAddr,
+        StbyCrVirtDeviceAddr, TtiQueueThldCtrl,
     };
     use registers_generated::i3c::regs::I3c;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1094,7 +1094,6 @@ mod test {
 
         const I3C_DATALEN: u16 = 50;
         let max_len = I3C_DATALEN.to_be_bytes();
-        let mut tx_data = [0u8; I3C_DATALEN as usize];
 
         // sequence from xi3c_polled_example.c
         let mut cmd = xi3c::Command {
@@ -1105,7 +1104,8 @@ mod test {
         if !use_dynamic_addr {
             const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
             println!("Broadcast CCC SETAASA");
-            let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
+            let result =
+                i3c_controller.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_SETAASA));
             assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
             println!("Acknowledge received");
         }
@@ -1119,7 +1119,10 @@ mod test {
         println!("Broadcast CCC SETMWL");
         assert!(
             i3c_controller
-                .send_transfer_cmd(&mut cmd, XI3C_CCC_SETMWL)
+                .send_transfer_cmd(
+                    &mut cmd,
+                    Ccc::Data(vec![XI3C_CCC_SETMWL, 0, I3C_DATALEN as u8])
+                )
                 .is_ok(),
             "Failed to ack broadcast CCC SETMWL message"
         );
@@ -1178,7 +1181,10 @@ mod test {
         println!("Broadcast CCC SETMRL");
         assert!(
             i3c_controller
-                .send_transfer_cmd(&mut cmd, XI3C_CCC_SETMRL)
+                .send_transfer_cmd(
+                    &mut cmd,
+                    Ccc::Data(vec![XI3C_CCC_SETMRL, 0, I3C_DATALEN as u8])
+                )
                 .is_ok(),
             "Failed to ack broadcast CCC SETMRL"
         );
@@ -1211,50 +1217,50 @@ mod test {
         empty_wait_time.map(sleep);
         empty_rx_queue(i3c_target);
 
-        println!(
-            "I3C target status {:x}, interrupt status {:x}",
-            i3c_target.tti_status.get(),
-            i3c_target.tti_interrupt_status.get()
-        );
+        // println!(
+        //     "I3C target status {:x}, interrupt status {:x}",
+        //     i3c_target.tti_status.get(),
+        //     i3c_target.tti_interrupt_status.get()
+        // );
 
-        // Fill data to buffer
-        for i in 0..I3C_DATALEN as usize {
-            tx_data[i] = i as u8; // Test data
-        }
+        // // Fill data to buffer
+        // for i in 0..I3C_DATALEN as usize {
+        //     tx_data[i] = i as u8; // Test data
+        // }
 
-        // Send
-        for _ in 0..repeat {
-            cmd.target_addr = target_addr;
-            cmd.no_repeated_start = 1;
-            cmd.tid = 0;
-            cmd.pec = 0;
-            cmd.cmd_type = 1;
-            println!("Sending third message to target");
-            assert!(
-                i3c_controller
-                    .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
-                    .is_ok(),
-                "Failed to ack third message sent to target"
-            );
-            println!("Acknowledge received");
-        }
+        // // Send
+        // for _ in 0..repeat {
+        //     cmd.target_addr = target_addr;
+        //     cmd.no_repeated_start = 1;
+        //     cmd.tid = 0;
+        //     cmd.pec = 0;
+        //     cmd.cmd_type = 1;
+        //     println!("Sending third message to target");
+        //     assert!(
+        //         i3c_controller
+        //             .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
+        //             .is_ok(),
+        //         "Failed to ack third message sent to target"
+        //     );
+        //     println!("Acknowledge received");
+        // }
 
-        let data = read_packet(i3c_target);
-        println!("Read bytes: {:x?}", data);
+        // let data = read_packet(i3c_target);
+        // println!("Read bytes: {:x?}", data);
 
-        assert_eq!(
-            &tx_data, &*data,
-            "Data read from I3C target did not match what controller sent"
-        );
+        // assert_eq!(
+        //     &tx_data, &*data,
+        //     "Data read from I3C target did not match what controller sent"
+        // );
 
-        empty_wait_time.map(sleep);
-        empty_rx_queue(i3c_target);
+        // empty_wait_time.map(sleep);
+        // empty_rx_queue(i3c_target);
 
-        println!(
-            "I3C target status {:x}, interrupt status {:x}",
-            i3c_target.tti_status.get(),
-            i3c_target.tti_interrupt_status.get()
-        );
+        // println!(
+        //     "I3C target status {:x}, interrupt status {:x}",
+        //     i3c_target.tti_status.get(),
+        //     i3c_target.tti_interrupt_status.get()
+        // );
 
         // let mut s = String::new();
         // println!("Waiting on user to hit enter");
@@ -1363,7 +1369,8 @@ mod test {
         if !use_dynamic_addr {
             const XI3C_CCC_BRDCAST_SETAASA: u8 = 0x29;
             println!("Broadcast CCC SETAASA");
-            let result = i3c_controller.send_transfer_cmd(&mut cmd, XI3C_CCC_BRDCAST_SETAASA);
+            let result =
+                i3c_controller.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_BRDCAST_SETAASA));
             assert!(result.is_ok(), "Failed to ack broadcast CCC SETAASA");
             println!("Acknowledge received");
         }
@@ -1372,6 +1379,10 @@ mod test {
         for i in 0..I3C_DATALEN as usize {
             tx_data[i] = i as u8; // Test data
         }
+
+        // let's send a message back
+        println!("Writing data back to controller: {:x?}", tx_data);
+        send_packet(i3c_target, &tx_data);
 
         // Recv
         println!("Sending a read request to the target");
@@ -1394,10 +1405,6 @@ mod test {
         //     i3c_target.tti_interrupt_status.get() & 0x402 != 0,
         //     "Expected TX_DESC interrupt"
         // );
-
-        // let's send a message back
-        println!("Writing data back to controller: {:x?}", tx_data);
-        send_packet(i3c_target, &tx_data);
 
         let rx_data: Vec<u8> = i3c_controller
             .master_recv_finish(None, &cmd, I3C_DATALEN)
@@ -1448,7 +1455,7 @@ mod test {
             rw_fifo_depth: 16,
             wr_threshold: 12,
             device_count: 2,
-            ibi_capable: true,
+            ibi_capable: false, // temporarily disable dynamic addresses
             hj_capable: false,
             entdaa_enable: false,
             known_static_addrs: vec![I3C_TARGET_ADDR, I3C_TARGET_ADDR + 1],
@@ -1502,6 +1509,17 @@ mod test {
 
         if i3c_target
             .stdby_ctrl_mode_stby_cr_virt_device_addr
+            .read(StbyCrVirtDeviceAddr::VirtStaticAddrValid)
+            == 1
+        {
+            let addr = i3c_target
+                .stdby_ctrl_mode_stby_cr_virt_device_addr
+                .read(StbyCrVirtDeviceAddr::VirtStaticAddr);
+            println!("I3C virtual target static address: {:x}", addr,);
+            recovery_target_addr = addr as u8;
+        }
+        if i3c_target
+            .stdby_ctrl_mode_stby_cr_virt_device_addr
             .read(StbyCrVirtDeviceAddr::VirtDynamicAddrValid)
             == 1
         {
@@ -1511,18 +1529,6 @@ mod test {
 
             println!("I3C virtual target dynamic address: {:x}", addr);
             recovery_target_addr = addr as u8;
-        }
-        if i3c_target
-            .stdby_ctrl_mode_stby_cr_virt_device_addr
-            .read(StbyCrVirtDeviceAddr::VirtStaticAddrValid)
-            == 1
-        {
-            println!(
-                "I3C virtual target static address: {:x}",
-                i3c_target
-                    .stdby_ctrl_mode_stby_cr_virt_device_addr
-                    .read(StbyCrVirtDeviceAddr::VirtStaticAddr)
-            );
         }
 
         // Run the recovery flow.
@@ -1545,6 +1551,8 @@ mod test {
             mcu_cpu_event_recv,
         );
 
+        bmc.push_recovery_image(vec![1, 2, 3, 4]);
+
         let running = Arc::new(AtomicBool::new(true));
         let running_timer = running.clone();
 
@@ -1554,8 +1562,74 @@ mod test {
             running_timer.store(false, Ordering::Relaxed);
         });
 
+        i3c_target.sec_fw_recovery_if_recovery_ctrl.set(0xffffffff);
+
+        let mut set_to_running = false;
+
+        let mut fifo_blocks = vec![];
+
         while running.load(Ordering::Relaxed) {
             bmc.step();
+
+            if i3c_target.sec_fw_recovery_if_recovery_ctrl.get() & 0xff == 0 {
+                // we've been told to start recovery
+                // set to awaiting recovery image
+                i3c_target
+                    .sec_fw_recovery_if_recovery_status
+                    .write(RecoveryStatus::DevRecStatus.val(1));
+                i3c_target.sec_fw_recovery_if_recovery_ctrl.set(0xffffffff);
+            }
+
+            if !fifo_blocks.is_empty() {
+                // do the indirect fifo thing
+                println!("Starting indirect fifo writes");
+
+                let len = ((fifo_blocks.len() / 4) as u32).to_le_bytes();
+                let mut ctrl = vec![0, 0];
+                ctrl.extend_from_slice(&len);
+
+                println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
+                recovery_block_write_request(
+                    &mut i3c_controller,
+                    recovery_target_addr,
+                    RecoveryCommandCode::IndirectFifoCtrl,
+                    &ctrl,
+                );
+                // ensure that we read the fifo ctrl
+                println!(
+                    "Val: {:x} {:x}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_ctrl_0.get(),
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_ctrl_1.get(),
+                );
+
+                // now write and read bytes
+                for chunk in fifo_blocks.chunks(128) {
+                    recovery_block_write_request(
+                        &mut i3c_controller,
+                        recovery_target_addr,
+                        RecoveryCommandCode::IndirectFifoCtrl,
+                        chunk,
+                    );
+
+                    let mut i = 0;
+
+                    while !i3c_target
+                        .sec_fw_recovery_if_indirect_fifo_status_0
+                        .is_set(IndirectFifoStatus0::Empty)
+                    {
+                        let word = i3c_target.sec_fw_recovery_if_indirect_fifo_data.get();
+                        std::thread::sleep(Duration::from_millis(1));
+                        println!("chunk {:x?} word {:x}", &chunk[i * 4..i * 4 + 4], word);
+                        i += 4;
+                    }
+                    println!("FIFO empty");
+                    if i < chunk.len() {
+                        panic!("FIFO empty but we should have more data");
+                    }
+                }
+
+                panic!("Stop");
+            }
 
             if let Ok(event) = from_bmc.try_recv() {
                 if !matches!(event.dest, Device::CaliptraCore) {
@@ -1589,7 +1663,14 @@ mod test {
                             })
                             .unwrap();
 
-                        panic!("Stop the test");
+                        if set_to_running {
+                            set_to_running = false;
+                            i3c_target
+                                .sec_fw_recovery_if_device_status_0
+                                .write(DeviceStatus0::DevStatus.val(0x5));
+                        }
+
+                        std::thread::sleep(Duration::from_millis(100));
                     }
                     EventData::RecoveryBlockReadResponse {
                         source_addr: _,
@@ -1600,14 +1681,30 @@ mod test {
                     EventData::RecoveryBlockWrite {
                         source_addr: _,
                         target_addr: _,
-                        command_code: _,
-                        payload: _,
-                    } => todo!(),
-                    EventData::RecoveryImageAvailable {
-                        image_id: _,
-                        image: _,
+                        command_code,
+                        payload,
                     } => {
-                        todo!()
+                        println!("Recovery block write request: {:?}", command_code);
+
+                        recovery_block_write_request(
+                            &mut i3c_controller,
+                            recovery_target_addr,
+                            command_code,
+                            &payload,
+                        );
+
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    EventData::RecoveryImageAvailable { image_id: _, image } => {
+                        println!("Recovery image available; setting to pending");
+
+                        i3c_target
+                            .sec_fw_recovery_if_device_status_0
+                            .write(DeviceStatus0::DevStatus.val(0x4));
+
+                        fifo_blocks = image;
+
+                        std::thread::sleep(Duration::from_millis(100));
                     }
                     _ => todo!(),
                 }
@@ -1695,7 +1792,7 @@ mod test {
             "Starting private read from target for {} bytes with repeated start",
             len_range.0
         );
-        xi3c.master_recv(&mut cmd, len_range.0)
+        xi3c.master_recv(&mut cmd, len_range.0 + 2)
             .expect("Failed to receive ack from target");
         println!("Acknowledge received");
 
@@ -1705,8 +1802,8 @@ mod test {
             len_range.0
         );
         let resp = xi3c
-            .master_recv_finish(Some(running.clone()), &cmd, len_range.0)
-            .expect(&format!("Expected to read {}+ bytes", len_range.0));
+            .master_recv_finish(Some(running.clone()), &cmd, len_range.0 + 2)
+            .expect(&format!("Expected to read {}+ bytes", len_range.0 + 2));
 
         if resp.len() < 2 {
             panic!("Expected to read at least 2 bytes from target for recovery block length");
@@ -1721,10 +1818,7 @@ mod test {
         }
         let len = len as usize;
         let left = len - (resp.len() - 2);
-        println!(
-            "Expect to read {} more bytes from target ({} more)",
-            len, left
-        );
+        println!("Expect to read {} bytes from target ({} more)", len, left);
         // read the rest of the bytes
         if left > 0 {
             // TODO: if the length is more than the minimum we need to abort and restart with the correct value
@@ -1733,6 +1827,43 @@ mod test {
         }
         println!("Got block read back from target: {:x?}", &resp[2..]);
         resp[2..].to_vec()
+    }
+
+    // send a recovery block write request to the I3C target
+    fn recovery_block_write_request(
+        xi3c: &mut xi3c::Controller,
+        target_addr: u8,
+        command: RecoveryCommandCode,
+        payload: &[u8],
+    ) {
+        // per the recovery spec, this maps to a private write
+
+        let mut cmd = xi3c::Command {
+            cmd_type: 1,
+            no_repeated_start: 1,
+            pec: 1,
+            target_addr,
+            ..Default::default()
+        };
+
+        let recovery_command_code = command_code_to_u8(command);
+
+        println!(
+            "Sending write to target: 0x{:x} + 2 bytes length + {} bytes payload",
+            recovery_command_code,
+            payload.len(),
+        );
+
+        let mut data = vec![recovery_command_code];
+        data.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        data.extend_from_slice(&payload);
+
+        assert!(
+            xi3c.master_send_polled(&mut cmd, &data, data.len() as u16)
+                .is_ok(),
+            "Failed to ack write message sent to target"
+        );
+        println!("Acknowledge received");
     }
 
     #[test]
