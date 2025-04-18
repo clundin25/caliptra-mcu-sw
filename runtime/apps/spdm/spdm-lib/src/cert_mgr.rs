@@ -420,6 +420,141 @@ impl<'a> DeviceCertsManager<'a> {
         let cert_chain_buf = SpdmCertChainBuffer::new(&cert_chain_data[..cert_chain_size], &root_hash[..hash_size])?;
         Ok(cert_chain_buf)
     }
+    /// Constructs the certificate chain data for a specific slot.
+    ///
+    /// This method validates the slot ID, retrieves the slot state, and iterates over
+    /// the certificates in the chain to construct the certificate chain data.
+    ///
+    /// # Parameters
+    /// - `slot_id`: The ID of the slot to construct the certificate chain data for.
+    /// - `cert_chain_data`: A mutable reference to an `SpdmCertChainData` structure
+    ///   to store the constructed certificate chain data.
+    ///
+    /// # Returns
+    /// - `Ok(usize)`: The length of the root certificate if the operation is successful.
+    /// - `Err(DeviceCertsMgrError)`: An error if the operation fails.
+    pub fn construct_cert_chain_data(
+        &self,
+        slot_id: u8,
+        cert_chain_data: &mut SpdmCertChainData,
+    ) -> Result<usize, DeviceCertsMgrError> {
+        let (supported_mask, provisioned_mask) = self.get_cert_chain_slot_mask()?;
+        let slot_mask = 1 << slot_id;
+        if slot_mask & supported_mask == 0 {
+            return Err(DeviceCertsMgrError::UnsupportedSlotId);
+        }
+        if slot_mask & provisioned_mask == 0 {
+            return Err(DeviceCertsMgrError::UnprovisionedSlotId);
+        }
+
+        let mut cert_chain_slot_state = CertChainSlotState::default();
+        // Retrieve slot state
+        self.get_cert_chain_slot_state(slot_id, &mut cert_chain_slot_state)?;
+
+        let mut root_cert_len = 0;
+        // Iterate over certificates in the chain
+        for (i, &cert_len) in cert_chain_slot_state
+            .certs_size
+            .iter()
+            .take(cert_chain_slot_state.certs_count)
+            .enumerate()
+        {
+            let offset = cert_chain_data.length as usize;
+            let cert_buf = cert_chain_data
+                .data
+                .get_mut(offset..offset + cert_len)
+                .ok_or(DeviceCertsMgrError::CertDataBufferTooSmall)?;
+
+            self.get_cert_der_data(slot_id, i, cert_buf)?;
+            cert_chain_data.length += cert_len as u16;
+            if i == 0 {
+                root_cert_len = cert_len;
+            }
+        }
+
+        Ok(root_cert_len)
+    }
+
+    pub async fn cert_chain_digest<S: Syscalls>(
+        &self,
+        slot_id: u8,
+        hash_type: BaseHashAlgoType,
+        digest: &mut [u8],
+    ) -> Result<(), DeviceCertsMgrError> {
+        let mut cert_chain_data = SpdmCertChainData::default();
+        let mut root_hash = [0u8; SPDM_MAX_HASH_SIZE];
+        let root_cert_len = self.construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
+
+        let hash_algo: HashAlgoType = hash_type
+            .try_into()
+            .map_err(|_| DeviceCertsMgrError::InvalidParam("Invalid hash type"))?;
+
+        if digest.len() < hash_algo.hash_size() {
+            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
+        }
+
+        // Get the hash of root_cert
+        HashContext::<S>::hash_all(
+            hash_algo,
+            &cert_chain_data.as_ref()[..root_cert_len],
+            &mut root_hash,
+        )
+        .await
+        .map_err(DeviceCertsMgrError::CryptoError)?;
+
+        // Construct the cert chain base buffer
+        let cert_chain_base_buf =
+            SpdmCertChainBaseBuffer::new(cert_chain_data.length as usize, root_hash.as_ref())?;
+
+        // Start the hash operation
+        let mut hash_ctx = HashContext::<S>::new();
+
+        // Hash the cert chain base
+        hash_ctx
+            .init(hash_algo, Some(cert_chain_base_buf.as_ref()))
+            .await?;
+
+        // Hash the cert chain data
+        hash_ctx.update(cert_chain_data.as_ref()).await?;
+
+        // Finalize the hash operation
+        hash_ctx.finalize(digest).await?;
+
+        Ok(())
+    }
+
+    pub async fn construct_cert_chain_buffer<S: Syscalls>(
+        &self,
+        hash_type: BaseHashAlgoType,
+        slot_id: u8,
+    ) -> Result<SpdmCertChainBuffer, DeviceCertsMgrError> {
+        let mut cert_chain_data = SpdmCertChainData::default();
+        let mut root_hash = [0u8; SPDM_MAX_HASH_SIZE];
+        let root_cert_len = self.construct_cert_chain_data(slot_id, &mut cert_chain_data)?;
+
+        let hash_algo: HashAlgoType = hash_type
+            .try_into()
+            .map_err(|_| DeviceCertsMgrError::InvalidParam("Invalid Hash type"))?;
+
+        if root_hash.len() < hash_algo.hash_size() {
+            Err(DeviceCertsMgrError::CertDataBufferTooSmall)?;
+        }
+
+        // Get the hash of root_cert
+        HashContext::<S>::hash_all(
+            hash_algo,
+            &cert_chain_data.as_ref()[..root_cert_len],
+            &mut root_hash,
+        )
+        .await
+        .map_err(DeviceCertsMgrError::CryptoError)?;
+
+        // Construct the cert chain buffer
+        let cert_chain_buffer =
+            SpdmCertChainBuffer::new(cert_chain_data.as_ref(), root_hash.as_ref())?;
+
+        Ok(cert_chain_buffer)
+    }
 }
 // #[cfg(test)]
 // mod test {
