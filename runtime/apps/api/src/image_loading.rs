@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 extern crate alloc;
+use crate::flash_image::{FlashHeader, FlashChecksums};
 use async_trait::async_trait;
 use alloc::boxed::Box;
 use embassy_executor::Spawner;
@@ -60,8 +61,8 @@ pub enum ImageSource {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
     NotRunning,
-    StartingPldmService,
     Initializing,
+    DownloadingHeader,
     DownloadingToc,
     ImageDownloadReady,
     DownloadingImage,
@@ -74,7 +75,6 @@ pub enum State {
 static mut PLDM_STATE: Mutex<CriticalSectionRawMutex, State> = Mutex::new(State::Initializing);
 static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static MAIN_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-static EXECUTOR: LazyLock<TockExecutor> = LazyLock::new(TockExecutor::new);
 static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
     total_length: 0,
     current_offset: 0,
@@ -177,17 +177,17 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
             unsafe {
                 let download_ctx = DOWNLOAD_CTX.get_mut();
-                download_ctx.total_length = 100;
+                download_ctx.total_length = core::mem::size_of::<FlashHeader>();
                 download_ctx.current_offset = 0;
                 download_ctx.total_downloaded = 0;
             }
     
             YIELD_SIGNAL.signal(());
 
-            // Wait for DownloadToc to be ready
+            // Wait for DownloadingHeader to be ready
             loop {
                 let state = unsafe { PLDM_STATE.lock(|state| *state) };
-                if state != State::DownloadingToc {
+                if state != State::DownloadingHeader {
                     writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
                     break;
                 }
@@ -452,7 +452,7 @@ impl FdOps for StubFdOps {
             let state = PLDM_STATE.get_mut();
             writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",*state).unwrap();
             if *state == State::Initializing {
-                *state = State::DownloadingToc;
+                *state = State::DownloadingHeader;
                 writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",*state).unwrap();
 
                     MAIN_SIGNAL.signal(());
