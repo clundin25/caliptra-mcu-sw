@@ -1585,9 +1585,13 @@ mod test {
                 println!("Starting indirect fifo writes");
 
                 let len = ((fifo_blocks.len() / 4) as u32).to_le_bytes();
-                let mut ctrl = vec![0, 0];
+                let mut ctrl = vec![0, 1];
                 ctrl.extend_from_slice(&len);
 
+                println!(
+                    "Device status0: {:x}",
+                    i3c_target.sec_fw_recovery_if_device_status_0.get(),
+                );
                 println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
                 recovery_block_write_request(
                     &mut i3c_controller,
@@ -1602,12 +1606,33 @@ mod test {
                     i3c_target.sec_fw_recovery_if_indirect_fifo_ctrl_1.get(),
                 );
 
+                println!(
+                    "Indirect fifo status0: {:x?}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_status_0.get()
+                );
+                println!(
+                    "Indirect fifo status1: {:x?}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_status_1.get()
+                );
+                println!(
+                    "Indirect fifo status2: {:x?}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_status_2.get()
+                );
+                println!(
+                    "Indirect fifo status3: {:x?}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_status_3.get()
+                );
+                println!(
+                    "Indirect fifo status4: {:x?}",
+                    i3c_target.sec_fw_recovery_if_indirect_fifo_status_4.get()
+                );
+
                 // now write and read bytes
                 for chunk in fifo_blocks.chunks(128) {
                     recovery_block_write_request(
                         &mut i3c_controller,
                         recovery_target_addr,
-                        RecoveryCommandCode::IndirectFifoCtrl,
+                        RecoveryCommandCode::IndirectFifoData,
                         chunk,
                     );
 
@@ -1618,7 +1643,6 @@ mod test {
                         .is_set(IndirectFifoStatus0::Empty)
                     {
                         let word = i3c_target.sec_fw_recovery_if_indirect_fifo_data.get();
-                        std::thread::sleep(Duration::from_millis(1));
                         println!("chunk {:x?} word {:x}", &chunk[i * 4..i * 4 + 4], word);
                         i += 4;
                     }
@@ -1628,7 +1652,16 @@ mod test {
                     }
                 }
 
-                panic!("Stop");
+                println!("Setting recovery status to pending");
+                i3c_target
+                    .sec_fw_recovery_if_device_status_0
+                    .write(DeviceStatus0::DevStatus.val(0x4));
+                // recovery success
+                i3c_target
+                    .sec_fw_recovery_if_recovery_status
+                    .write(RecoveryStatus::DevRecStatus.val(3));
+                set_to_running = true;
+                fifo_blocks.clear();
             }
 
             if let Ok(event) = from_bmc.try_recv() {
@@ -1664,13 +1697,12 @@ mod test {
                             .unwrap();
 
                         if set_to_running {
-                            set_to_running = false;
                             i3c_target
                                 .sec_fw_recovery_if_device_status_0
                                 .write(DeviceStatus0::DevStatus.val(0x5));
+                            // test passed
+                            return;
                         }
-
-                        std::thread::sleep(Duration::from_millis(100));
                     }
                     EventData::RecoveryBlockReadResponse {
                         source_addr: _,
@@ -1692,19 +1724,10 @@ mod test {
                             command_code,
                             &payload,
                         );
-
-                        std::thread::sleep(Duration::from_millis(100));
                     }
                     EventData::RecoveryImageAvailable { image_id: _, image } => {
-                        println!("Recovery image available; setting to pending");
-
-                        i3c_target
-                            .sec_fw_recovery_if_device_status_0
-                            .write(DeviceStatus0::DevStatus.val(0x4));
-
+                        println!("Recovery image available; writing blocks");
                         fifo_blocks = image;
-
-                        std::thread::sleep(Duration::from_millis(100));
                     }
                     _ => todo!(),
                 }
