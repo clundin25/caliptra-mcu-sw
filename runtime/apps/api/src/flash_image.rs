@@ -19,7 +19,7 @@ pub struct FlashChecksums {
 }
 
 #[repr(C)]
-#[derive(Debug, FromBytes, IntoBytes, Clone, Copy, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, Clone, Copy, Immutable, KnownLayout)]
 pub struct ImageInfo {
     pub identifier: u32,
     pub offset: u32,

@@ -75,9 +75,39 @@ lazy_static! {
             // First 128 bytes are 0x55, next 128 bytes are 0xAA
             size: 4096,
             image_data: {
-                let mut data = vec![0x55u8; 128];
-                data.extend(vec![0xAAu8; 4096]);
-                Some(data)
+                Some(vec![
+
+                        // Header: magic, version, image_count
+                        0x48, 0x53, 0x4C, 0x46,  // "FLSH"
+                        0x01, 0x00,              // version = 0x0001
+                        0x02, 0x00,              // image_count = 2
+
+                        // Checksums
+                        0x11, 0x11, 0x11, 0x11,  // header_crc32
+                        0x22, 0x22, 0x22, 0x22,  // payload_crc32
+
+                        // ImageInfo[0]
+                        0x01, 0x00, 0x00, 0x00,  // identifier
+                        0x30, 0x00, 0x00, 0x00,  // offset
+                        0x10, 0x00, 0x00, 0x00,  // size
+
+                        // ImageInfo[1]
+                        0x02, 0x00, 0x00, 0x00,  // identifier
+                        0x40, 0x00, 0x00, 0x00,  // offset
+                        0x08, 0x00, 0x00, 0x00,  // size
+
+                        // Padding to offset 0x30
+                        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+                        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+
+                        // Image[0] @ 0x30
+                        0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+                        0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
+
+                        // Image[1] @ 0x40
+                        0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2,
+
+                ])
             },
             ..Default::default()
 

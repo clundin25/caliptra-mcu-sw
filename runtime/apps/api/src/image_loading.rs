@@ -28,6 +28,7 @@ use pldm_lib::daemon::PldmService;
 use core::fmt::Write;
 use libtock_console::Console;
 use romtime::println;
+use zerocopy::FromBytes;
 
 pub struct PldmInstance<'a, S: Syscalls> {
     pub pldm_service: Option<PldmService<'a, S>>,
@@ -43,6 +44,7 @@ pub struct ImageLoaderAPI<'a, S: Syscalls> {
 #[derive(Debug, Clone, Copy)]
 pub struct DownloadCtx {
     pub total_length: usize,
+    pub initial_offset: usize,
     pub current_offset: usize,
     pub total_downloaded: usize,
     pub download_complete: bool,
@@ -67,7 +69,9 @@ pub enum State {
     NotRunning,
     Initializing,
     DownloadingHeader,
+    HeaderDownloadComplete,
     DownloadingToc,
+    TocDownloadComplete,
     ImageDownloadReady,
     DownloadingImage,
     ImageDownloadComplete,
@@ -79,17 +83,17 @@ pub enum State {
 static PLDM_STATE: Mutex<CriticalSectionRawMutex, RefCell<State>> = Mutex::new(RefCell::new(State::Initializing));
 static YIELD_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static MAIN_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-static mut DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, DownloadCtx> = Mutex::new(DownloadCtx {
+static DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> = Mutex::new(RefCell::new(DownloadCtx {
     total_length: 0,
     current_offset: 0,
+    initial_offset: 0,
     total_downloaded: 0,
     download_complete: false,
     header: [0; core::mem::size_of::<FlashHeader>()],
     checksums: [0; core::mem::size_of::<FlashChecksums>()],
     image_info: [0; core::mem::size_of::<ImageInfo>()],
-});
+}));
 
-static MY_VAR : Mutex<CriticalSectionRawMutex, RefCell<u32>> = Mutex::new(RefCell::new(0));
 
 #[cfg(target_arch = "riscv32")]
 #[embassy_executor::task]
@@ -164,45 +168,20 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             let mut STUD_FD_OPS: StubFdOps = StubFdOps::new(descriptors);
             
       
-        let STUD_FD_OPS: &'static mut StubFdOps =
+            let stud_fd_ops: &'static mut StubFdOps =
             unsafe { core::mem::transmute(&mut STUD_FD_OPS) };
 
             spawner
-                .spawn(pldm_service_task(STUD_FD_OPS, spawner))
+                .spawn(pldm_service_task(stud_fd_ops, spawner))
                 .unwrap();
 
-            writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
-            loop {
-                MAIN_SIGNAL.wait().await; 
-                let state = PLDM_STATE.lock(|state| *state.borrow());
-                if state != State::Initializing {
-                    writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
-                    break;
-                }
-                               
-            }
+            Self::initialize_pldm_download().await;
 
             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized").unwrap();
 
-            unsafe {
-                let download_ctx = DOWNLOAD_CTX.get_mut();
-                download_ctx.total_length = core::mem::size_of::<FlashHeader>();
-                download_ctx.current_offset = 0;
-                download_ctx.total_downloaded = 0;
-            }
-    
-            YIELD_SIGNAL.signal(());
 
-            // Wait for DownloadingHeader to be ready
-            loop {
-                MAIN_SIGNAL.wait().await;
-                let state = PLDM_STATE.lock(|state| *state.borrow());
-                if state != State::DownloadingHeader {
-                    writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
-                    break;
-                }
-                
-            }
+           Self::download_header().await;
+           
 
         }
 
@@ -211,6 +190,133 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             source,
             pldm,
         }
+    }
+
+    async fn initialize_pldm_download() {
+        let mut console_writer = Console::<S>::writer();
+        writeln!(console_writer, "IMAGE_LOADING: Waiting for PLDM to initialize...").unwrap();
+     
+        loop {
+            writeln!(console_writer, "IMAGE_LOADING5: Waiting main").unwrap();
+            MAIN_SIGNAL.wait().await; 
+            writeln!(console_writer, "IMAGE_LOADING5: Waiting main ok").unwrap();
+            let state = PLDM_STATE.lock(|state| *state.borrow());
+            if state != State::Initializing {
+                writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
+                break;
+            }
+                           
+        }
+    }
+
+    async fn download_header()  {
+        let mut console_writer = Console::<S>::writer();
+        DOWNLOAD_CTX.lock(|ctx| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.total_length = core::mem::size_of::<FlashHeader>();
+            ctx.initial_offset = 0;
+            ctx.current_offset = 0;
+            ctx.total_downloaded = 0;
+        });
+
+        YIELD_SIGNAL.signal(());
+        // Wait for DownloadingHeader to be ready
+        loop {
+            MAIN_SIGNAL.wait().await;
+            let state = PLDM_STATE.lock(|state| *state.borrow());
+            if state == State::DownloadingToc {
+                writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
+                break;
+            }
+            
+        }
+
+
+        DOWNLOAD_CTX.lock(|ctx| {
+            let ctx = ctx.borrow();
+            let (header, rest) = FlashHeader::ref_from_prefix(&ctx.header).unwrap();
+            writeln!(console_writer, "IMAGE_LOADING: header: {:?} ", header).unwrap();
+        });
+        writeln!(console_writer, "IMAGE_LOADING: download_header exit ").unwrap();
+
+    }
+
+    async fn download_toc(image_id: u32) -> bool
+    {
+        let mut console_writer = Console::<S>::writer();
+        writeln!(console_writer, "IMAGE_LOADING: download_toc enter ").unwrap();
+
+        let num_images = DOWNLOAD_CTX.lock(|ctx| {
+            let ctx = ctx.borrow();
+            let (header, rest) = FlashHeader::ref_from_prefix(&ctx.header).unwrap();
+            header.image_count as usize
+        });
+
+
+        let mut is_image_found = false;
+        for index in 0..num_images {
+            writeln!(console_writer, "IMAGE_LOADING: download_toc index {} ", index).unwrap();
+
+            
+            DOWNLOAD_CTX.lock(|ctx| {
+                let mut ctx = ctx.borrow_mut();
+                ctx.total_length = core::mem::size_of::<ImageInfo>(); // image info length
+                ctx.initial_offset = core::mem::size_of::<FlashHeader>() + core::mem::size_of::<FlashChecksums>() + index * core::mem::size_of::<ImageInfo>();
+                ctx.current_offset = ctx.initial_offset;
+                ctx.total_downloaded = 0;
+
+                writeln!(console_writer, "IMAGE_LOADING: download_toc offset {} ", ctx.current_offset).unwrap();
+            });
+
+
+            writeln!(console_writer, "IMAGE_LOADING: download_toc yield ").unwrap();
+            YIELD_SIGNAL.signal(());
+            // Wait for TOC DownloadComplete to be ready
+            loop {
+                writeln!(console_writer, "IMAGE_LOADING: download_toc main wait ").unwrap();
+                MAIN_SIGNAL.wait().await;
+                writeln!(console_writer, "IMAGE_LOADING: download_toc main ok ").unwrap();
+                let is_dowload_complete  = PLDM_STATE.lock(|state| 
+                    {
+                        let mut state = state.borrow_mut();
+                        if *state == State::TocDownloadComplete {
+                            DOWNLOAD_CTX.lock(|ctx| {
+                                let ctx = ctx.borrow();
+                                let (info, rest) = ImageInfo::ref_from_prefix(&ctx.image_info).unwrap();
+                                writeln!(console_writer, "IMAGE_LOADING: image_info: {:?} ", info).unwrap();
+                                if (info.identifier == image_id) {
+                                    is_image_found = true;
+                                    writeln!(console_writer, "IMAGE_LOADING: image found {} ", info.identifier).unwrap();
+                                    *state = State::ImageDownloadReady;
+                                }
+                                else {
+                                    *state = State::DownloadingToc;
+                                }
+                            });
+                            
+                            return true;
+                        }
+                        else 
+                        {
+                            return false;
+                        }
+                    }    
+                );
+                if is_dowload_complete {
+                    writeln!(console_writer, "IMAGE_LOADING: download_toc TocDownloadComplete").unwrap();
+                    break;
+                }
+            }
+
+            if is_image_found {
+                break;
+            }
+
+        }
+
+
+        writeln!(console_writer, "IMAGE_LOADING: download_toc exit ").unwrap();
+        is_image_found
     }
 
     /// Loads the specified image to a storage mapped to the AXI bus memory map.
@@ -232,20 +338,13 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         .unwrap();
     
 
-
-        unsafe {
-            let download_ctx = DOWNLOAD_CTX.get_mut();
-            download_ctx.total_length = 100;
-            download_ctx.current_offset = 500;
-            download_ctx.total_downloaded = 0;
+        if Self::download_toc(image_id).await {
+            writeln!(console_writer, "IMAGE_LOADING: download_toc image found").unwrap();
+        } else {
+            writeln!(console_writer, "IMAGE_LOADING: download_toc image not found").unwrap();
+            self.finalize().await?;
+            return Err(ErrorCode::Fail);
         }
-
-        PLDM_STATE.lock(|state| {
-            *state.borrow_mut() = State::DownloadingImage;
-        });
-        YIELD_SIGNAL.signal(());
-        MAIN_SIGNAL.wait().await;
-        writeln!(console_writer, "IMAGE_LOADING: 6 proceeding").unwrap();
 
 
 /*
@@ -367,12 +466,13 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
 
     pub async fn finalize(&self) -> Result<(), ErrorCode> {
-        // Finalize the image loading process.
-        // This could involve sending a completion signal or performing cleanup tasks.
-        unsafe {
-            let download_ctx = DOWNLOAD_CTX.get_mut();
-            download_ctx.download_complete = true;
-        }
+        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+        writeln!(console_writer, "IMAGE_LOADING: finalize").unwrap();
+        DOWNLOAD_CTX.lock(|ctx| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.download_complete = true;
+        });
+        writeln!(console_writer, "IMAGE_LOADING: finalize yield").unwrap();
         YIELD_SIGNAL.signal(());
         Ok(())
     }
@@ -397,6 +497,41 @@ impl StubFdOps {
     /// Creates a new instance of the StubFdOps.
     pub const fn new(descriptors: &'static [Descriptor]) -> Self {
         Self { descriptors }
+    }
+
+    fn copy_data_to_buffer(
+        &self,
+        _offset: usize,
+        data: &[u8],
+        _component: &FirmwareComponent,
+    ) -> Result<(), FdOpsError> {
+        let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
+
+        let state = PLDM_STATE.lock(|state| {*state.borrow()});
+
+
+        DOWNLOAD_CTX.lock(|ctx| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.total_downloaded += data.len();
+            let start = ctx.current_offset-ctx.initial_offset;
+
+
+            if state == State::DownloadingHeader {
+                let end = (start + data.len()).min(ctx.header.len());
+                writeln!(console_writer, "IMAGE_LOADING: start {} end{}", start, end).unwrap();
+                ctx.header[start..end].copy_from_slice(&data[..end - start]);
+            }  else if state == State::DownloadingToc {
+                let end = (start + data.len()).min(ctx.image_info.len());
+                ctx.image_info[start..end].copy_from_slice(&data[..end - start]);
+                
+            }
+            else if state == State::DownloadingImage {
+                
+            }
+
+            writeln!(console_writer, "IMAGE_LOADING: PLDM_STATE unlocked ").unwrap();
+        });
+        Ok(())
     }
 }
 
@@ -453,40 +588,36 @@ impl FdOps for StubFdOps {
     
     async fn query_download_offset_and_length(
         &self,
-        component: &FirmwareComponent,
+        _component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:query_download_offset_and_length called").unwrap();
 
 
         let should_yield = PLDM_STATE.lock(|state| {
-            let mut state = *state.borrow_mut();
+            let mut state = state.borrow_mut();
             writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
-            if state == State::Initializing {
-                state = State::DownloadingHeader;
-                writeln!(console_writer, "IMAGE_LOADING:3 state {:?} yielding",state).unwrap();
-
-                    
-                    writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();;
-                    
-                    return true;
-                
-            } else if state == State::ImageDownloadReady {
+            if *state == State::Initializing {
+                *state = State::DownloadingHeader;
+                return true;
+            } else if *state == State::HeaderDownloadComplete {
+                *state = State::DownloadingToc;
+                return true;
+            } else if *state == State::ImageDownloadReady {
                 return true;
             }
             return false;
         });
         if should_yield {
+            writeln!(console_writer, "IMAGE_LOADING:3 yielding").unwrap();
             MAIN_SIGNAL.signal(());
+            writeln!(console_writer, "IMAGE_LOADING:3 waiting").unwrap();
             YIELD_SIGNAL.wait().await;
             writeln!(console_writer, "IMAGE_LOADING:4 proceeding").unwrap();;
         }
 
-        let download_ctx = unsafe { DOWNLOAD_CTX.lock(|ctx| *ctx) };
-        let offset = download_ctx.current_offset;
-        let length = download_ctx.total_length;
-        writeln!(console_writer, "IMAGE_LOADING:5 offset {:?} length {:?}",offset,length).unwrap();
-        
+        let offset =  DOWNLOAD_CTX.lock(|ctx| ctx.borrow().current_offset);
+       
         Ok((offset, PLDM_FWUP_BASELINE_TRANSFER_SIZE))
     }
 
@@ -494,59 +625,64 @@ impl FdOps for StubFdOps {
         &self,
         offset: usize,
         data: &[u8],
-        component: &FirmwareComponent,
+        _component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
         let mut console_writer = Console::<libtock_runtime::TockSyscalls>::writer();
         writeln!(console_writer, "IMAGE_LOADING:download_fw_data called offset {} length {}", offset, data.len()).unwrap();
 
+        self.copy_data_to_buffer(offset, data, _component)?;
+
 
         // update DOWNLOAD_CTX
-        unsafe {
-            let download_ctx = DOWNLOAD_CTX.get_mut();
-            download_ctx.total_downloaded += data.len();
-            if download_ctx.total_downloaded >= download_ctx.total_length {
+        let should_yield = DOWNLOAD_CTX.lock(|ctx| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.total_downloaded += data.len();
+            writeln!(console_writer, "IMAGE_LOADING: downloadedb {}/{}", ctx.total_downloaded, ctx.total_length).unwrap();
+
+    
+            if ctx.total_downloaded >= ctx.total_length {
                 writeln!(console_writer, "IMAGE_LOADING: download complete").unwrap();
 
-                let should_yield = PLDM_STATE.lock(|state| {
-                    let mut state = *state.borrow_mut();
-                    if state == State::DownloadingHeader {
-                        state = State::DownloadingToc;
-                        writeln!(console_writer, "IMAGE_LOADING: download toc").unwrap();
+                PLDM_STATE.lock(|state| {
+                    writeln!(console_writer, "IMAGE_LOADING: download complete PLDM_STATE locked").unwrap();
+                    let mut state = state.borrow_mut();
+                    if *state == State::DownloadingHeader {
+                        *state = State::HeaderDownloadComplete;
+                        writeln!(console_writer, "IMAGE_LOADING: HeaderDownloadComplete").unwrap();
+                        return false;
                         
-                    }  else if state == State::DownloadingToc {
-                        state = State::ImageDownloadReady;
-                        writeln!(console_writer, "IMAGE_LOADING: image_download ready").unwrap();
+                    }  else if *state == State::DownloadingToc {
+                        *state = State::TocDownloadComplete;
+                        writeln!(console_writer, "IMAGE_LOADING: TocDownloadComplete - yield true").unwrap();
                         
                         return true;
                     }
-                    else if state == State::DownloadingImage {
-                        state = State::ImageDownloadComplete;
-                        writeln!(console_writer, "IMAGE_LOADING: image_download complete").unwrap();
+                    else if *state == State::DownloadingImage {
+                        *state = State::ImageDownloadComplete;
+                        writeln!(console_writer, "IMAGE_LOADING: Downloading Image").unwrap();
                         return true;
                     }
                     return false;
-                });
-
-                if should_yield {
-                    MAIN_SIGNAL.signal(());
-                    YIELD_SIGNAL.wait().await;
-                    writeln!(console_writer, "IMAGE_LOADING: 7 proceeding").unwrap();
-                }
-
-
+                })
             } else {
-                writeln!(console_writer, "IMAGE_LOADING: downloaded {}/{}", download_ctx.total_downloaded, download_ctx.total_length).unwrap();
-                download_ctx.current_offset += data.len();
+                ctx.current_offset += data.len();
+                return false;
             }
+        });
+
+        if should_yield {
+            MAIN_SIGNAL.signal(());
+            YIELD_SIGNAL.wait().await;
+            writeln!(console_writer, "IMAGE_LOADING: 7 proceeding").unwrap();
+        }        
+
+
             
-            
-        }
         Ok(TransferResult::TransferSuccess)
     }
 
     async fn is_download_complete(&self, component: &FirmwareComponent) -> bool {
-        let download_ctx = unsafe { DOWNLOAD_CTX.lock(|ctx| *ctx) };
-        download_ctx.download_complete
+        DOWNLOAD_CTX.lock(|ctx| ctx.borrow().download_complete) 
     }
 
     async fn verify(
