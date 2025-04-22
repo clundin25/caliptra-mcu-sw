@@ -1197,7 +1197,7 @@ mod test {
         /*
          * Set Max read length
          */
-        cmd.no_repeated_start = 0;
+        cmd.no_repeated_start = 1; // xi3c controller will send invalid private read after CCC if this is set
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.rw = 0;
