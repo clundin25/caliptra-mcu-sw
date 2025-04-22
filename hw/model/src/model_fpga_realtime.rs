@@ -776,7 +776,12 @@ impl<'a> Bus for FpgaRealtimeBus<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::model_fpga_realtime::{FifoData, FPGA_WRAPPER_CONTROL_OFFSET, FPGA_WRAPPER_STATUS_OFFSET, FPGA_WRAPPER_CYCLE_COUNT_OFFSET, FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET, FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET, FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET, FPGA_WRAPPER_PAUSER_OFFSET, FPGA_WRAPPER_VERSION_OFFSET};
+    use crate::model_fpga_realtime::{
+        FifoData, FPGA_WRAPPER_CONTROL_OFFSET, FPGA_WRAPPER_CYCLE_COUNT_OFFSET,
+        FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET,
+        FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET, FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET,
+        FPGA_WRAPPER_PAUSER_OFFSET, FPGA_WRAPPER_STATUS_OFFSET, FPGA_WRAPPER_VERSION_OFFSET,
+    };
     use crate::xi3c::{self, Ccc};
     use bitfield::bitfield;
     use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
@@ -1032,7 +1037,8 @@ mod test {
         let empty_wait_time = Some(Duration::from_millis(1)); // sleep this much before emptying the rx queue
         let use_dynamic_addr = false;
 
-        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
+        let fpga_version =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
         println!("FPGA version: {:08x}", fpga_version);
 
         println!("Bring SS out of reset");
@@ -1191,7 +1197,7 @@ mod test {
         /*
          * Set Max read length
          */
-        cmd.no_repeated_start = 1;
+        cmd.no_repeated_start = 0;
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.rw = 0;
@@ -1235,55 +1241,6 @@ mod test {
 
         empty_wait_time.map(sleep);
         empty_rx_queue(i3c_target);
-
-        // println!(
-        //     "I3C target status {:x}, interrupt status {:x}",
-        //     i3c_target.tti_status.get(),
-        //     i3c_target.tti_interrupt_status.get()
-        // );
-
-        // // Fill data to buffer
-        // for i in 0..I3C_DATALEN as usize {
-        //     tx_data[i] = i as u8; // Test data
-        // }
-
-        // // Send
-        // for _ in 0..repeat {
-        //     cmd.target_addr = target_addr;
-        //     cmd.no_repeated_start = 1;
-        //     cmd.tid = 0;
-        //     cmd.pec = 0;
-        //     cmd.cmd_type = 1;
-        //     println!("Sending third message to target");
-        //     assert!(
-        //         i3c_controller
-        //             .master_send_polled(&mut cmd, &tx_data, I3C_DATALEN)
-        //             .is_ok(),
-        //         "Failed to ack third message sent to target"
-        //     );
-        //     println!("Acknowledge received");
-        // }
-
-        // let data = read_packet(i3c_target);
-        // println!("Read bytes: {:x?}", data);
-
-        // assert_eq!(
-        //     &tx_data, &*data,
-        //     "Data read from I3C target did not match what controller sent"
-        // );
-
-        // empty_wait_time.map(sleep);
-        // empty_rx_queue(i3c_target);
-
-        // println!(
-        //     "I3C target status {:x}, interrupt status {:x}",
-        //     i3c_target.tti_status.get(),
-        //     i3c_target.tti_interrupt_status.get()
-        // );
-
-        // let mut s = String::new();
-        // println!("Waiting on user to hit enter");
-        // std::io::stdin().read_line(&mut s).unwrap();
     }
 
     #[test]
@@ -1296,9 +1253,10 @@ mod test {
         let i3c_target_raw = dev1.map_mapping(2).unwrap();
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
-        let use_dynamic_addr = false;
+        let use_dynamic_addr = true;
 
-        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
+        let fpga_version =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
         println!("FPGA version: {:08x}", fpga_version);
 
         println!("Bring SS out of reset");
@@ -1323,7 +1281,7 @@ mod test {
             device_count: 1,
             ibi_capable: use_dynamic_addr, // this needs to be true for dynamic addressing
             hj_capable: false,
-            entdaa_enable: false,
+            entdaa_enable: true,
             known_static_addrs: vec![I3C_TARGET_ADDR],
         };
 
@@ -1449,7 +1407,8 @@ mod test {
         let i3c_target: &I3c = unsafe { &*(i3c_target_raw as *const I3c) };
         const I3C_TARGET_ADDR: u8 = 0x5a;
 
-        let fpga_version = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
+        let fpga_version =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_VERSION_OFFSET)) };
         println!("FPGA version: {:08x}", fpga_version);
 
         println!("Bring SS out of reset");
@@ -1474,9 +1433,9 @@ mod test {
             rw_fifo_depth: 16,
             wr_threshold: 12,
             device_count: 2,
-            ibi_capable: false, // temporarily disable dynamic addresses
+            ibi_capable: true,
             hj_capable: false,
-            entdaa_enable: false,
+            entdaa_enable: true,
             known_static_addrs: vec![I3C_TARGET_ADDR, I3C_TARGET_ADDR + 1],
         };
 
@@ -1945,8 +1904,11 @@ mod test {
         let mci = dev1.map_mapping(3).unwrap() as *mut u32;
         unsafe {
             println!("Write reset vector");
-            core::ptr::write_volatile(wrapper.offset(FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET), 0xB002_0000); // address of ROM backdoor in AXI
-                                                                              // bring out of reset
+            core::ptr::write_volatile(
+                wrapper.offset(FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET),
+                0xB002_0000,
+            ); // address of ROM backdoor in AXI
+               // bring out of reset
             println!("Bring SS out of reset");
             core::ptr::write_volatile(wrapper.offset(FPGA_WRAPPER_CONTROL_OFFSET), 0x3);
             println!("Write PAUSER");
@@ -2049,14 +2011,17 @@ mod test {
             }
         }
 
-        let status = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_STATUS_OFFSET)) };
+        let status =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_STATUS_OFFSET)) };
         println!("Checking status: {:x}", status);
         let start = std::time::Instant::now();
-        let cycle_count0 = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_CYCLE_COUNT_OFFSET)) };
+        let cycle_count0 =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_CYCLE_COUNT_OFFSET)) };
         println!("Checking cycle count: {}", cycle_count0);
         std::thread::sleep(Duration::from_secs(1));
         let end = std::time::Instant::now();
-        let cycle_count1 = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_CYCLE_COUNT_OFFSET)) };
+        let cycle_count1 =
+            unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_CYCLE_COUNT_OFFSET)) };
         let dur = end - start;
         let cycles = (cycle_count1 - cycle_count0) as f64;
         let seconds = dur.as_secs_f64();
@@ -2065,9 +2030,13 @@ mod test {
             "MCU RISC-V Frequency: {:.6} MHz",
             cycles / seconds / 1000000.0
         );
-        let output0 = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET)) };
+        let output0 = unsafe {
+            core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET))
+        };
         println!("Checking generic output wire 0: {:x}", output0);
-        let output1 = unsafe { core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET)) };
+        let output1 = unsafe {
+            core::ptr::read_volatile(wrapper.offset(FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET))
+        };
         println!("Checking generic output wire 1: {:x}", output1);
 
         let fsm = unsafe { core::ptr::read_volatile(mci.offset(0x24 / 4)) };
