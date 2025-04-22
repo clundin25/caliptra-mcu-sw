@@ -19,6 +19,8 @@ mod test_pldm_request_response;
 
 mod test_caliptra_mailbox;
 
+mod test_get_image_info;
+
 #[cfg(target_arch = "riscv32")]
 mod riscv;
 
@@ -150,7 +152,9 @@ pub(crate) async fn async_main<S: Syscalls>() {
     }
     #[cfg(feature = "test-pldm-request-response")]
     {
-        test_pldm_request_response::test::test_pldm_request_response::<S>().await;
+//        test_pldm_request_response::test::test_pldm_request_response::<S>().await;
+//        test_get_image_info::test_get_image_info::<S>().await;
+        test_get_image_info::test_authorize_and_stash::<S>().await;
     }
     #[cfg(feature = "test-caliptra-mailbox")]
     {

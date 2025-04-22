@@ -68,6 +68,7 @@ pub enum ImageSource {
 pub enum State {
     NotRunning,
     Initializing,
+    Initialized,
     DownloadingHeader,
     HeaderDownloadComplete,
     DownloadingToc,
@@ -92,6 +93,7 @@ static DOWNLOAD_CTX : Mutex<CriticalSectionRawMutex, RefCell<DownloadCtx>> = Mut
     header: [0; core::mem::size_of::<FlashHeader>()],
     checksums: [0; core::mem::size_of::<FlashChecksums>()],
     image_info: [0; core::mem::size_of::<ImageInfo>()],
+    
 }));
 
 
@@ -180,7 +182,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             writeln!(console_writer, "IMAGE_LOADING: PLDM initialized").unwrap();
 
 
-           Self::download_header().await;
+           Self::pldm_download_header().await;
            
 
         }
@@ -201,7 +203,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             MAIN_SIGNAL.wait().await; 
             writeln!(console_writer, "IMAGE_LOADING5: Waiting main ok").unwrap();
             let state = PLDM_STATE.lock(|state| *state.borrow());
-            if state != State::Initializing {
+            if state == State::Initialized {
                 writeln!(console_writer, "IMAGE_LOADING: 1 state {:?}",state).unwrap();
                 break;
             }
@@ -209,8 +211,13 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         }
     }
 
-    async fn download_header()  {
+    async fn pldm_download_header()  {
         let mut console_writer = Console::<S>::writer();
+
+        PLDM_STATE.lock(|state| {
+            let mut state = state.borrow_mut();
+            *state = State::DownloadingHeader;
+        });
         DOWNLOAD_CTX.lock(|ctx| {
             let mut ctx = ctx.borrow_mut();
             ctx.total_length = core::mem::size_of::<FlashHeader>();
@@ -220,11 +227,10 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         });
 
         YIELD_SIGNAL.signal(());
-        // Wait for DownloadingHeader to be ready
         loop {
             MAIN_SIGNAL.wait().await;
             let state = PLDM_STATE.lock(|state| *state.borrow());
-            if state == State::DownloadingToc {
+            if state == State::HeaderDownloadComplete {
                 writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
                 break;
             }
@@ -241,7 +247,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
 
     }
 
-    async fn download_toc(image_id: u32) -> bool
+    async fn pldm_download_toc(image_id: u32) -> bool
     {
         let mut console_writer = Console::<S>::writer();
         writeln!(console_writer, "IMAGE_LOADING: download_toc enter ").unwrap();
@@ -250,6 +256,12 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             let ctx = ctx.borrow();
             let (header, rest) = FlashHeader::ref_from_prefix(&ctx.header).unwrap();
             header.image_count as usize
+        });
+
+        // Set State to DownloadingToc
+        PLDM_STATE.lock(|state| {
+            let mut state = state.borrow_mut();
+            *state = State::DownloadingToc;
         });
 
 
@@ -319,6 +331,40 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         is_image_found
     }
 
+
+    async fn pldm_download_image()
+    {
+        let mut console_writer = Console::<S>::writer();
+        PLDM_STATE.lock(|state| {
+            let mut state = state.borrow_mut();
+            *state = State::DownloadingImage;
+        });
+        let (length, offset) = DOWNLOAD_CTX.lock(|ctx| {
+            let ctx = ctx.borrow();
+            let (info, _) = ImageInfo::ref_from_prefix(&ctx.image_info).unwrap();
+            return (info.size as usize, info.offset as usize);
+        });
+
+        DOWNLOAD_CTX.lock(|ctx| {
+            let mut ctx = ctx.borrow_mut();
+            ctx.total_length = length;
+            ctx.initial_offset = offset;
+            ctx.current_offset = offset;
+            ctx.total_downloaded = 0;
+        });
+
+        YIELD_SIGNAL.signal(());
+        loop {
+            MAIN_SIGNAL.wait().await;
+            let state = PLDM_STATE.lock(|state| *state.borrow());
+            if state == State::ImageDownloadComplete {
+                writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
+                break;
+            }
+            
+        }
+    }
+
     /// Loads the specified image to a storage mapped to the AXI bus memory map.
     ///
     /// # Parameters
@@ -338,7 +384,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
         .unwrap();
     
 
-        if Self::download_toc(image_id).await {
+        if Self::pldm_download_toc(image_id).await {
             writeln!(console_writer, "IMAGE_LOADING: download_toc image found").unwrap();
         } else {
             writeln!(console_writer, "IMAGE_LOADING: download_toc image not found").unwrap();
@@ -346,6 +392,7 @@ impl<'a, S: Syscalls> ImageLoaderAPI<'a, S> {
             return Err(ErrorCode::Fail);
         }
 
+        Self::pldm_download_image().await;
 
 /*
         let offset = self.get_image_offset(image_id).await?;
@@ -526,7 +573,7 @@ impl StubFdOps {
                 
             }
             else if state == State::DownloadingImage {
-                
+                writeln!(console_writer, "IMAGE_LOADING: data {:?} ", &data).unwrap();    
             }
 
             writeln!(console_writer, "IMAGE_LOADING: PLDM_STATE unlocked ").unwrap();
@@ -598,10 +645,9 @@ impl FdOps for StubFdOps {
             let mut state = state.borrow_mut();
             writeln!(console_writer, "IMAGE_LOADING: 2 state {:?}",state).unwrap();
             if *state == State::Initializing {
-                *state = State::DownloadingHeader;
+                *state = State::Initialized;
                 return true;
             } else if *state == State::HeaderDownloadComplete {
-                *state = State::DownloadingToc;
                 return true;
             } else if *state == State::ImageDownloadReady {
                 return true;

@@ -75,7 +75,10 @@ lazy_static! {
             // First 128 bytes are 0x55, next 128 bytes are 0xAA
             size: 4096,
             image_data: {
-                Some(vec![
+
+                let image1 = vec![0x55; 128];
+                let image2 = vec![0xAA; 128];
+                let mut flash_image = vec![
 
                         // Header: magic, version, image_count
                         0x48, 0x53, 0x4C, 0x46,  // "FLSH"
@@ -89,25 +92,17 @@ lazy_static! {
                         // ImageInfo[0]
                         0x01, 0x00, 0x00, 0x00,  // identifier
                         0x30, 0x00, 0x00, 0x00,  // offset
-                        0x10, 0x00, 0x00, 0x00,  // size
+                        0x80, 0x00, 0x00, 0x00,  // size
 
                         // ImageInfo[1]
                         0x02, 0x00, 0x00, 0x00,  // identifier
-                        0x40, 0x00, 0x00, 0x00,  // offset
-                        0x08, 0x00, 0x00, 0x00,  // size
+                        0xB0, 0x00, 0x00, 0x00,  // offset
+                        0x80, 0x00, 0x00, 0x00,  // size
 
-                        // Padding to offset 0x30
-                        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
-                        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
-
-                        // Image[0] @ 0x30
-                        0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
-                        0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1, 0xC1,
-
-                        // Image[1] @ 0x40
-                        0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2, 0xD2,
-
-                ])
+                ];
+                flash_image.extend_from_slice(&image1);
+                flash_image.extend_from_slice(&image2);
+                Some(flash_image)
             },
             ..Default::default()
 

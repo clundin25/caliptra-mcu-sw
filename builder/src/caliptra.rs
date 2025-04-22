@@ -9,8 +9,7 @@ use caliptra_auth_man_gen::{
     AuthManifestGenerator, AuthManifestGeneratorConfig, AuthManifestGeneratorKeyConfig,
 };
 use caliptra_auth_man_types::{
-    AuthManifestFlags, AuthManifestImageMetadata, AuthManifestPrivKeys, AuthManifestPubKeys,
-    AuthorizationManifest, ImageMetadataFlags,
+    Addr64, AuthManifestFlags, AuthManifestImageMetadata, AuthManifestPrivKeys, AuthManifestPubKeys, AuthorizationManifest, ImageMetadataFlags
 };
 use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::*;
@@ -108,6 +107,10 @@ impl CaliptraBuilder {
             fw_id: 2,
             flags: flags.0,
             digest,
+            image_load_address: Addr64 { lo: 0x50_0000, hi: 0 },
+            image_staging_address: Addr64 { lo: 0x8000_0000, hi: 0 },
+            classification: 0xaaaa,
+            ..Default::default()
         }];
         let manifest = Self::create_auth_manifest_with_metadata(metadata);
 

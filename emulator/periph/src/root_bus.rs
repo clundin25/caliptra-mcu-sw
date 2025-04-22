@@ -15,7 +15,7 @@ Abstract:
 use crate::{spi_host::SpiHost, EmuCtrl, Uart};
 use caliptra_emu_bus::{Device, Event, EventData};
 use emulator_bus::{Bus, Clock, Ram, Rom};
-use emulator_consts::RAM_SIZE;
+use emulator_consts::{EXTERNAL_TEST_SRAM_SIZE, RAM_SIZE};
 use emulator_cpu::{Pic, PicMmioRegisters};
 use emulator_derive::Bus;
 use std::{
@@ -58,6 +58,9 @@ pub struct CaliptraRootBus {
     #[peripheral(offset = 0x6000_0000, len = 0x507d)]
     pub pic_regs: PicMmioRegisters,
 
+    #[peripheral(offset = 0x8000_0000, len = 0x1000)]
+    pub external_test_sram: Rc<RefCell<Ram>>,
+
     event_sender: Option<mpsc::Sender<Event>>,
 }
 
@@ -76,6 +79,7 @@ impl CaliptraRootBus {
         let rom = Rom::new(std::mem::take(&mut args.rom));
         let uart_irq = pic.register_irq(Self::UART_NOTIF_IRQ);
         let ram = Ram::new(vec![0; RAM_SIZE as usize]);
+        let external_test_sram = Ram::new(vec![0; EXTERNAL_TEST_SRAM_SIZE as usize]);
         Ok(Self {
             rom,
             ram: Rc::new(RefCell::new(ram)),
@@ -84,12 +88,20 @@ impl CaliptraRootBus {
             ctrl: EmuCtrl::new(),
             pic_regs: pic.mmio_regs(clock.clone()),
             event_sender: None,
+            external_test_sram : Rc::new(RefCell::new(external_test_sram)),
         })
     }
 
     pub fn load_ram(&mut self, offset: usize, data: &[u8]) {
         if offset + data.len() > self.ram.borrow().len() as usize {
             panic!("Data exceeds RAM size");
+        }
+        self.ram.borrow_mut().data_mut()[offset..offset + data.len()].copy_from_slice(data);
+    }
+
+    pub fn load_test_sram(&mut self, offset: usize, data: &[u8]) {
+        if offset + data.len() > self.external_test_sram.borrow().len() as usize {
+            panic!("Data exceeds TEST SRAM size");
         }
         self.ram.borrow_mut().data_mut()[offset..offset + data.len()].copy_from_slice(data);
     }
@@ -113,6 +125,8 @@ impl CaliptraRootBus {
         self.spi.incoming_event(event.clone());
         self.ram.borrow_mut().incoming_event(event.clone());
         self.pic_regs.incoming_event(event.clone());
+
+        println!("{:?}",event);
 
         if let (Device::MCU, EventData::MemoryRead { start_addr, len }) =
             (event.dest, event.event.clone())
@@ -161,6 +175,37 @@ impl CaliptraRootBus {
                 let ram_size = ram.len() as usize;
                 let len = data.len().min(ram_size - start);
                 ram.data_mut()[start..start + len].copy_from_slice(&data[..len]);
+            }
+        }
+
+        if let (Device::ExternalTestSram, EventData::MemoryRead { start_addr, len }) =
+            (event.dest, event.event.clone())
+        {
+            let start = start_addr as usize;
+            let len = len as usize;
+            if start >= EXTERNAL_TEST_SRAM_SIZE as usize || start + len >= EXTERNAL_TEST_SRAM_SIZE as usize {
+                println!(
+                    "Ignoring invalid MCU RAM read from {}..{}",
+                    start,
+                    start + len
+                );
+            } else {
+                let ram = self.external_test_sram.borrow();
+                let ram_size = ram.len() as usize;
+                let len = len.min(ram_size - start);
+
+                if let Some(event_sender) = self.event_sender.as_ref() {
+                    event_sender
+                        .send(Event {
+                            src: Device::MCU,
+                            dest: event.src,
+                            event: EventData::MemoryReadResponse {
+                                start_addr,
+                                data: ram.data()[start..start + len].to_vec(),
+                            },
+                        })
+                        .unwrap();
+                }
             }
         }
     }

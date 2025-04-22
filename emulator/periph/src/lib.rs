@@ -11,8 +11,10 @@ Abstract:
     File contains exports for for Caliptra Emulator Peripheral library.
 
 --*/
+mod dma_ctrl;
 mod emu_ctrl;
 mod flash_ctrl;
+mod helpers;
 mod i3c;
 pub(crate) mod i3c_protocol;
 mod mci;

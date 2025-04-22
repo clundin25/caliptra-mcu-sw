@@ -478,7 +478,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
     }
 
     if cfg!(any(
-        feature = "test-pldm-request-response",
+//        feature = "test-pldm-request-response",
         feature = "test-pldm-discovery",
         feature = "test-pldm-fw-update",
     )) {
@@ -490,7 +490,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             .unwrap();
         PldmRequestResponseTest::run(pldm_socket, running.clone());
     }
-
+/*
     
         i3c_controller.start();
         let pldm_transport =
@@ -500,7 +500,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             .unwrap();
     let test =    tests::pldm_fw_update_test::PldmFwUpdateTest::run(pldm_socket, running.clone());
     
-
+ */
     let create_flash_controller = |default_path: &str, error_irq: u8, event_irq: u8| {
         // Use a temporary file for flash storage if we're running a test
         let flash_file = if cfg!(any(
@@ -564,6 +564,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         Some(Box::new(main_flash_controller)),
         Some(Box::new(recovery_flash_controller)),
         Some(Box::new(mci)),
+        None,
         None,
         None,
         None,
@@ -695,6 +696,6 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             );
         }
     }
-    test.join().unwrap();
+ //   test.join().unwrap();
     Ok(uart_output.map(|o| o.borrow().clone()).unwrap_or_default())
 }

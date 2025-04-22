@@ -113,6 +113,7 @@ pub enum MailboxRequest {
     GetImageLocationOffset(GetImageLocationOffsetRequest),
     GetImageSize(GetImageSizeRequest),
     AuthorizeAndStash(AuthorizeAndStashRequest),
+    GetImageInfo(GetImageInfoRequest),
 }
 
 impl MailboxRequest {
@@ -124,6 +125,7 @@ impl MailboxRequest {
             MailboxRequest::GetImageLocationOffset(_) => GetImageLocationOffsetRequest::COMMAND_ID,
             MailboxRequest::GetImageSize(_) => GetImageSizeRequest::COMMAND_ID,
             MailboxRequest::AuthorizeAndStash(_) => AuthorizeAndStashRequest::COMMAND_ID,
+            MailboxRequest::GetImageInfo(_) => GetImageInfoRequest::COMMAND_ID,
         }
     }
 
@@ -135,6 +137,7 @@ impl MailboxRequest {
             MailboxRequest::GetImageLocationOffset(req) => req.as_bytes(),
             MailboxRequest::GetImageSize(req) => req.as_bytes(),
             MailboxRequest::AuthorizeAndStash(req) => req.as_bytes(),
+            MailboxRequest::GetImageInfo(req) => req.as_bytes(),
         }
     }
 
@@ -157,6 +160,9 @@ impl MailboxRequest {
             MailboxRequest::AuthorizeAndStash(_) => {
                 <AuthorizeAndStashRequest as MailboxRequestType>::Response::parse_response(response)
             }
+            MailboxRequest::GetImageInfo(_) => {
+                <GetImageInfoRequest as MailboxRequestType>::Response::parse_response(response)
+            }
         }
     }
 }
@@ -168,6 +174,7 @@ pub enum MailboxResponse {
     GetImageLocationOffset(GetImageLocationOffsetResponse),
     GetImageSize(GetImageSizeResponse),
     AuthorizeAndStash(AuthorizeAndStashResponse),
+    GetImageInfo(GetImageInfoResponse),
 }
 
 impl MailboxResponse {
@@ -178,6 +185,7 @@ impl MailboxResponse {
             MailboxResponse::GetImageLocationOffset(resp) => resp.verify(),
             MailboxResponse::GetImageSize(resp) => resp.verify(),
             MailboxResponse::AuthorizeAndStash(resp) => resp.verify(),
+            MailboxResponse::GetImageInfo(resp) => resp.verify(),
         }
     }
 }
@@ -376,6 +384,41 @@ impl MailboxResponseType for AuthorizeAndStashResponse {
     fn parse_response(response: &[u8]) -> Result<MailboxResponse, ErrorCode> {
         AuthorizeAndStashResponse::try_read_from_bytes(response)
             .map(MailboxResponse::AuthorizeAndStash)
+            .map_err(|_| ErrorCode::Invalid)
+    }
+}
+
+
+/// Request to get the image info
+#[repr(C)]
+#[derive(FromBytes, IntoBytes, Debug, Immutable, Default)]
+pub struct GetImageInfoRequest {
+    pub hdr: MailboxReqHeader,
+    pub fw_id: [u8; 4],
+}
+
+impl MailboxRequestType for GetImageInfoRequest {
+    const COMMAND_ID: u32 = 0x494D_4530; // "IME0"
+    type Response = GetImageInfoResponse;
+}
+
+/// Response for the get image size request.
+#[repr(C)]
+#[derive(Default, FromBytes, IntoBytes, Debug, Immutable)]
+pub struct GetImageInfoResponse {
+    pub hdr: MailboxRespHeader,
+    pub component_id: u32,
+    pub flags: u32,
+    pub image_load_address_high: u32,
+    pub image_load_address_low: u32,
+    pub image_staging_address_high: u32,
+    pub image_staging_address_low: u32,
+}
+
+impl MailboxResponseType for GetImageInfoResponse {
+    fn parse_response(response: &[u8]) -> Result<MailboxResponse, ErrorCode> {
+        GetImageSizeResponse::try_read_from_bytes(response)
+            .map(MailboxResponse::GetImageSize)
             .map_err(|_| ErrorCode::Invalid)
     }
 }
