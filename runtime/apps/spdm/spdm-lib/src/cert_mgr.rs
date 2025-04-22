@@ -1,17 +1,15 @@
 // Licensed under the Apache-2.0 license
 use crate::error::{SpdmError, SpdmResult};
-use crate::protocol::BaseHashAlgoType;
-use libapi_caliptra::crypto::cert_mgr::{CertMgrContext, CertType};
+use core::mem::size_of;
+use libapi_caliptra::crypto::cert_store::CertStoreContext;
 use libapi_caliptra::crypto::error::CryptoError;
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 use libtock_platform::Syscalls;
 use thiserror_no_std::Error;
-use zerocopy::{FromBytes, Immutable, IntoBytes}; 
-use core::mem::size_of;
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::context::SpdmContext;
 use core::fmt::Write;
-
 
 pub const SPDM_MAX_CERT_CHAIN_SLOTS: usize = 8;
 pub const SPDM_MAX_HASH_SIZE: usize = 64;
@@ -270,7 +268,6 @@ impl<'a> CertSlotInfo<'a> {
             reserved: 0,
         };
 
-
         let cert_chain_header_bytes = cert_chain_header.as_bytes();
 
         let mut hash_ctx = HashContext::<S>::new();
@@ -279,16 +276,19 @@ impl<'a> CertSlotInfo<'a> {
         hash_ctx
             .init(hash_algo, Some(&cert_chain_header_bytes[..]))
             .await?;
-        
 
         // Hash the root certificate hash
         hash_ctx.update(&root_hash[..hash_size]).await?;
-        
-        writeln!(ctx.cw, "SPDM_LIB: cert_chain_digest total_len {} root_hash {:?}", total_len, root_hash).unwrap();
+
+        writeln!(
+            ctx.cw,
+            "SPDM_LIB: cert_chain_digest total_len {} root_hash {:?}",
+            total_len, root_hash
+        )
+        .unwrap();
 
         // Hash the certificate chain data
         for i in 0..self.max_certs_in_chain as usize {
-
             let cert = self.cert_der::<S>(i).await;
             if let Some(cert) = cert {
                 hash_ctx.update(cert).await?;
@@ -417,7 +417,8 @@ impl<'a> DeviceCertsManager<'a> {
             .root_cert_hash::<S>(hash_algo, &mut root_hash)
             .await?;
 
-        let cert_chain_buf = SpdmCertChainBuffer::new(&cert_chain_data[..cert_chain_size], &root_hash[..hash_size])?;
+        let cert_chain_buf =
+            SpdmCertChainBuffer::new(&cert_chain_data[..cert_chain_size], &root_hash[..hash_size])?;
         Ok(cert_chain_buf)
     }
 }

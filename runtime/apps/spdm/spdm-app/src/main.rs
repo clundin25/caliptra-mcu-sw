@@ -9,7 +9,7 @@ use core::fmt::Write;
 use libsyscall_caliptra::mctp::driver_num;
 use libtock_console::{Console, ConsoleWriter};
 use libtock_platform::Syscalls;
-use spdm_lib::cert_mgr::{CertSlotInfo, DeviceCertsManager, SpdmCertModel, EccCertChainBuffer};
+use spdm_lib::cert_mgr::{CertSlotInfo, DeviceCertsManager, EccCertChainBuffer, SpdmCertModel};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::context::SpdmContext;
 use spdm_lib::protocol::*;
@@ -124,7 +124,6 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
 
     let cert_slots = [slot0_cert_info];
 
-
     let device_certs_mgr = match DeviceCertsManager::new(
         config::CERT_CHAIN_SLOT_MASK,
         config::CERT_CHAIN_SLOT_MASK,
@@ -132,7 +131,12 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
     ) {
         Ok(mgr) => mgr,
         Err(e) => {
-            writeln!(cw, "SPDM_APP: Failed to create device certs manager: {:?}", e).unwrap();
+            writeln!(
+                cw,
+                "SPDM_APP: Failed to create device certs manager: {:?}",
+                e
+            )
+            .unwrap();
             return;
         }
     };

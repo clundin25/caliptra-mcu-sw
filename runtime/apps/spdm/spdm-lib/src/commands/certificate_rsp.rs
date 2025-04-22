@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::{SPDM_MAX_CERT_CHAIN_SLOTS};
+use crate::cert_mgr::SPDM_MAX_CERT_CHAIN_SLOTS;
 use crate::codec::{Codec, CodecError, CodecResult, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
 use crate::context::SpdmContext;
@@ -152,9 +152,9 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
         .get_select_hash_algo()
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
-    let hash_algo = hash_type.try_into().map_err(|_| {
-        ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None)
-    })?;
+    let hash_algo = hash_type
+        .try_into()
+        .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
     let cert_chain_buffer = ctx
         .device_certs_manager
@@ -162,18 +162,15 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
         .await
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
-
     let mut offset = req.offset;
     let mut length = req.length;
-    
+
     writeln!(
         ctx.cw,
         "SPDM_LIB: GetCertificate: slot_id={}, offset={}, length={}, cert_chain_buffer.length={}\n",
-        slot_id,
-        offset,
-        length,
-        cert_chain_buffer.length
-    ).unwrap();
+        slot_id, offset, length, cert_chain_buffer.length
+    )
+    .unwrap();
 
     // When SlotSizeRequested=1b in the GET_CERTIFICATE request, the Responder shall return
     // the number of bytes available for certificate chain storage in the RemainderLength field of the response.
@@ -211,8 +208,12 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
     // Set the param2 field if the connection version is V13 or higher and multi-key capability is supported
     let mut param2 = 0;
     if connection_version >= SpdmVersion::V13 && ctx.local_capabilities.flags.multi_key_cap() != 0 {
-        let cert_chain_slot_info = ctx.device_certs_manager.cert_chain_slot_info(slot_id).map_err(|_| 
-            ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
+        let cert_chain_slot_info = ctx
+            .device_certs_manager
+            .cert_chain_slot_info(slot_id)
+            .map_err(|_| {
+                ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
+            })?;
 
         if let Some(cert_model) = cert_chain_slot_info.cert_model {
             param2 = cert_model as u8;

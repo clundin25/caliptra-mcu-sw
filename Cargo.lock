@@ -1876,6 +1876,7 @@ version = "0.1.0"
 dependencies = [
  "caliptra-api",
  "caliptra-error",
+ "dpe",
  "futures",
  "libsyscall-caliptra",
  "libtock_platform",

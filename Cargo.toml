@@ -185,6 +185,7 @@ caliptra-image-types = { git = "https://github.com/chipsalliance/caliptra-sw", r
 caliptra-registers = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "4b6987efd1a2be2a6e05acbea7622e20264acdb7" }
 caliptra-test = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "4b6987efd1a2be2a6e05acbea7622e20264acdb7" }
 ureg = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "4b6987efd1a2be2a6e05acbea7622e20264acdb7" }
+dpe = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "4b6987efd1a2be2a6e05acbea7622e20264acdb7", default-features = false, features = ["dpe_profile_p384_sha384"] }
 
 # local caliptra dependency; useful when developing
 # caliptra-api = { path = "../caliptra-sw/api" }
@@ -205,6 +206,8 @@ ureg = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "4b6987efd1
 # caliptra-registers = { path = "../caliptra-sw/registers" }
 # caliptra-test = { path = "../caliptra-sw/test" }
 # ureg = { path = "../caliptra-sw/ureg" }
+# dpe = { path = "../caliptra-sw/dpe/dpe", default-features = false, features = ["dpe_profile_p384_sha384"] }
+
 
 # tock dependencies; keep git revs in sync
 capsules-core = { git = "https://github.com/tock/tock.git", rev = "b128ae817b86706c8c4e39d27fae5c54b98659f1" }

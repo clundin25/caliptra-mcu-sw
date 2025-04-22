@@ -167,6 +167,13 @@ pub(crate) async fn async_main<S: Syscalls>() {
     {
         test_caliptra_crypto::test_caliptra_sha::<S>().await;
         test_caliptra_crypto::test_get_idev_csr::<S>().await;
+        test_caliptra_crypto::test_get_ldev_cert::<S>().await;
+        test_caliptra_crypto::test_get_fmc_alias_cert::<S>().await;
+        test_caliptra_crypto::test_get_rt_alias_cert::<S>().await;
+        test_caliptra_crypto::test_get_cert_chain::<S>().await;
+        test_caliptra_crypto::test_certify_attestation_key::<S>().await;
+        test_caliptra_crypto::test_sign_with_attestation_key::<S>().await;
+
         romtime::test_exit(0);
     }
 
