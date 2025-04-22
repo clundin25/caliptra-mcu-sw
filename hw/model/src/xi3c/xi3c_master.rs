@@ -362,6 +362,10 @@ impl Controller {
         Ok(())
     }
 
+    /// This function receives data during IBI in polled mode.
+    ///
+    /// It polls the data register for data to come in during IBI.
+    /// If controller fails to read data due to any error, it will return an Err with the status.
     pub fn ibi_recv_polled(&mut self) -> Result<Vec<u8>, i32> {
         let mut recv = vec![];
         let mut data_index: u16;

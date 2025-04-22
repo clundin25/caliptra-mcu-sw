@@ -282,7 +282,11 @@ impl Controller {
                 self.send_transfer_cmd(&mut cmd, Ccc::Byte(XI3C_CCC_SETDASA))?;
                 println!("Acknowledged");
                 for (i, addr) in static_addrs.iter().enumerate() {
-                    self.dyna_addr_assign_static(*addr, DYNA_ADDR_LIST[i])?;
+                    self.dyna_addr_assign_static(
+                        *addr,
+                        DYNA_ADDR_LIST[i],
+                        i == DYNA_ADDR_LIST.len() - 1,
+                    )?;
                 }
             }
             self.config_ibi(self.config.device_count);
@@ -331,10 +335,15 @@ impl Controller {
     }
 
     /// Assign a dynamic address to a single static device using SETDASA
-    pub fn dyna_addr_assign_static(&mut self, static_addr: u8, dyn_addr: u8) -> Result<(), i32> {
+    pub fn dyna_addr_assign_static(
+        &mut self,
+        static_addr: u8,
+        dyn_addr: u8,
+        last: bool,
+    ) -> Result<(), i32> {
         let mut cmd: Command = Command {
             cmd_type: 1,
-            no_repeated_start: 0,
+            no_repeated_start: if last { 1 } else { 0 }, // controller has a bug where it does not send 7E after CCC if it is a repeated start followed by non-CCC
             pec: 0,
             target_addr: static_addr,
             rw: 0,
@@ -409,6 +418,8 @@ impl Controller {
                 | (recv_buffer[4] as u64) << 8
                 | recv_buffer[5] as u64;
             self.target_info_table[self.cur_device_count as usize].bcr = recv_buffer[6];
+            println!("Controller received BCR: {:x}", recv_buffer[6]);
+            println!("Controller received DCR: {:x}", recv_buffer[7]);
             self.target_info_table[self.cur_device_count as usize].dcr = recv_buffer[7];
             self.target_info_table[self.cur_device_count as usize].dyna_addr =
                 dyna_addr[index as usize];
@@ -434,6 +445,7 @@ impl Controller {
         data &= !XI3C_CR_EN_MASK;
         data |= enable as u32;
         self.regs().cr.set(data);
+        println!("XI3C: Enable set to {:x}", self.regs().cr.get());
     }
 
     #[inline]
@@ -442,6 +454,10 @@ impl Controller {
         let mut data = self.regs().cr.get();
         data |= XI3C_CR_IBI_MASK;
         self.regs().cr.set(data);
+        println!(
+            "Control register after enabling IBI: {:x}",
+            self.regs().cr.get()
+        );
     }
 
     #[inline]
@@ -457,6 +473,7 @@ impl Controller {
         assert!(self.ready);
         let mut addr_bcr = (self.target_info_table[dev_index as usize].dyna_addr & 0x7f) as u32;
         addr_bcr |= ((self.target_info_table[dev_index as usize].bcr & 0xff) as u32) << 8;
+        println!("Updating BCR for device {:x}", addr_bcr);
         self.regs().target_addr_bcr.set(addr_bcr);
     }
 
