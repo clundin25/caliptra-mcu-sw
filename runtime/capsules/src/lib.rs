@@ -5,6 +5,7 @@
 
 pub mod test;
 
+pub mod dma;
 pub mod flash_partition;
 pub mod mailbox;
 pub mod mctp;

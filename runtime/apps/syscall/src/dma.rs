@@ -8,6 +8,7 @@
 use core::marker::PhantomData;
 use libtock_platform::{share, AllowRo, DefaultConfig, ErrorCode, Syscalls};
 use libtockasync::TockSubscribe;
+use romtime::println;
 /// DMA interface.
 pub struct DMA<S: Syscalls> {
     syscall: PhantomData<S>,
@@ -71,9 +72,46 @@ impl<S: Syscalls> DMA<S> {
     }
 
     async fn xfer_src_address(&self) -> Result<(), ErrorCode> {
-        let async_start = TockSubscribe::subscribe::<S>(self.driver_num, dma_subscribe::XFER_DONE);
-        S::command(self.driver_num, dma_cmd::XFER_AXI_TO_AXI, 0, 0).to_result::<(), ErrorCode>()?;
-        async_start.await.map(|_| ())
+
+        let result = share::scope::<(), _, _>(|_handle| {
+            let async_start = TockSubscribe::subscribe::<S>(self.driver_num, dma_subscribe::XFER_DONE);
+            println!("Syscall xfer_src_address");
+            S::command(self.driver_num, dma_cmd::XFER_AXI_TO_AXI, 0, 0).to_result::<(), ErrorCode>()?;
+            
+            
+
+            Ok(async_start)
+        })?.await;
+        println!("Finished Syscall xfer_src_address2");
+
+        result.map(|_| ()).map_err(|_| ErrorCode::Fail)
+
+/*
+
+        let result = share::scope::<(), _, _>(|_handle| {
+            let sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
+                self.driver_num,
+                subscribe::READ_DONE,
+                rw_allow::READ,
+                buf,
+            );
+
+            S::command(
+                self.driver_num,
+                flash_storage_cmd::READ,
+                address as u32,
+                len as u32,
+            )
+            .to_result::<(), ErrorCode>()?;
+
+            Ok(sub)
+        })?
+        .await;
+
+        S::unallow_rw(self.driver_num, rw_allow::READ);
+         */
+
+
     }
 
     async fn xfer_src_buffer(&self, buffer: &[u8]) -> Result<(), ErrorCode> {
@@ -132,7 +170,7 @@ impl<S: Syscalls> DMA<S> {
 // -----------------------------------------------------------------------------
 
 // Driver number for the DMA interface
-pub const DMA_DRIVER_NUM: u32 = 0x8000_0008;
+pub const DMA_DRIVER_NUM: u32 = 0x9000_0000;
 
 /// Command IDs used by the DMA interface.
 mod dma_cmd {

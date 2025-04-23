@@ -52,13 +52,10 @@ pub trait DMA {
 }
 
 /// DMA Route configuration for Read/Write routes.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone,PartialEq,Eq)]
 pub enum DmaRoute {
     Disabled,
-    AxiToMailbox,
-    AxiToAHB,
     AxiToAxi,
-    AHBToAxi,
 }
 
 /// Represents the current status of the DMA transfer.

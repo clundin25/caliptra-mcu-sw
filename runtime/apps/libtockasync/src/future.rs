@@ -7,7 +7,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 use libtock_platform::exit_on_drop::ExitOnDrop;
 use libtock_platform::*;
-
+use romtime::println;
 /// TockSubscribe is a future implementation that performs a Tock subscribe call and
 /// is ready when the subscribe upcall happens.
 ///
@@ -256,6 +256,8 @@ impl TockSubscribe {
         let upcall_fcn = (kernel_upcall::<S> as *const ()) as usize;
         let upcall_data = (&*f as *const TockSubscribe) as usize;
 
+        println!("syscall subscribe f={:08x}", &f as *const _ as usize);
+
         // Safety: we are passing in a fixed (safe) function pointer and a pointer to a pinned instance.
         // If the instance is dropped before the upcall comes in, then we panic in the Drop impl.
         let [r0, r1, _, _] = unsafe {
@@ -271,9 +273,11 @@ impl TockSubscribe {
             return_variant::SUCCESS_2_U32 => {}
             return_variant::FAILURE_2_U32 => {
                 f.set_err(r1.as_u32().try_into().unwrap_or(ErrorCode::Fail));
+                println!("syscall error");
             }
             _ => {
                 f.set_err(ErrorCode::Fail);
+                println!("syscall error2");
             }
         }
         f
@@ -288,6 +292,7 @@ extern "C" fn kernel_upcall<S: Syscalls>(arg0: u32, arg1: u32, arg2: u32, data: 
     // will never be called.
     // If the reference to the TockSubscribe is dropped before the upcall, then we panic
     // in the Drop instead of dereferencing into an invalid pointer.
+    println!("kernel_upcalle f={:08x}", upcall as *const _ as usize);
     unsafe { (*upcall).result.set(Some((arg0, arg1, arg2))) };
     if let Some(waker) = unsafe { (*upcall).waker.take() } {
         waker.wake();

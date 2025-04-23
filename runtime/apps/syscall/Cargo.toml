@@ -11,3 +11,4 @@ caliptra-api.workspace = true
 libtock_console.workspace = true
 libtock_platform.workspace = true
 libtockasync.workspace = true
+romtime.workspace = true

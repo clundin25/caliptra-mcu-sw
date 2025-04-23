@@ -13,6 +13,7 @@ use crate::timers::InternalTimers;
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use capsules_core::virtualizers::virtual_flash;
 use capsules_runtime::mctp::base_protocol::MessageType;
+use dma_driver::hil::DMA;
 use core::ptr::{addr_of, addr_of_mut};
 use kernel::capabilities;
 use kernel::component::Component;
@@ -131,6 +132,7 @@ struct VeeR {
         'static,
         VirtualMuxAlarm<'static, InternalTimers<'static>>,
     >,
+    dma: &'static capsules_runtime::dma::Dma<'static>,
 }
 
 /// Mapping of integer syscalls to objects that implement syscalls.
@@ -156,6 +158,8 @@ impl SyscallDriverLookup for VeeR {
                 f(Some(self.recovery_image_par))
             }
             capsules_runtime::mailbox::DRIVER_NUM => f(Some(self.mailbox)),
+            capsules_runtime::dma::DMA_CTRL_DRIVER_NUM => f(Some(self.dma)),
+
             _ => f(None),
         }
     }
@@ -330,6 +334,7 @@ pub unsafe fn main() {
     .finalize(crate::mailbox_component_static!(InternalTimers<'static>));
     mailbox.alarm.set_alarm_client(mailbox);
 
+
     let peripherals = static_init!(
         VeeRDefaultPeripherals,
         VeeRDefaultPeripherals::new(mux_alarm)
@@ -467,6 +472,16 @@ pub unsafe fn main() {
         capsules_runtime::flash_partition::BUF_LEN
     ));
 
+    let dma = runtime_components::dma::DmaComponent::new(
+        &peripherals.dma,
+        board_kernel,
+        capsules_runtime::dma::DMA_CTRL_DRIVER_NUM,
+    ).finalize( kernel::static_buf!(
+        capsules_runtime::dma::Dma<'static>
+    ));
+
+
+
     // Need to enable all interrupts for Tock Kernel
     chip.enable_pic_interrupts();
     chip.enable_timer_interrupts();
@@ -504,6 +519,7 @@ pub unsafe fn main() {
             active_image_par,
             recovery_image_par,
             mailbox,
+            dma,
         }
     );
 

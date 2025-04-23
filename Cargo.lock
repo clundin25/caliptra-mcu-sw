@@ -748,6 +748,7 @@ dependencies = [
  "caliptra-api",
  "capsules-core",
  "capsules-extra",
+ "dma-driver",
  "flash-driver",
  "i3c-driver",
  "kernel",
@@ -1148,6 +1149,17 @@ dependencies = [
  "const-oid",
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "dma-driver"
+version = "0.1.0"
+dependencies = [
+ "capsules-core",
+ "kernel",
+ "registers-generated",
+ "romtime",
+ "tock-registers",
 ]
 
 [[package]]
@@ -1914,6 +1926,7 @@ dependencies = [
  "libtock_console",
  "libtock_platform",
  "libtockasync",
+ "romtime",
 ]
 
 [[package]]
@@ -2019,6 +2032,7 @@ dependencies = [
  "libtock_runtime",
  "libtock_unittest",
  "portable-atomic",
+ "romtime",
 ]
 
 [[package]]
@@ -2716,6 +2730,7 @@ dependencies = [
  "capsules-runtime",
  "capsules-system",
  "components",
+ "dma-driver",
  "flash-driver",
  "i3c-driver",
  "kernel",

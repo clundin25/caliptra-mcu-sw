@@ -123,6 +123,7 @@ zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_de
 
 # local dependencies
 capsules-runtime = { path = "runtime/capsules" }
+dma-driver = { path = "runtime/dma" }
 emulator-bmc = { path = "emulator/bmc" }
 emulator-bus = { path = "emulator/bus" }
 emulator-caliptra = { "path" = "emulator/caliptra" }

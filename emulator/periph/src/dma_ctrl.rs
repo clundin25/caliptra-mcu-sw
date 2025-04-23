@@ -13,6 +13,7 @@ Abstract:
 --*/
 
 use emulator_bus::{ActionHandle, Clock, Ram, ReadWriteRegister, Timer};
+use emulator_consts::RAM_OFFSET;
 use emulator_cpu::Irq;
 use emulator_registers_generated::dma::DmaPeripheral;
 use registers_generated::dma_ctrl::bits::*;
@@ -25,7 +26,13 @@ pub enum DmaCtrlIntType {
     Error = 1,
     Event = 2,
 }
+#[derive(Clone, Copy,PartialEq)]
+pub enum AXIPeripheral {
+    MCU_SRAM = 0,
+    EXTERNAL_SRAM = 1,
+}
 
+#[derive(Clone, Copy)]
 pub struct AxiAddr {
     pub lo: u32,
     pub hi: u32,
@@ -110,10 +117,6 @@ impl DummyDmaCtrl {
         })
     }
 
-    fn set_mcu_sram(&mut self, ram: std::rc::Rc<std::cell::RefCell<emulator_bus::Ram>>) {
-        self.mcu_sram = Some(ram);
-    }
-
     fn raise_interrupt(&mut self, interrupt_type: DmaCtrlIntType) {
         match interrupt_type {
             DmaCtrlIntType::Error => {
@@ -172,6 +175,41 @@ impl DummyDmaCtrl {
         }
     }
 
+    fn get_axi_peripheral_type(addr: AxiAddr) -> Option<AXIPeripheral> {
+        match addr {
+            AxiAddr { lo, hi } if lo >= MCU_SRAM_START_ADDR.lo && hi <= MCU_SRAM_END_ADDR.hi => {
+                Some(AXIPeripheral::MCU_SRAM)
+            }
+            AxiAddr { lo, hi } if lo >= EXTERNAL_SRAM_START_ADDR.lo && hi <= EXTERNAL_SRAM_END_ADDR.hi => {
+                Some(AXIPeripheral::EXTERNAL_SRAM)
+            }
+            _ => None
+        }
+    }
+
+    fn get_axi_ram(&self, peripeheral: AXIPeripheral) -> Option<Rc<RefCell<Ram>>> {
+        match peripeheral {
+            AXIPeripheral::MCU_SRAM => self.mcu_sram.clone(),
+            AXIPeripheral::EXTERNAL_SRAM => self.external_sram.clone(),
+        }
+    }
+
+    fn ram_address_to_offset(addr: AxiAddr) -> Option<u32> {
+        let peripheral = Self::get_axi_peripheral_type(addr);
+        if peripheral.is_none() {
+            return None;
+        }
+        let peripheral = peripheral.unwrap();
+        match peripheral {
+            AXIPeripheral::MCU_SRAM => {
+                return Some(addr.lo - RAM_OFFSET);
+            }
+            AXIPeripheral::EXTERNAL_SRAM => {
+                return Some(addr.lo);
+            }
+        }
+    }
+
 
     fn start(&mut self) -> Result<(), DmaOpError> {
         let xfer_size = self.xfer_size.reg.get() as usize;
@@ -183,34 +221,39 @@ impl DummyDmaCtrl {
             lo: self.dest_addr_low.reg.get(),
             hi: self.dest_addr_high.reg.get(),
         };
-        let source_ram = match source_addr {
-            AxiAddr { lo, hi } if lo >= MCU_SRAM_START_ADDR.lo && hi <= MCU_SRAM_END_ADDR.hi => {
-                self.mcu_sram.as_ref().unwrap()
-            }
-            AxiAddr { lo, hi } if lo >= EXTERNAL_SRAM_START_ADDR.lo && hi <= EXTERNAL_SRAM_END_ADDR.hi => {
-                self.external_sram.as_ref().unwrap()
-            }
-            _ => return Err(DmaOpError::ReadError),
-        };
-        let dest_ram = match dest_addr {
-            AxiAddr { lo, hi } if lo >= MCU_SRAM_START_ADDR.lo && hi <= MCU_SRAM_END_ADDR.hi => {
-                self.mcu_sram.as_ref().unwrap()
-            }
-            AxiAddr { lo, hi } if lo >= EXTERNAL_SRAM_START_ADDR.lo && hi <= EXTERNAL_SRAM_END_ADDR.hi => {
-                self.external_sram.as_ref().unwrap()
-            }
-            _ => return Err(DmaOpError::WriteError),
-        };
+        let source_ram = Self::get_axi_peripheral_type(source_addr);
+        if source_ram.is_none() {
+            return Err(DmaOpError::ReadError);
+        }
+        let dest_ram = Self::get_axi_peripheral_type(dest_addr);
+        if dest_ram.is_none() {
+            return Err(DmaOpError::WriteError);
+        }
 
-        let source_addr = source_addr.lo as usize;
-        let dest_addr = dest_addr.lo as usize;
-        let source_ram = source_ram.borrow();
-        let mut dest_ram = dest_ram.borrow_mut();
-        let source_data = &source_ram.data()[source_addr..source_addr + xfer_size];
+
+        let source_addr = Self::ram_address_to_offset(source_addr).unwrap() as usize;
+        let dest_addr = Self::ram_address_to_offset(dest_addr).unwrap() as usize;
+        if source_ram == dest_ram {
+            let ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
+            let mut ram = ram.borrow_mut();
+            let source_data: Vec<u8> = ram.data()[source_addr..source_addr + xfer_size].to_vec();
         
-        dest_ram
-            .data_mut()[dest_addr..dest_addr + xfer_size]
-            .copy_from_slice(source_data);
+            ram
+                .data_mut()[dest_addr..dest_addr + xfer_size]
+                .copy_from_slice(&source_data);
+        } else {
+            let source_ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
+            let source_ram = source_ram.borrow_mut();
+            let dest_ram = self.get_axi_ram(dest_ram.unwrap()).unwrap();
+            let mut dest_ram = dest_ram.borrow_mut();
+
+
+            let source_data = &source_ram.data()[source_addr..source_addr + xfer_size];
+            
+            dest_ram
+                .data_mut()[dest_addr..dest_addr + xfer_size]
+                .copy_from_slice(source_data);
+        }
 
         return Ok(())
 
@@ -698,104 +741,7 @@ mod test {
 
 
     }
-/*
-    fn test_read_page_success(fl_type: DmaType) {
-        let test_file = NamedTempFile::new().unwrap().path().to_path_buf();
-        let test_data = [0xbbu8; DummyDmaCtrl::PAGE_SIZE];
-        let test_page_num: u32 = 50;
 
-        let dummy_clock = Clock::new();
-        let dummy_mcu_sram = test_helper_setup_dummy_mcu_sram();
-        // Create a auto root bus
-        let mut bus = test_helper_setup_autobus(
-            Some(test_file.clone()),
-            fl_type,
-            &dummy_clock,
-            Some(dummy_mcu_sram.clone()),
-        );
-
-        let dma_ctrl_base_addr: u32 = match fl_type {
-            DmaType::Main => MAIN_FLASH_CTRL_ADDR,
-            DmaType::Recovery => RECOVERY_FLASH_CTRL_ADDR,
-        };
-
-        // Fill the test page with test data
-        test_helper_fill_file_with_data(&test_file, test_page_num, &test_data);
-
-        // Prepare the page buffer for read operation
-        let r_page_buf_addr = test_helper_prepare_io_page_buffer(
-            0x4005_3000,
-            dummy_mcu_sram.clone(),
-            DummyDmaCtrl::PAGE_SIZE,
-            None,
-        );
-        if r_page_buf_addr.is_none() {
-            panic!("Error: failed to prepare the page buffer for read operation");
-        }
-
-        // Write to the page address register
-        bus.write(
-            RvSize::Word,
-            dma_ctrl_base_addr + PAGE_ADDR_OFFSET,
-            r_page_buf_addr.unwrap(),
-        )
-        .unwrap();
-
-        // write to the page size register
-        bus.write(
-            RvSize::Word,
-            dma_ctrl_base_addr + PAGE_SIZE_OFFSET,
-            DummyDmaCtrl::PAGE_SIZE as u32,
-        )
-        .unwrap();
-
-        // write to the page number register
-        bus.write(
-            RvSize::Word,
-            dma_ctrl_base_addr + PAGE_NUM_OFFSET,
-            test_page_num,
-        )
-        .unwrap();
-
-        // write to the control register with invalid operation
-        bus.write(
-            RvSize::Word,
-            dma_ctrl_base_addr + CONTROL_OFFSET,
-            (DmaControl::Start::SET + DmaControl::Op.val(DmaOperation::ReadPage as u32)).value,
-        )
-        .unwrap();
-
-        for _ in 0..1000 {
-            dummy_clock.increment_and_process_timer_actions(1, &mut bus);
-        }
-
-        bus.poll();
-
-        // Check the op_status register
-        assert_eq!(
-            bus.read(RvSize::Word, dma_ctrl_base_addr + OP_STATUS_OFFSET)
-                .unwrap(),
-            DmaOpStatus::Done::SET.value
-        );
-
-        // Check the interrupt state register
-        assert_eq!(
-            bus.read(RvSize::Word, dma_ctrl_base_addr + INT_STATE_OFFSET)
-                .unwrap(),
-            DmaInterruptState::Event::SET.value
-        );
-
-        // Read the page buffer data into a slice
-        let start_offset = (r_page_buf_addr.unwrap() - RAM_OFFSET) as usize;
-        let r_page_buf = dummy_mcu_sram.borrow_mut().data_mut()
-            [start_offset..start_offset + DummyDmaCtrl::PAGE_SIZE]
-            .to_vec();
-
-        // Verify the data in the page buffer
-        assert_eq!(r_page_buf, test_data);
-    }
-
- */
     /// TEST CASE STARTED HERE
     #[test]
     fn test_main_dma_regs_access() {
@@ -806,10 +752,5 @@ mod test {
     fn test_main_dma_mcu_to_external_sram() {
         test_dma_mcu_to_external_sram();
     }
-/*
-    #[test]
-    fn test_main_dma_read_page_success() {
-        test_read_page_success(DmaType::Main);
-    }
- */
+
 }

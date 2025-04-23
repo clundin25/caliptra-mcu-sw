@@ -35,7 +35,7 @@ pub use board::*;
 
 #[cfg(target_arch = "riscv32")]
 #[no_mangle]
-/// # Safety
+//# Safety
 ///
 /// Initializing the board is inherently unsafe.
 pub unsafe fn main() {

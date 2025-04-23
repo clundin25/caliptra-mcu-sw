@@ -16,6 +16,7 @@ libtock_debug_panic.workspace = true
 libtock_platform.workspace = true
 libtock_runtime.workspace = true
 portable-atomic.workspace = true
+romtime.workspace = true
 
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
 libtock_unittest.workspace = true

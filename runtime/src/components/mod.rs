@@ -3,6 +3,7 @@
 //! Components for the Caliptra MCU runtime.
 
 pub mod flash_partition;
+pub mod dma;
 pub mod mailbox;
 pub mod mctp_driver;
 #[cfg(feature = "test-mctp-capsule-loopback")]
