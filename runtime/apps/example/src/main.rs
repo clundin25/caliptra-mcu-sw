@@ -156,8 +156,8 @@ pub(crate) async fn async_main<S: Syscalls>() {
     {
 //        test_pldm_request_response::test::test_pldm_request_response::<S>().await;
 //        test_get_image_info::test_get_image_info::<S>().await;
-//        test_get_image_info::test_authorize_and_stash::<S>().await;
-        test_dma::test_dma::<S>().await;
+        test_get_image_info::test_authorize_and_stash::<S>().await;
+//        test_dma::test_dma::<S>().await;
     }
     #[cfg(feature = "test-caliptra-mailbox")]
     {

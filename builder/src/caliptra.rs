@@ -96,6 +96,15 @@ impl CaliptraBuilder {
         Ok(self.vendor_pk_hash.as_ref().unwrap())
     }
 
+    pub const DIGEST: [u8; 48] = [
+    0xfb, 0xfe, 0x45, 0x5c, 0x86, 0x41, 0xd4, 0xd8,
+    0x06, 0x5e, 0x55, 0x68, 0xa1, 0xdf, 0x4b, 0xf1,
+    0xd3, 0xed, 0x07, 0x7c, 0x2f, 0xc5, 0x98, 0xee,
+    0x0f, 0xfd, 0x6d, 0xe4, 0x37, 0x8f, 0xb5, 0x50,
+    0x54, 0x2a, 0xc3, 0x67, 0x30, 0xc1, 0x66, 0xa2,
+    0x31, 0xf1, 0x8f, 0x4b, 0x65, 0xe3, 0xcf, 0x87,
+    ];
+
     fn write_soc_manifest(runtime_path: &PathBuf) -> Result<PathBuf> {
         const IMAGE_SOURCE_IN_REQUEST: u32 = 1;
         let data = std::fs::read(runtime_path).unwrap();
@@ -103,10 +112,19 @@ impl CaliptraBuilder {
         flags.set_image_source(IMAGE_SOURCE_IN_REQUEST);
         let crypto = Crypto::default();
         let digest = from_hw_format(&crypto.sha384_digest(&data)?);
+
         let metadata = vec![AuthManifestImageMetadata {
             fw_id: 2,
             flags: flags.0,
-            digest,
+            digest: digest,
+            image_load_address: Addr64 { lo: 0x50_0000, hi: 0 },
+            image_staging_address: Addr64 { lo: 0x8000_0000, hi: 0 },
+            classification: 0xaaaa,
+            ..Default::default()
+        }, AuthManifestImageMetadata {
+            fw_id:10,
+            flags: flags.0,
+            digest: Self::DIGEST,
             image_load_address: Addr64 { lo: 0x50_0000, hi: 0 },
             image_staging_address: Addr64 { lo: 0x8000_0000, hi: 0 },
             classification: 0xaaaa,
