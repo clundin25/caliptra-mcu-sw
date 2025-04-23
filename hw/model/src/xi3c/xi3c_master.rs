@@ -376,10 +376,12 @@ impl Controller {
             MAX_TIMEOUT_US * 10,
         );
         if happened {
+            println!("Got an IBI, reading data");
             while self.regs().sr.get() & XI3C_SR_RD_FIFO_NOT_EMPTY_MASK != 0
                 || self.regs().sr.get() & XI3C_SR_RESP_NOT_EMPTY_MASK == 0
             {
                 rx_data_available = (self.regs().fifo_lvl_status_1.get() & 0xffff) as u16;
+                println!("rx_data_available: {}", rx_data_available);
                 data_index = 0;
                 while data_index < rx_data_available {
                     recv.extend(self.read_rx_fifo(4));

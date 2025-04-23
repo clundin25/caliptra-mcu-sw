@@ -1510,11 +1510,44 @@ mod test {
             i3c_target.tti_interrupt_status.get()
         );
 
+        // Fill data to buffer
+        let mut tx_data = [0u8; 50];
+        for i in 0..50 as usize {
+            tx_data[i] = i as u8; // Test data
+        }
+
+        println!(
+            "I3C fifo level status 1: {:x}",
+            i3c_controller.regs().fifo_lvl_status_1.get()
+        );
+        while i3c_controller.regs().fifo_lvl_status_1.get() >> 16 > 0 {
+            println!(
+                "I3C controller has response fifo: {:x}",
+                i3c_controller.regs().resp_status_fifo.get()
+            );
+        }
+
+        // // empty the read fifo
+        // println!(
+        //     "Read fifo level: {:x}",
+        //     i3c_controller.regs().fifo_lvl_status_1.get()
+        // );
+        // while i3c_controller.regs().fifo_lvl_status_1.get() & 0xffff > 0 {
+        //     println!(
+        //         "Empty read fifo: 0x{:08x}",
+        //         i3c_controller.regs().rd_fifo.get()
+        //     );
+        // }
+
+        // let's send a message back
+        println!("Writing data back to controller: {:x?}", tx_data);
+        send_packet(i3c_target, &tx_data);
+
         println!("Starting IBI 0xaa with 4 bytes");
 
         // trigger an IBI with value 0xae (MCTP pending read)
-        i3c_target.tti_tti_ibi_port.set(0xae000004);
-        i3c_target.tti_tti_ibi_port.set(0xaaaaaaaa);
+        i3c_target.tti_tti_ibi_port.set(0x0400_0004);
+        i3c_target.tti_tti_ibi_port.set(0xaaaa_aaaa);
 
         println!(
             "I3C target status {:x}, interrupt status {:x}",
@@ -1527,9 +1560,20 @@ mod test {
             i3c_controller.regs().sr.get()
         );
 
-        if i3c_controller.regs().sr.get() & 0x10 != 0 {
-            let resp_status = i3c_controller.regs().resp_status_fifo.get();
-            println!("I3C controller response status: {:x}", resp_status);
+        println!(
+            "I3C controller IBI target address: 0x{:x}",
+            i3c_controller.regs().target_addr_bcr.get()
+        );
+
+        if i3c_controller.regs().sr.get() & 0x80 != 0 {
+            println!(
+                "I3C fifo level status 1: {:x}",
+                i3c_controller.regs().fifo_lvl_status_1.get()
+            );
+            println!(
+                "I3C controller has response fifo: {:x}",
+                i3c_controller.regs().resp_status_fifo.get()
+            );
         }
         println!(
             "I3C controller status: {:x}",

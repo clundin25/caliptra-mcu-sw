@@ -401,7 +401,7 @@ impl Controller {
             cmd.pec = 0;
             cmd.cmd_type = 1;
 
-            println!("Controller: Assigning dynamic address {:x}", addr);
+            println!("Controller: Assigning dynamic address 0x{:x}", addr >> 1);
             let recv_buffer = match self.master_recv_polled(None, &mut cmd, 9) {
                 Ok(recv_buffer) => recv_buffer,
                 Err(err) => {
