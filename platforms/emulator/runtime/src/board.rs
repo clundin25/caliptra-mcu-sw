@@ -131,7 +131,7 @@ struct VeeR {
         'static,
         VirtualMuxAlarm<'static, InternalTimers<'static>>,
     >,
-    dma: &'static capsules_runtime::dma::Dma<'static>,
+    dma: &'static capsules_emulator::dma::Dma<'static>,
 }
 
 /// Mapping of integer syscalls to objects that implement syscalls.
@@ -157,7 +157,7 @@ impl SyscallDriverLookup for VeeR {
                 f(Some(self.recovery_image_par))
             }
             capsules_runtime::mailbox::DRIVER_NUM => f(Some(self.mailbox)),
-            capsules_runtime::dma::DMA_CTRL_DRIVER_NUM => f(Some(self.dma)),
+            capsules_emulator::dma::DMA_CTRL_DRIVER_NUM => f(Some(self.dma)),
 
             _ => f(None),
         }
@@ -473,9 +473,9 @@ pub unsafe fn main() {
     let dma = runtime_components::dma::DmaComponent::new(
         &peripherals.dma,
         board_kernel,
-        capsules_runtime::dma::DMA_CTRL_DRIVER_NUM,
+        capsules_emulator::dma::DMA_CTRL_DRIVER_NUM,
     )
-    .finalize(kernel::static_buf!(capsules_runtime::dma::Dma<'static>));
+    .finalize(kernel::static_buf!(capsules_emulator::dma::Dma<'static>));
 
     // Need to enable all interrupts for Tock Kernel
     chip.enable_pic_interrupts();

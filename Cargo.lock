@@ -764,6 +764,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "capsules-emulator"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "dma-driver",
+ "kernel",
+ "registers-generated",
+]
+
+[[package]]
 name = "capsules-extra"
 version = "0.1.0"
 source = "git+https://github.com/tock/tock.git?rev=b128ae817b86706c8c4e39d27fae5c54b98659f1#b128ae817b86706c8c4e39d27fae5c54b98659f1"
@@ -2752,6 +2762,7 @@ name = "runtime"
 version = "0.1.0"
 dependencies = [
  "capsules-core",
+ "capsules-emulator",
  "capsules-extra",
  "capsules-runtime",
  "capsules-system",

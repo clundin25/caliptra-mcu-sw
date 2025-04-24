@@ -172,8 +172,8 @@ pub(crate) async fn async_main<S: Syscalls>() {
     }
     #[cfg(feature = "test-dma")]
     {
-        test_dma::test_dma_xfer_local_to_local::<S>().await;
-        test_dma::test_dma_xfer_local_to_external::<S>().await;
+        test_dma::test_dma_xfer_local_to_local().await;
+        test_dma::test_dma_xfer_local_to_external().await;
         romtime::test_exit(0);
     }
 

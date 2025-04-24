@@ -2,7 +2,6 @@
 
 use core::fmt::Write;
 use libsyscall_caliptra::dma::{DMASource, DMATransaction, DMA as DMASyscall};
-use libtock_platform::Syscalls;
 use romtime::{println, test_exit};
 
 const MCU_SRAM_HI_OFFSET: u64 = 0x1000_0000;
@@ -20,10 +19,10 @@ fn external_ram_to_axi_address(addr: u32) -> u64 {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_dma_xfer_local_to_local<S: Syscalls>() {
+pub(crate) async fn test_dma_xfer_local_to_local() {
     println!("Starting test_dma_xfer_local_to_local");
 
-    let dma_syscall = DMASyscall::<S>::new();
+    let dma_syscall: DMASyscall = DMASyscall::new();
 
     let source_buffer = [0xABu8; 16];
     let mut dest_buffer = [0u8; 16];
@@ -48,10 +47,10 @@ pub(crate) async fn test_dma_xfer_local_to_local<S: Syscalls>() {
 }
 
 #[allow(unused)]
-pub(crate) async fn test_dma_xfer_local_to_external<S: Syscalls>() {
+pub(crate) async fn test_dma_xfer_local_to_external() {
     println!("Starting test_dma_xfer_local_to_external");
 
-    let dma_syscall = DMASyscall::<S>::new();
+    let dma_syscall: DMASyscall = DMASyscall::new();
 
     let source_buffer = [0xABu8; 16];
     let mut dest_buffer = [0u8; 16];

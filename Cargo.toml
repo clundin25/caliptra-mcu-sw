@@ -21,6 +21,8 @@ members = [
     "registers/systemrdl-new",
     "platforms/emulator/rom",
     "platforms/emulator/runtime",
+    "platforms/emulator/kernel/capsules",
+    "platforms/emulator/kernel/drivers/dma",
     "rom",
     "romtime",
     "runtime/kernel/capsules",
@@ -120,8 +122,9 @@ zerocopy = { version = "0.8.17", features = ["derive"] }
 zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_derive"] }
 
 # local dependencies
+capsules-emulator = { path = "platforms/emulator/kernel/capsules" }
 capsules-runtime = { path = "runtime/kernel/capsules" }
-dma-driver = { path = "runtime/kernel/drivers/dma" }
+dma-driver = { path = "platforms/emulator/kernel/drivers/dma" }
 emulator-bmc = { path = "emulator/bmc" }
 emulator-bus = { path = "emulator/bus" }
 emulator-caliptra = { "path" = "emulator/caliptra" }
