@@ -1531,23 +1531,11 @@ mod test {
             );
         }
 
-        // // empty the read fifo
-        // println!(
-        //     "Read fifo level: {:x}",
-        //     i3c_controller.regs().fifo_lvl_status_1.get()
-        // );
-        // while i3c_controller.regs().fifo_lvl_status_1.get() & 0xffff > 0 {
-        //     println!(
-        //         "Empty read fifo: 0x{:08x}",
-        //         i3c_controller.regs().rd_fifo.get()
-        //     );
-        // }
-
         // let's send a message back
         println!("Writing data back to controller: {:x?}", tx_data);
         send_packet(i3c_target, &tx_data);
 
-        println!("Starting IBI 0xaa with 4 bytes");
+        println!("Starting IBI 0xae with 8 bytes");
 
         // trigger an IBI with value 0xae (MCTP pending read)
         i3c_target.tti_tti_ibi_port.set(0xae00_0008);
@@ -1589,6 +1577,26 @@ mod test {
             .ibi_recv_polled()
             .expect("Should have received an IBI");
         println!("Got IBI data {:x?}", ibi_data);
+
+        println!(
+            "I3C target status {:x}, interrupt status {:x}",
+            i3c_target.tti_status.get(),
+            i3c_target.tti_interrupt_status.get()
+        );
+
+        // now do the private read
+        println!("Sending a read request to the target");
+        cmd.target_addr = target_addr;
+        cmd.no_repeated_start = 1;
+        cmd.tid = 0;
+        cmd.pec = 0;
+        cmd.cmd_type = 1;
+        let recv = i3c_controller
+            .master_recv_polled(None, &mut cmd, 50)
+            .expect("Failed to start receive from target");
+
+        println!("Received data from target: {:x?}", recv);
+        assert_eq!(recv, tx_data);
 
         println!(
             "I3C target status {:x}, interrupt status {:x}",
