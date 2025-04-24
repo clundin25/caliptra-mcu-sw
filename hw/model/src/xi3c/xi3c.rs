@@ -263,6 +263,10 @@ impl Controller {
         self.enable(1);
         self.bus_init()?;
         if self.config.ibi_capable && self.config.device_count != 0 {
+            // cheat by enabling IBI everywhere
+            for i in 0..128 {
+                self.regs().target_addr_bcr.set(0x700 | i);
+            }
             if self.config.entdaa_enable {
                 self.dyna_addr_assign(&DYNA_ADDR_LIST, self.config.device_count)?;
             } else {
@@ -410,6 +414,7 @@ impl Controller {
                 }
             };
 
+            println!("cur_device_count = {}", self.cur_device_count);
             self.target_info_table[self.cur_device_count as usize].id = (recv_buffer[0] as u64)
                 << 40
                 | (recv_buffer[1] as u64) << 32
@@ -473,7 +478,10 @@ impl Controller {
         assert!(self.ready);
         let mut addr_bcr = (self.target_info_table[dev_index as usize].dyna_addr & 0x7f) as u32;
         addr_bcr |= ((self.target_info_table[dev_index as usize].bcr & 0xff) as u32) << 8;
-        println!("Updating BCR for device {:x}", addr_bcr);
+        println!(
+            "Updating BCR (index {}) for device {:x}",
+            dev_index, addr_bcr
+        );
         self.regs().target_addr_bcr.set(addr_bcr);
     }
 

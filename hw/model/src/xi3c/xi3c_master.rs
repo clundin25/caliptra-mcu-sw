@@ -102,7 +102,9 @@ impl Controller {
         self.regs()
             .thd_start
             .set(thd_start.wrapping_sub(2) & 0x3ffff);
-        self.regs().tsu_stop.set(tsu_stop.wrapping_sub(2) & 0x3ffff);
+        self.regs()
+            .tsu_stop
+            .set(tsu_stop.wrapping_sub(2) & 0x3ffff + 5);
     }
 
     fn get_response(&mut self) -> i32 {

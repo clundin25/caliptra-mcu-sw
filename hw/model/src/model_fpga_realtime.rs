@@ -833,21 +833,24 @@ mod test {
         // values of all of these set to 0-5 seem to work for receiving data correctly
         // 6-7 gets corrupted data but will ACK
         // 8+ will fail to ACK
-        regs.soc_mgmt_if_t_r_reg.set(1); // rise time of both SDA and SCL in clock units
-        regs.soc_mgmt_if_t_f_reg.set(1); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_r_reg.set(5); // rise time of both SDA and SCL in clock units
+        regs.soc_mgmt_if_t_f_reg.set(5); // rise time of both SDA and SCL in clock units
 
         // if this is set to 6+ then ACKs start failing
-        regs.soc_mgmt_if_t_hd_dat_reg.set(1); // data hold time in clock units
-        regs.soc_mgmt_if_t_su_dat_reg.set(1); // data setup time in clock units
+        regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
+        regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
 
-        regs.soc_mgmt_if_t_high_reg.set(1); // High period of the SCL in clock units
-        regs.soc_mgmt_if_t_low_reg.set(1); // Low period of the SCL in clock units
-        regs.soc_mgmt_if_t_hd_sta_reg.set(1); // Hold time for (repeated) START in clock units
-        regs.soc_mgmt_if_t_su_sta_reg.set(1); // Setup time for repeated START in clock units
-        regs.soc_mgmt_if_t_su_sto_reg.set(1); // Setup time for STOP in clock units
+        regs.soc_mgmt_if_t_high_reg.set(0); // High period of the SCL in clock units
+        regs.soc_mgmt_if_t_low_reg.set(0); // Low period of the SCL in clock units
+        regs.soc_mgmt_if_t_hd_sta_reg.set(0); // Hold time for (repeated) START in clock units
+        regs.soc_mgmt_if_t_su_sta_reg.set(0); // Setup time for repeated START in clock units
+        regs.soc_mgmt_if_t_su_sto_reg.set(0); // Setup time for STOP in clock units
+
+        // set this to 1 microsecond
+        regs.soc_mgmt_if_t_free_reg.set(200); // Bus free time in clock units before doing IBI
 
         println!(
-            "Timing register t_r: {}, t_f: {}, t_hd_dat: {}, t_su_dat: {}, t_high: {}, t_low: {}, t_hd_sta: {}, t_su_sta: {}, t_su_sto: {}",
+            "Timing register t_r: {}, t_f: {}, t_hd_dat: {}, t_su_dat: {}, t_high: {}, t_low: {}, t_hd_sta: {}, t_su_sta: {}, t_su_sto: {}, t_free: {}",
             regs.soc_mgmt_if_t_r_reg.get(),
             regs.soc_mgmt_if_t_f_reg.get(),
             regs.soc_mgmt_if_t_hd_dat_reg.get(),
@@ -856,7 +859,8 @@ mod test {
             regs.soc_mgmt_if_t_low_reg.get(),
             regs.soc_mgmt_if_t_hd_sta_reg.get(),
             regs.soc_mgmt_if_t_su_sta_reg.get(),
-            regs.soc_mgmt_if_t_su_sto_reg.get()
+            regs.soc_mgmt_if_t_su_sto_reg.get(),
+            regs.soc_mgmt_if_t_free_reg.get(),
         );
 
         // Setup the threshold for the HCI queues (in the internal/private software data structures):
