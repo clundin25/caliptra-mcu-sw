@@ -109,6 +109,7 @@ impl<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> Sp
             transport,
             transcript_manager,
             session_manager,
+            cert_store,
         }
     }
 
@@ -210,33 +211,27 @@ pub struct SpdmCertStore<'a> {
     cert_chain: [Option<&'a dyn SpdmCertChainManager>, SPDM_MAX_CERT_SLOT_COUNT],
 }
 
-pub enum CertChainComponent {
-    RootCert,
-    CertChain,
+/// The fixed size header of the SPDM certificate chain format.
+pub struct SpdmCertChainBase{
+    length: u16,
+    reserved: u16,
 }
 
+
 pub trait SpdmCertChainManager {
-    /// Get the digest of the root certificate or the certificate chain in SPDM Certificate Chain format.
+    /// Get the digest of the certificate chain in SPDM Certificate Chain format. 
     ///
     /// # Arguments
     /// * `hash_algo` - The hash algorithm to use for the digest.
-    /// * `component` - The component to get the digest for (root certificate or certificate chain).
     /// * `hash` - The buffer to store the digest of the root certificate.
     ///
     /// # Returns
     /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
-    async fn root_cert_hash(
+    async fn cert_chain_hash(
         &mut self,
         hash_algo: BaseHashAlgoType,
-        component: CertChainComponent,
-        root_hash: &mut [u8],
+        hash: &mut [u8],
     ) -> SpdmResult<usize>;
-
-    /// Get the length of the cert chain in SPDM Certificate Chain format.
-    ///
-    /// # Returns
-    /// * `Ok(usize)` - The length of the cert chain or an error.
-    async fn cert_chain_len(&mut self) -> SpdmResult<usize>;
 
     /// Get the cert chain in portion. The cert chain is in SPDM Certificate Chain format.
     ///
