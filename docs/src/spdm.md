@@ -87,7 +87,7 @@ The SPDM Responder supports the following messages:
 | `ALGORITHMS`       | Retrieves the negotiated algorithms                                             |
 | `DIGESTS`          | Retrieves digest of the certificate chains                                      |
 | `CERTIFICATE`      | Retrieves certificate chains                                                    |
-| `MEASUREMENTS`     | Retrieves measurements of elements such as intenral state                       |
+| `MEASUREMENTS`     | Retrieves measurements of elements such as internal state                       |
 | `KEY_EXCHANGE_RSP` | Retrieves the responder's public key information                                |
 | `FINISH_RSP`       | Provide key confirmation, bind the identity of each party to the exchanged keys |
 | `END_SESSION_ACK`  | End session acknowledgment                                                      |
@@ -97,19 +97,18 @@ The SPDM Responder supports the following messages:
 ### Responder Interface
 ```Rust
 pub struct SpdmResponder<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> {
-    transport: T,
-    transcript_manager: U,
-    session_manager: V,
-    data_buffer: [u8; MAX_SPDM_MESSAGE_SIZE],
+    transport: &'a dyn T,
+    transcript_manager: &'a dyn U,
+    session_manager: &'a dyn V,
+    cert_store: &'a SpdmCertStore,
 }
 
 impl<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> SpdmResponder<T, U, V> {
-    pub fn new(transport: T, transcript_manager: U, session_manager: V) -> Self {
+    pub fn new(transport: T, transcript_manager: U, session_manager: V, cert_store: &'a SpdmCertStore) -> Self {
         SpdmResponder {
             transport,
             transcript_manager,
             session_manager,
-            data_buffer: [0; MAX_SPDM_MESSAGE_SIZE],
         }
     }
 
@@ -195,6 +194,65 @@ pub trait SpdmTranscriptManager {
         use_session_context: bool,
         session_idx: u8,
     );
+}
+```
+## SPDM Certificate Manager
+The `SpdmCertStore` is responsible for managing certificate chains across all provisioned slots in the SPDM responder device. 
+Each provisioned slot is associated with an instance of the `SpdmCertChainManager`, which handles the ASN.1 DER-encoded X.509 v3 certificate chain for that slot. 
+The certificate chain managed must conform to the format specified in the SPDM specification (see `Table 33 - Certificate chain format` in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf)).
+
+### Certificate Manager Interface
+```Rust
+pub const SPDM_MAX_CERT_SLOT_COUNT: usize = 8;
+pub struct SpdmCertStore<'a> {
+    supported_slot_mask: u8,
+    provisioned_slot_mask: u8,
+    cert_chain: [Option<&'a dyn SpdmCertChainManager>, SPDM_MAX_CERT_SLOT_COUNT],
+}
+
+pub enum CertChainComponent {
+    RootCert,
+    CertChain,
+}
+
+pub trait SpdmCertChainManager {
+    /// Get the digest of the root certificate or the certificate chain in SPDM Certificate Chain format.
+    ///
+    /// # Arguments
+    /// * `hash_algo` - The hash algorithm to use for the digest.
+    /// * `component` - The component to get the digest for (root certificate or certificate chain).
+    /// * `hash` - The buffer to store the digest of the root certificate.
+    ///
+    /// # Returns
+    /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
+    async fn root_cert_hash(
+        &mut self,
+        hash_algo: BaseHashAlgoType,
+        component: CertChainComponent,
+        root_hash: &mut [u8],
+    ) -> SpdmResult<usize>;
+
+    /// Get the length of the cert chain in SPDM Certificate Chain format.
+    ///
+    /// # Returns
+    /// * `Ok(usize)` - The length of the cert chain or an error.
+    async fn cert_chain_len(&mut self) -> SpdmResult<usize>;
+
+    /// Get the cert chain in portion. The cert chain is in SPDM Certificate Chain format.
+    ///
+    /// # Arguments
+    /// * `offset` - The offset in bytes from the start of the cert chain.
+    /// * `cert_portion` - The buffer to store the portion of cert chain.
+    ///
+    /// # Returns
+    /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
+    /// If the cert portion size is smaller than the buffer size, the remaining bytes in the buffer will be filled with 0,
+    /// indicating the end of the cert chain.
+    async fn cert_chain_portion(
+        &mut self,
+        offset: usize,
+        cert_portion: &mut [u8],
+    ) -> SpdmResult<usize>;
 }
 ```
 
