@@ -197,43 +197,75 @@ pub trait SpdmTranscriptManager {
     );
 }
 ```
-## SPDM Certificate Manager
+## SPDM Certificate Store
 The `SpdmCertStore` is responsible for managing certificate chains across all provisioned slots in the SPDM responder device. 
-Each provisioned slot is associated with an instance of the `SpdmCertChainManager`, which handles the ASN.1 DER-encoded X.509 v3 certificate chain for that slot. 
-The certificate chain managed must conform to the format specified in the SPDM specification (see `Table 33 - Certificate chain format` in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf)).
+Each provisioned slot is associated with an instance of the `SpdmCertChain`, which handles the ASN.1 DER-encoded X.509 v3 certificate chain for that slot.
 
 ### Certificate Manager Interface
 ```Rust
-pub const SPDM_MAX_CERT_SLOT_COUNT: usize = 8;
-pub struct SpdmCertStore<'a> {
+pub const SPDM_MAX_CERT_SLOTS: usize = 8;
+
+// SPDM Supported Slot Mask
+pub type SupportedSlotMask = u8;
+
+// SPDM Provisioned Slot Mask 
+pub type ProvisionedSlotMask = u8;
+
+// KeypairID associated with the certificate chain (for SPDM version >= 1.3)
+pub type KeyPairID = u8; 
+
+// CertificateInfo fields associated with the certificate chain (for SPDM version >= 1.3)
+bitfield! {
+#[derive(FromBytes, IntoBytes, Default, Clone)]
+#[repr(C, packed)]
+pub struct CertificateInfo(u8);
+impl Debug;
+u8;
+pub cert_model, set_cert_model: 0,2;
+reserved, _: 3,7;
+}
+
+// KeyUsageMask fields associated with certificate chain (for SPDM version >= 1.3)
+bitfield! {
+#[derive(FromBytes, IntoBytes, Default, Clone)]
+#[repr(C, packed)]
+pub struct KeyUsageMask(u16);
+impl Debug;
+u8;
+pub key_exch_usage, set_key_exch_usage: 0,0;
+pub challenge_usage, set_challenge_usage: 1,1;
+pub measurement_usage, set_measurement_usage: 2,2;
+pub endpoint_info_usage, set_endpoint_info_usage: 3,3;
+reserved, _: 13,4;
+pub standards_key_usage, set_standards_key_usage: 15,14;
+pub vendor_key_usage, set_vendor_key_usage: 15,15;
+}
+
+
+pub struct SpdmCertStore<'a, E> {
     supported_slot_mask: u8,
     provisioned_slot_mask: u8,
-    cert_chain: [Option<&'a dyn SpdmCertChainManager>, SPDM_MAX_CERT_SLOT_COUNT],
-}
-
-/// The fixed size header of the SPDM certificate chain format.
-pub struct SpdmCertChainBase{
-    length: u16,
-    reserved: u16,
+    cert_chain: [Option<&'a dyn SpdmCertChain<Error = E>>; SPDM_MAX_CERT_SLOTS],
 }
 
 
-pub trait SpdmCertChainManager {
-    /// Get the digest of the certificate chain in SPDM Certificate Chain format. 
+pub trait SpdmCertChain {
+    type Error;
+    /// Get the digest of the root certificate in the certificate chain.
     ///
     /// # Arguments
     /// * `hash_algo` - The hash algorithm to use for the digest.
-    /// * `hash` - The buffer to store the digest of the root certificate.
+    /// * `root_hash` - The buffer to store the digest of the root certificate.
     ///
     /// # Returns
     /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
-    async fn cert_chain_hash(
+    async fn root_cert_hash(
         &mut self,
         hash_algo: BaseHashAlgoType,
-        hash: &mut [u8],
-    ) -> SpdmResult<usize>;
+        root_hash: &mut [u8],
+    ) -> Result<usize, Self::Error>;
 
-    /// Get the cert chain in portion. The cert chain is in SPDM Certificate Chain format.
+    /// Read the certificate chain in portion. The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
     ///
     /// # Arguments
     /// * `offset` - The offset in bytes from the start of the cert chain.
@@ -243,11 +275,32 @@ pub trait SpdmCertChainManager {
     /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
     /// If the cert portion size is smaller than the buffer size, the remaining bytes in the buffer will be filled with 0,
     /// indicating the end of the cert chain.
-    async fn cert_chain_portion(
+    async fn read_cert_chain(
         &mut self,
         offset: usize,
         cert_portion: &mut [u8],
-    ) -> SpdmResult<usize>;
+    ) -> Result<usize, Self::Error>;
+
+    /// Get the KeyPairID associated with the certificate chain if SPDM responder supports
+    /// multiple assymmetric keys in connection. (For SPDM version >= 1.3)
+    ///
+    /// # Returns
+    /// * `Option<KeyPairID>` - The KeyPairID associated with the certificate chain or None if not supported or not found.
+    fn key_pair_id(&mut self) -> Option<KeyPairID>;
+
+    /// Get CertificateInfo associated with the certificate chain if SPDM responder supports
+    /// multiple assymmetric keys in connection. (For SPDM version >= 1.3)
+    ///
+    /// # Returns
+    /// * `Option<CertificateInfo>` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
+    fn cert_info(&mut self) -> Option<CertificateInfo>;
+
+    /// Get the KeyUsageMask associated with the certificate chain if SPDM responder supports
+    /// multiple assymmetric keys in connection. (For SPDM version >= 1.3)
+    ///
+    /// # Returns
+    /// * `Option<KeyUsageMask>` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
+    fn key_usage_mask(&mut self) -> Option<KeyUsageMask>;
 }
 ```
 
