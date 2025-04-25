@@ -254,6 +254,13 @@ pub struct SpdmCertStore<'a, E> {
 ///! the ASN.1 DER-encoded X.509 v3 certificate chain for that slot.
 pub trait SpdmCertChain {
     type Error;
+
+    /// Get the length of the certificate chain.
+    /// 
+    /// # Returns
+    /// * `Ok(usize)` - The length of the certificate chain in bytes or an error.
+    async fn cert_chain_length(&mut self) -> Result<usize, Self::Error>;
+    
     /// Get the digest of the root certificate in the certificate chain.
     ///
     /// # Arguments
