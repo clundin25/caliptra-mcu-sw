@@ -242,13 +242,16 @@ pub vendor_key_usage, set_vendor_key_usage: 15,15;
 }
 
 
+///! `SpdmCertStore` is responsible for managing certificate chains across all provisioned slots.
 pub struct SpdmCertStore<'a, E> {
     supported_slot_mask: u8,
     provisioned_slot_mask: u8,
     cert_chain: [Option<&'a dyn SpdmCertChain<Error = E>>; SPDM_MAX_CERT_SLOTS],
 }
 
-
+///! `SpdmCertChain` trait is responsible for managing SPDM certificate chains.
+///! Each provisioned slot corresponds to an instance of the `SpdmCertChain`, which handles
+///! the ASN.1 DER-encoded X.509 v3 certificate chain for that slot.
 pub trait SpdmCertChain {
     type Error;
     /// Get the digest of the root certificate in the certificate chain.
