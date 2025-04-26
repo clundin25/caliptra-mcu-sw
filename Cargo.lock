@@ -1517,6 +1517,7 @@ name = "example-app"
 version = "0.1.0"
 dependencies = [
  "caliptra-api",
+ "caliptra-auth-man-types",
  "caliptra-error",
  "critical-section",
  "embassy-executor",
@@ -1941,12 +1942,22 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 name = "libapi-caliptra"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "caliptra-api",
+ "caliptra-auth-man-types",
  "caliptra-error",
+ "embassy-executor",
+ "embassy-sync",
+ "embedded-alloc",
  "futures",
  "libsyscall-caliptra",
+ "libtock_console",
  "libtock_platform",
+ "libtock_runtime",
  "libtock_unittest",
+ "libtockasync",
+ "pldm-common",
+ "pldm-lib",
  "thiserror-no-std",
  "zerocopy 0.8.23",
 ]
@@ -2135,10 +2146,12 @@ dependencies = [
  "caliptra-image-fake-keys",
  "caliptra-image-gen",
  "caliptra-image-types",
+ "crc32fast",
  "elf",
  "emulator-consts",
  "hex",
  "semver",
+ "tempfile",
  "walkdir",
  "zerocopy 0.8.23",
 ]
@@ -2454,7 +2467,9 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "embassy-executor",
+ "embassy-sync",
  "embedded-alloc",
+ "libapi-caliptra",
  "libsyscall-caliptra",
  "libtock",
  "libtock_console",
@@ -2463,8 +2478,10 @@ dependencies = [
  "libtock_runtime",
  "libtock_unittest",
  "libtockasync",
+ "pldm-common",
  "pldm-lib",
  "portable-atomic",
+ "romtime",
 ]
 
 [[package]]
@@ -3196,7 +3213,11 @@ version = "0.1.0"
 name = "tests-integration"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "mcu-builder",
+ "pldm-fw-pkg",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
