@@ -13,6 +13,16 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 const VERSION_ENTRY_SIZE: usize = 2;
 
+#[derive(IntoBytes, FromBytes, Immutable)]
+pub struct VersionReq {
+    pub param1: u8,
+    pub param2: u8,
+}
+
+impl CommonCodec for VersionReq {
+    const DATA_KIND: DataKind = DataKind::Payload;
+}
+
 #[allow(dead_code)]
 #[derive(FromBytes, IntoBytes, Immutable)]
 pub struct VersionRespCommon {
@@ -109,6 +119,9 @@ pub(crate) fn handle_version<'a, S: Syscalls>(
             Err(ctx.generate_error_response(req_payload, ErrorCode::VersionMismatch, 0, None))?;
         }
     }
+    let req = VersionReq::decode(req_payload).map_err(|_| {
+        ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
+    })?;
 
     let rsp_buf = req_payload;
 

@@ -1,9 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-use spdm_lib::cert_mgr::{EccCertChainBuffer, MAX_CERT_COUNT_PER_CHAIN, MAX_DER_CERT_LENGTH};
-
-// pub const MAX_CERT_COUNT_PER_CHAIN: usize = 4;
-
 // Only support slot 0 for now
 pub const CERT_CHAIN_SLOT_MASK: u8 = 0x01;
 

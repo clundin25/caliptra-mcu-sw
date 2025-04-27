@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use libapi_caliptra::crypto::cert_mgr::{CertStoreContext, IDEV_ECC_CSR_MAX_SIZE, MAX_ECC_CERT_SIZE};
+use libapi_caliptra::crypto::cert_mgr::{
+    CertStoreContext, IDEV_ECC_CSR_MAX_SIZE, MAX_ECC_CERT_SIZE,
+};
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 
 use libtock_platform::Syscalls;

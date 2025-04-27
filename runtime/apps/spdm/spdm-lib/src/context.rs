@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::cert_mgr::DeviceCertsManager;
+use crate::transcript_mgr::TranscriptMgr;
 use crate::codec::{Codec, MessageBuf};
 use crate::commands::error_rsp::{fill_error_response, ErrorCode};
 use crate::commands::{
@@ -23,7 +24,8 @@ pub struct SpdmContext<'a, S: Syscalls> {
     pub(crate) state: State,
     pub(crate) local_capabilities: DeviceCapabilities,
     pub(crate) local_algorithms: LocalDeviceAlgorithms<'a>,
-    pub(crate) device_certs_manager: &'a DeviceCertsManager<'a>,
+    pub(crate) device_certs_manager: &'a mut DeviceCertsManager<'a>,
+    pub(crate) transcript_manager: TranscriptMgr<S>,
     pub(crate) cw: &'a mut ConsoleWriter<S>,
 }
 
@@ -33,7 +35,7 @@ impl<'a, S: Syscalls> SpdmContext<'a, S> {
         spdm_transport: &'a mut MctpTransport<S>,
         local_capabilities: DeviceCapabilities,
         local_algorithms: LocalDeviceAlgorithms<'a>,
-        device_certs_manager: &'a DeviceCertsManager,
+        device_certs_manager: &'a mut DeviceCertsManager<'a>,
         cw: &'a mut ConsoleWriter<S>,
     ) -> SpdmResult<Self> {
         validate_supported_versions(supported_versions)?;
@@ -47,6 +49,7 @@ impl<'a, S: Syscalls> SpdmContext<'a, S> {
             local_capabilities,
             local_algorithms,
             device_certs_manager,
+            transcript_manager: TranscriptMgr::<S>::new(),
             cw,
         })
     }

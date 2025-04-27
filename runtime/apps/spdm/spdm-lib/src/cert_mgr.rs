@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 use crate::error::{SpdmError, SpdmResult};
 use core::mem::size_of;
-use libapi_caliptra::crypto::cert_store::CertStoreContext;
+use libapi_caliptra::crypto::cert_store::{CertStoreContext, CertType};
 use libapi_caliptra::crypto::error::CryptoError;
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 use libtock_platform::Syscalls;
@@ -17,7 +17,7 @@ pub const SPDM_CERT_CHAIN_HEADER_SIZE: usize = size_of::<SpdmCertChainHeader>();
 // Maximum size of a DER certificate in bytes. Adjust as needed.
 pub const MAX_DER_CERT_LENGTH: usize = 1024;
 
-pub const MAX_CERT_COUNT_PER_CHAIN: usize = 2;
+pub const MAX_CERT_COUNT_PER_CHAIN: usize = 6;
 
 pub const MAX_CERT_CHAIN_DATA_SIZE: usize = MAX_DER_CERT_LENGTH * MAX_CERT_COUNT_PER_CHAIN;
 
@@ -115,46 +115,103 @@ pub enum SpdmCertModel {
     GenericCertModel = 3,
 }
 
-pub struct EccCertChainBuffer {
-    pub(crate) certs: [[u8; EccCertChainBuffer::MAX_CERT_SIZE]; EccCertChainBuffer::MAX_CERT_COUNT],
-    pub(crate) certs_len: [u16; EccCertChainBuffer::MAX_CERT_COUNT],
+pub struct DeviceCertChainBuf {
+    slot_num: u8,
+    cert_type: u8,
+    buffer: [u8; DeviceCertChainBuf::MAX_CERT_SIZE * DeviceCertChainBuf::MAX_CERT_COUNT],
+    // leaf_cert_buffer: [u8; DeviceCertChainBuf::MAX_CERT_SIZE],
+    offset: u16,
+    cert_chain_size: u16,
 }
 
-impl EccCertChainBuffer {
-    pub const MAX_CERT_COUNT: usize = 3;
+impl DeviceCertChainBuf {
     pub const MAX_CERT_SIZE: usize = 1024;
-    pub fn new() -> Self {
+    pub const MAX_CERT_COUNT: usize = 4;
+    pub fn new(slot_id: u8) -> Self {
         Self {
-            certs: [[0u8; Self::MAX_CERT_SIZE]; Self::MAX_CERT_COUNT],
-            certs_len: [0; Self::MAX_CERT_COUNT],
+            slot_num: slot_id,
+            cert_type: CertType::Ecc as u8,
+            buffer: [0; DeviceCertChainBuf::MAX_CERT_SIZE * DeviceCertChainBuf::MAX_CERT_COUNT],
+            // leaf_cert_buffer: [0; DeviceCertChainBuf::MAX_CERT_SIZE],
+            offset: 0,
+            cert_chain_size: 0,
         }
     }
 
-    pub async fn cert_der<S: Syscalls>(&self, cert_index: usize) -> Option<&[u8]> {
-        if cert_index < Self::MAX_CERT_COUNT {
-            let cert_len = self.certs_len[cert_index as usize];
-            if cert_len == 0 {
-                return None;
-            } else if cert_len <= Self::MAX_CERT_SIZE as u16 {
-                Some(&self.certs[cert_index as usize][..cert_len as usize])
-            } else {
-                None
+    pub fn reset(&mut self) {
+        self.offset = 0;
+        self.cert_chain_size = 0;
+        self.buffer.fill(0);
+    }
+
+    pub async fn cert_chain_size<S: Syscalls>(&mut self) -> DeviceCertsMgrResult<usize> {
+        if self.cert_chain_size > 0 {
+            return Ok(self.cert_chain_size as usize);
+        }
+
+        let mut cert_store = CertStoreContext::<S>::new();
+        let chunk_size = Self::MAX_CERT_SIZE;
+        // let mut cert_chain_comeplte = false;
+        let mut offset = 0;
+
+        self.buffer.fill(0);
+        self.cert_chain_size = 0;
+
+        // Get intermediate certificates
+        loop {
+            let start = offset;
+            let end = start + chunk_size.min(self.buffer.len() - start);
+
+            let size = cert_store
+                .cert_chain_chunk(offset, &mut self.buffer[start..end])
+                .await?;
+
+            if size == 0 {
+                break;
             }
-        } else {
-            None
+
+            offset += size;
+
+            if size < Self::MAX_CERT_SIZE {
+                self.cert_chain_size = offset as u16;
+                // cert_chain_complete = true;
+                break;
+            }
         }
+        // Get leaf certificate
+        let size = cert_store
+            .certify_attestation_key(
+                &mut self.buffer[self.cert_chain_size as usize..],
+                None,
+                None,
+            )
+            .await?;
+
+        self.cert_chain_size += size as u16;
+
+        Ok(self.cert_chain_size as usize)
     }
 
-    pub async fn cert_len<S: Syscalls>(&self, cert_index: usize) -> usize {
-        self.cert_der::<S>(cert_index)
-            .await
-            .map(|cert| cert.len())
-            .unwrap_or(0)
+    pub async fn cert_chunk(
+        &self,
+        offset: usize,
+        len: usize,
+        cert_buf: &mut [u8],
+    ) -> DeviceCertsMgrResult<usize> {
+        if offset >= self.cert_chain_size as usize {
+            return Err(DeviceCertsMgrError::BufferTooSmall);
+        }
+
+        let chunk_size = self.cert_chain_size as usize - offset;
+        let size = len.min(chunk_size);
+
+        cert_buf.copy_from_slice(&self.buffer[offset..offset + size]);
+
+        Ok(size)
     }
 
-    pub fn cert_count(&self) -> usize {
-        Self::MAX_CERT_COUNT
-        // self.certs_len.iter().filter(|&&len| len > 0).count()
+    pub fn buffer(&self) -> &[u8] {
+        &self.buffer[..self.cert_chain_size as usize]
     }
 }
 
@@ -162,11 +219,11 @@ impl EccCertChainBuffer {
 pub struct CertSlotInfo<'a> {
     // Certificate chain from `Root CA Certificate` upto `IDevID Certificate`.
     // e.g: Root CA-> Intermediate CA (if any)->IDevID Certificate
-    pub(crate) idev_id_cert_chain: &'a [&'a [u8]],
-    // The staging buffer that holds the rest of the certificates in the chain.
+    pub(crate) root_cert_chain: &'a [&'a [u8]],
+    // The staging buffer that holds the intermediate certificates in the chain.
     // These certificates are fetched from Caliptra Core.
-    pub(crate) cert_chain_buf: &'a EccCertChainBuffer,
-    // The slot ID of the certificate chain
+    pub(crate) cert_chain_buf: DeviceCertChainBuf,
+    // The buffer that holds the leaf certificate
     pub(crate) slot_id: u8,
     // The model of the certificate chain (e.g., Device, Alias, Generic)
     pub(crate) cert_model: Option<SpdmCertModel>,
@@ -175,27 +232,24 @@ pub struct CertSlotInfo<'a> {
     // The key usage mask associated with the certificate slot
     pub(crate) key_usage_mask: Option<u16>,
     // The maximum number of certificates in the chain
-    pub(crate) max_certs_in_chain: u8,
+    // pub(crate) max_certs_in_chain: u8,
 }
 
 impl<'a> CertSlotInfo<'a> {
     pub fn new(
-        idev_id_cert_chain: &'a [&'a [u8]],
-        cert_chain_buf: &'a EccCertChainBuffer,
+        root_cert_chain: &'a [&'a [u8]],
         slot_id: u8,
         cert_model: Option<SpdmCertModel>,
         key_pair_id: Option<u8>,
         key_usage_mask: Option<u16>,
     ) -> Self {
-        let max_certs_in_chain = idev_id_cert_chain.len() as u8 + cert_chain_buf.cert_count() as u8;
         Self {
-            idev_id_cert_chain,
-            cert_chain_buf,
+            root_cert_chain,
+            cert_chain_buf: DeviceCertChainBuf::new(slot_id),
             slot_id,
             cert_model,
             key_pair_id,
             key_usage_mask,
-            max_certs_in_chain,
         }
     }
 
@@ -209,7 +263,7 @@ impl<'a> CertSlotInfo<'a> {
             Err(DeviceCertsMgrError::BufferTooSmall)?;
         }
 
-        let root_ca_cert = self.idev_id_cert_chain[0];
+        let root_ca_cert = self.root_cert_chain[0];
         let root_ca_cert_len = root_ca_cert.len();
 
         HashContext::<S>::hash_all(hash_algo, &root_ca_cert[..root_ca_cert_len], root_hash)
@@ -218,32 +272,17 @@ impl<'a> CertSlotInfo<'a> {
         Ok(())
     }
 
-    pub async fn cert_chain_size<S: Syscalls>(&self) -> usize {
-        let mut len = self.idev_id_cert_chain.iter().map(|cert| cert.len()).sum();
+    pub async fn cert_chain_size<S: Syscalls>(&mut self) -> DeviceCertsMgrResult<usize> {
+        let mut len = self.root_cert_chain.iter().map(|cert| cert.len()).sum();
 
-        // TODO: Add the sizes of the device certs.
-        for i in 0..self.cert_chain_buf.cert_count() {
-            len += self.cert_chain_buf.cert_len::<S>(i).await;
-        }
-        len
-    }
+        len += self.cert_chain_buf.cert_chain_size::<S>().await?;
 
-    pub async fn cert_der<S: Syscalls>(&self, cert_index: usize) -> Option<&[u8]> {
-        if cert_index >= self.max_certs_in_chain as usize {
-            return None;
-        }
-
-        if cert_index < self.idev_id_cert_chain.len() {
-            Some(self.idev_id_cert_chain[cert_index])
-        } else {
-            let cert_index = cert_index - self.idev_id_cert_chain.len();
-            self.cert_chain_buf.cert_der::<S>(cert_index).await
-        }
+        Ok(len)
     }
 
     pub async fn cert_chain_digest<S: Syscalls>(
-        &self,
-        ctx: &mut SpdmContext<'a, S>,
+        &mut self,
+        // ctx: &mut SpdmContext<'a, S>,
         hash_algo: HashAlgoType,
         digest: &mut [u8],
     ) -> DeviceCertsMgrResult<()> {
@@ -252,14 +291,15 @@ impl<'a> CertSlotInfo<'a> {
             Err(DeviceCertsMgrError::BufferTooSmall)?;
         }
 
-        // println!("cert_chain_digest hash_size: {}", hash_size);
-
         // Get root certificate hash
         let mut root_hash = [0u8; SPDM_MAX_HASH_SIZE];
         self.root_cert_hash::<S>(hash_algo, &mut root_hash).await?;
 
+        // Reset the certificate chain buffer
+        self.cert_chain_buf.reset();
+
         // Get the certificate chain size
-        let cert_chain_size = self.cert_chain_size::<S>().await;
+        let cert_chain_size = self.cert_chain_size::<S>().await?;
 
         let total_len = size_of::<SpdmCertChainHeader>() + hash_size + cert_chain_size;
 
@@ -280,20 +320,20 @@ impl<'a> CertSlotInfo<'a> {
         // Hash the root certificate hash
         hash_ctx.update(&root_hash[..hash_size]).await?;
 
-        writeln!(
-            ctx.cw,
-            "SPDM_LIB: cert_chain_digest total_len {} root_hash {:?}",
-            total_len, root_hash
-        )
-        .unwrap();
+        // writeln!(
+        //     ctx.cw,
+        //     "SPDM_LIB: cert_chain_digest total_len {} root_hash {:?}",
+        //     total_len, root_hash
+        // )
+        // .unwrap();
 
-        // Hash the certificate chain data
-        for i in 0..self.max_certs_in_chain as usize {
-            let cert = self.cert_der::<S>(i).await;
-            if let Some(cert) = cert {
-                hash_ctx.update(cert).await?;
-            }
+        // Hash the root certificate chain
+        for cert in self.root_cert_chain.iter() {
+            hash_ctx.update(cert).await?;
         }
+
+        // Hash the remaining certificates in the chain
+        hash_ctx.update(&self.cert_chain_buf.buffer()).await?;
 
         // Finalize the hash
         hash_ctx.finalize(digest).await?;
@@ -301,24 +341,33 @@ impl<'a> CertSlotInfo<'a> {
     }
 
     pub async fn cert_chain<S: Syscalls>(
-        &self,
-        cert_chain_buf: &mut [u8],
+        &mut self,
+        cert_chain_data: &mut [u8],
     ) -> DeviceCertsMgrResult<usize> {
-        let cert_chain_size = self.cert_chain_size::<S>().await;
+        let cert_chain_size = self.cert_chain_size::<S>().await?;
 
-        if cert_chain_buf.len() < cert_chain_size {
+        if cert_chain_data.len() < cert_chain_size {
             Err(DeviceCertsMgrError::BufferTooSmall)?;
         }
 
+        // Copy the root certificate chain
         let mut pos = 0;
-        for i in 0..self.max_certs_in_chain as usize {
-            let cert = self.cert_der::<S>(i).await;
-            if let Some(cert) = cert {
-                let len = cert.len();
-                cert_chain_buf[pos..pos + len].copy_from_slice(cert);
-                pos += len;
+        for cert in self.root_cert_chain.iter() {
+            let cert_len = cert.len();
+            if pos + cert_len > cert_chain_data.len() {
+                Err(DeviceCertsMgrError::BufferTooSmall)?;
             }
+            cert_chain_data[pos..pos + cert_len].copy_from_slice(cert);
+            pos += cert_len;
         }
+
+        // Copy rest of the certificate chain
+        let dev_cert_chain_size = self.cert_chain_buf.cert_chain_size::<S>().await?;
+        if pos + dev_cert_chain_size > cert_chain_data.len() {
+            Err(DeviceCertsMgrError::BufferTooSmall)?;
+        }
+        cert_chain_data[pos..pos + dev_cert_chain_size]
+            .copy_from_slice(self.cert_chain_buf.buffer());
 
         Ok(pos)
     }
@@ -328,14 +377,14 @@ impl<'a> CertSlotInfo<'a> {
 pub struct DeviceCertsManager<'a> {
     supported_slot_mask: SupportedSlotMask,
     provisioned_slot_mask: ProvisionedSlotMask,
-    cert_chain_slot_info: &'a [CertSlotInfo<'a>],
+    cert_chain_slot_info: &'a mut [CertSlotInfo<'a>],
 }
 
 impl<'a> DeviceCertsManager<'a> {
     pub fn new(
         supported_slot_mask: SupportedSlotMask,
         provisioned_slot_mask: ProvisionedSlotMask,
-        cert_chain_slot_info: &'a [CertSlotInfo<'a>],
+        cert_chain_slot_info: &'a mut [CertSlotInfo<'a>],
     ) -> SpdmResult<Self> {
         let mut prev_slot_id = 0;
         if cert_chain_slot_info.len() < 1 || cert_chain_slot_info.len() > SPDM_MAX_CERT_CHAIN_SLOTS
@@ -368,11 +417,28 @@ impl<'a> DeviceCertsManager<'a> {
         })
     }
 
-    pub fn cert_chain_slot_info(&self, slot_id: u8) -> DeviceCertsMgrResult<&CertSlotInfo<'a>> {
-        self.cert_chain_slot_info
-            .iter()
+    // pub fn cert_chain_slot_info(&mut self, slot_id: u8) -> Option<&mut CertSlotInfo<'a>> {
+    //     self.cert_chain_slot_info
+    //         .iter_mut()
+    //         .find(|cert_chain| cert_chain.slot_id == slot_id).or(None)
+    // }
+
+    pub async fn cert_chain_digest<S: Syscalls>(
+        &mut self,
+        slot_id: u8,
+        hash_algo: HashAlgoType,
+        digest: &mut [u8],
+    ) -> DeviceCertsMgrResult<()> {
+        let cert_chain_info = self
+            .cert_chain_slot_info
+            .iter_mut()
             .find(|cert_chain| cert_chain.slot_id == slot_id)
-            .ok_or(DeviceCertsMgrError::UnsupportedSlotId)
+            .ok_or(DeviceCertsMgrError::UnsupportedSlotId)?;
+
+        cert_chain_info
+            .cert_chain_digest::<S>(hash_algo, digest)
+            .await?;
+        Ok(())
     }
 
     pub fn cert_chain_slot_mask(
@@ -382,26 +448,26 @@ impl<'a> DeviceCertsManager<'a> {
     }
 
     pub async fn construct_cert_chain_buffer<S: Syscalls>(
-        &self,
-        ctx: &mut SpdmContext<'a, S>,
+        &mut self,
+        // ctx: &mut SpdmContext<'a, S>,
         hash_algo: HashAlgoType,
         slot_id: u8,
     ) -> DeviceCertsMgrResult<SpdmCertChainBuffer> {
         let mut cert_chain_data = [0u8; MAX_CERT_CHAIN_DATA_SIZE];
-        let cert_chain_info = self
+        let cert_chain_info = &mut self
             .cert_chain_slot_info
-            .iter()
+            .iter_mut()
             .find(|cert_chain| cert_chain.slot_id == slot_id)
             .ok_or(DeviceCertsMgrError::UnsupportedSlotId)?;
 
-        let cert_chain_size = cert_chain_info.cert_chain_size::<S>().await;
+        let cert_chain_size = cert_chain_info.cert_chain_size::<S>().await?;
 
-        writeln!(
-            ctx.cw,
-            "SPDM_LIB: construct_cert_chain_buffer cert_chain_size {}",
-            cert_chain_size
-        )
-        .unwrap();
+        // writeln!(
+        //     ctx.cw,
+        //     "SPDM_LIB: construct_cert_chain_buffer cert_chain_size {}",
+        //     cert_chain_size
+        // )
+        // .unwrap();
 
         if cert_chain_size > cert_chain_data.len() {
             Err(DeviceCertsMgrError::BufferTooSmall)?;

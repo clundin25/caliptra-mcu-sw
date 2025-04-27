@@ -24,5 +24,5 @@ pub mod transport;
 // Device certificate management
 pub mod cert_mgr;
 
-// Configuration
-// pub mod config;
+// Transcript manager
+pub mod transcript_mgr;

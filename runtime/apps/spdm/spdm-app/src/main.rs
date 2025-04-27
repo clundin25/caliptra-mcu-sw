@@ -9,7 +9,7 @@ use core::fmt::Write;
 use libsyscall_caliptra::mctp::driver_num;
 use libtock_console::{Console, ConsoleWriter};
 use libtock_platform::Syscalls;
-use spdm_lib::cert_mgr::{CertSlotInfo, DeviceCertsManager, EccCertChainBuffer, SpdmCertModel};
+use spdm_lib::cert_mgr::{CertSlotInfo, DeviceCertsManager, SpdmCertModel};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::context::SpdmContext;
 use spdm_lib::protocol::*;
@@ -111,23 +111,20 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         },
     };
 
-    let slot0_ecc_cert_buf = EccCertChainBuffer::new();
-
     let slot0_cert_info = CertSlotInfo::new(
         &config::SLOT0_ECC_DEVID_CERT_CHAIN,
-        &slot0_ecc_cert_buf,
         0,
         Some(SpdmCertModel::AliasCertModel),
         None,
         None,
     );
 
-    let cert_slots = [slot0_cert_info];
+    let mut cert_slots = [slot0_cert_info];
 
-    let device_certs_mgr = match DeviceCertsManager::new(
+    let mut device_certs_mgr = match DeviceCertsManager::new(
         config::CERT_CHAIN_SLOT_MASK,
         config::CERT_CHAIN_SLOT_MASK,
-        &cert_slots,
+        &mut cert_slots,
     ) {
         Ok(mgr) => mgr,
         Err(e) => {
@@ -148,7 +145,7 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         &mut mctp_spdm_transport,
         local_capabilities,
         local_algorithms,
-        &device_certs_mgr,
+        &mut device_certs_mgr,
         &mut lib_console_writer,
     ) {
         Ok(ctx) => ctx,

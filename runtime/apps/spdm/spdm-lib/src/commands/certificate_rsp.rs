@@ -158,7 +158,7 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
 
     let cert_chain_buffer = ctx
         .device_certs_manager
-        .construct_cert_chain_buffer::<S>(ctx, hash_algo, slot_id)
+        .construct_cert_chain_buffer::<S>(hash_algo, slot_id)
         .await
         .map_err(|_| ctx.generate_error_response(req_payload, ErrorCode::Unspecified, 0, None))?;
 
@@ -208,16 +208,16 @@ pub(crate) async fn handle_certificates<'a, S: Syscalls>(
     // Set the param2 field if the connection version is V13 or higher and multi-key capability is supported
     let mut param2 = 0;
     if connection_version >= SpdmVersion::V13 && ctx.local_capabilities.flags.multi_key_cap() != 0 {
-        let cert_chain_slot_info = ctx
-            .device_certs_manager
-            .cert_chain_slot_info(slot_id)
-            .map_err(|_| {
-                ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
-            })?;
+        // let cert_chain_slot_info = ctx
+        //     .device_certs_manager
+        //     .cert_chain_slot_info(slot_id)
+        //     .map_err(|_| {
+        //         ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None)
+        //     })?;
 
-        if let Some(cert_model) = cert_chain_slot_info.cert_model {
-            param2 = cert_model as u8;
-        }
+        // if let Some(cert_model) = cert_chain_slot_info.cert_model {
+        //     param2 = cert_model as u8;
+        // }
     }
 
     // Fill the response buffer
