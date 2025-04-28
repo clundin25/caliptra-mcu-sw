@@ -199,12 +199,17 @@ pub trait SpdmTranscriptManager {
 ```
 ## SPDM Certificate Store
 The `SpdmCertStore` manages certificate chains for all provisioned slots in the SPDM Certificate chain format(see `Table33 - Certificate chain format` in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf)). 
+
+The `SpdmCertStore` caches the certificate chain format information for each slot, including the length of the certificate chain format, the size of the hash algorithm used, and the hash of the root certificate in the certificate chain. This information is refreshed when a `GET_DIGESTS` command is received and is used to serve data in subsequent commands (e.g., `GET_CERTIFICATE`, `CHALLENGE`).
+
+<br>
 Each provisioned certificate slot corresponds to a `CertChain` instance, which handles the ASN.1 DER-encoded X.509 v3 certificate chain specific to that slot.
 The retrieval of a certificate chain for a given slot is platform-dependent and implemented via the `CertChain` trait.
 
 ### Certificate Manager Interface
 ```Rust
 pub const SPDM_MAX_CERT_SLOTS: usize = 1;
+pub const SPDM_MAX_CERT_CHAIN_PORTION_LEN: usize = 512;
 
 // SPDM Supported Slot Mask
 pub type SupportedSlotMask = u8;
@@ -214,9 +219,7 @@ pub type ProvisionedSlotMask = u8;
 
 ///! SPDM certificate store for managing the certificate chain for SPDM protocol.
 ///! The certificate chain managed by the `SpdmCertStore` is in SPDM Cert chain format.
-///! (See `Table 33 - Certificate Chain` Format in SPDM 1.3.2 specification)
-///! For more details, refer to the SPDM specification:
-///! [SPDM 1.3.2 Specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf)
+///! (See `Table 33 - Certificate Chain` Format in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf) specification)
 pub struct SpdmCertStore<'a> {
     /// Supported slot mask indicates the slots that are supported by the SPDM responder.
     pub(crate) supported_slot_mask: SupportedSlotMask,
@@ -241,6 +244,7 @@ impl<'a> SpdmCertStore<'a> {
     ) -> CertStoreResult<Self>;
 
     /// Reset the certificate chain state for a given slot.
+    /// This is done before handling the `DIGESTS` response to ensure the state is fresh.
     /// 
     /// # Arguments
     /// * `slot_id` - The ID of the slot to reset.
