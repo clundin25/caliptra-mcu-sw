@@ -2955,6 +2955,7 @@ dependencies = [
 name = "spdm-app"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "critical-section",
  "embassy-executor",
  "embedded-alloc",

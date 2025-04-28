@@ -477,7 +477,7 @@ pub(crate) fn handle_negotiate_algorithms<'a>(
     // Set the connection state to AfterAlgorithms
     ctx.state
         .connection_info
-        .set_state(ConnectionState::AfterNegotiateAlgorithms);
+        .set_state(ConnectionState::AlgorithmsNegotiated);
 
     Ok(())
 }

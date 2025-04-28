@@ -22,7 +22,7 @@ pub mod state;
 pub mod transport;
 
 // Device certificate management
-pub mod cert_mgr;
+pub mod cert_store;
 
 // Configuration
-pub mod config;
+// pub mod config;

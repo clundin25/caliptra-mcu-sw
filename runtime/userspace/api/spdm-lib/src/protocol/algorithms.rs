@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+use core::hash::Hash;
+
 use crate::error::{SpdmError, SpdmResult};
 use bitfield::bitfield;
 use libapi_caliptra::crypto::hash::HashAlgoType;
@@ -305,6 +307,16 @@ impl TryFrom<BaseHashAlgoType> for HashAlgoType {
         match value {
             BaseHashAlgoType::TpmAlgSha384 => Ok(HashAlgoType::SHA384),
             BaseHashAlgoType::TpmAlgSha512 => Ok(HashAlgoType::SHA512),
+            _ => Err(SpdmError::InvalidParam),
+        }
+    }
+}
+
+impl BaseHashAlgoType {
+    pub fn hash_size(self) -> SpdmResult<usize> {
+        match self {
+            BaseHashAlgoType::TpmAlgSha384 => Ok(HashAlgoType::SHA384.hash_size()),
+            BaseHashAlgoType::TpmAlgSha512 => Ok(HashAlgoType::SHA512.hash_size()),
             _ => Err(SpdmError::InvalidParam),
         }
     }

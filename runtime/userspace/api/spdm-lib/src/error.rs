@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::DeviceCertsMgrError;
+// use crate::cert_mgr::DeviceCertsMgrError;
+use crate::cert_store::CertStoreError;
 use crate::codec::CodecError;
 use crate::commands::error_rsp::ErrorCode;
 use crate::transport::TransportError;
@@ -14,17 +15,18 @@ pub enum SpdmError {
     Command(CommandError),
     BufferTooSmall,
     UnsupportedRequest,
-    CertMgr(DeviceCertsMgrError),
+    CertStore(CertStoreError),
 }
 
 pub type SpdmResult<T> = Result<T, SpdmError>;
 
 pub type CommandResult<T> = Result<T, (bool, CommandError)>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum CommandError {
     BufferTooSmall,
     Codec(CodecError),
     ErrorCode(ErrorCode),
     UnsupportedRequest,
+    CertStore(CertStoreError),
 }

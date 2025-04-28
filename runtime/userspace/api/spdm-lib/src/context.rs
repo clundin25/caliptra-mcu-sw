@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_mgr::DeviceCertsManager;
+// use crate::cert_mgr::DeviceCertsManager;
+use crate::cert_store::SpdmCertStore;
 use crate::codec::{Codec, MessageBuf};
 use crate::commands::error_rsp::{fill_error_response, ErrorCode};
 use crate::commands::{
@@ -20,7 +21,7 @@ pub struct SpdmContext<'a> {
     pub(crate) state: State,
     pub(crate) local_capabilities: DeviceCapabilities,
     pub(crate) local_algorithms: LocalDeviceAlgorithms<'a>,
-    pub(crate) device_certs_manager: &'a DeviceCertsManager,
+    pub(crate) device_certs_store: SpdmCertStore<'a>,
 }
 
 impl<'a> SpdmContext<'a> {
@@ -29,7 +30,7 @@ impl<'a> SpdmContext<'a> {
         spdm_transport: &'a mut dyn SpdmTransport,
         local_capabilities: DeviceCapabilities,
         local_algorithms: LocalDeviceAlgorithms<'a>,
-        device_certs_manager: &'a DeviceCertsManager,
+        device_certs_store: SpdmCertStore<'a>,
     ) -> SpdmResult<Self> {
         validate_supported_versions(supported_versions)?;
 
@@ -41,7 +42,7 @@ impl<'a> SpdmContext<'a> {
             state: State::new(),
             local_capabilities,
             local_algorithms,
-            device_certs_manager,
+            device_certs_store,
         })
     }
 
@@ -137,7 +138,7 @@ impl<'a> SpdmContext<'a> {
         fill_error_response(msg_buf, error_code, error_data, extended_data)
     }
 
-    pub fn get_select_hash_algo(&self) -> SpdmResult<BaseHashAlgoType> {
+    pub fn selected_hash_algo(&self) -> SpdmResult<BaseHashAlgoType> {
         let peer_algorithms = self.state.connection_info.peer_algorithms();
         let local_algorithms = &self.local_algorithms.device_algorithms;
         let algorithm_priority_table = &self.local_algorithms.algorithm_priority_table;
