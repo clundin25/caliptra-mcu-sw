@@ -198,190 +198,116 @@ pub trait SpdmTranscriptManager {
 }
 ```
 ## SPDM Certificate Store
-The `SpdmCertStore` manages certificate chains for all provisioned slots in the SPDM Certificate chain format(see `Table33 - Certificate chain format` in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf)). 
-
-The `SpdmCertStore` caches the certificate chain format information for each slot, including the length of the certificate chain format, the size of the hash algorithm used, and the hash of the root certificate in the certificate chain. This information is refreshed when a `GET_DIGESTS` command is received and is used to serve data in subsequent commands (e.g., `GET_CERTIFICATE`, `CHALLENGE`).
-
-<br>
-Each provisioned certificate slot corresponds to a `CertChain` instance, which handles the ASN.1 DER-encoded X.509 v3 certificate chain specific to that slot.
-The retrieval of a certificate chain for a given slot is platform-dependent and implemented via the `CertChain` trait.
+The `SpdmCertStore` trait provides the interfaces to retrieve and manage the certificate chain for all available slots in the device.
 
 ### Certificate Manager Interface
 ```Rust
-pub const SPDM_MAX_CERT_SLOTS: usize = 1;
-pub const SPDM_MAX_CERT_CHAIN_PORTION_LEN: usize = 512;
 
-// SPDM Supported Slot Mask
-pub type SupportedSlotMask = u8;
-
-// SPDM Provisioned Slot Mask 
-pub type ProvisionedSlotMask = u8;
-
-///! SPDM certificate store for managing the certificate chain for SPDM protocol.
-///! The certificate chain managed by the `SpdmCertStore` is in SPDM Cert chain format.
-///! (See `Table 33 - Certificate Chain` Format in [DSP0274](https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.3.2.pdf) specification)
-pub struct SpdmCertStore<'a> {
-    /// Supported slot mask indicates the slots that are supported by the SPDM responder.
-    pub(crate) supported_slot_mask: SupportedSlotMask,
-    /// Provisioned slot mask indicates the slots that are provisioned with certificate chains.
-    pub(crate) provisioned_slot_mask: ProvisionedSlotMask,
-    /// Certificate chain for each slot. The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
-    pub(crate) cert_chain: [Option<&'a mut dyn CertChain>; SPDM_MAX_CERT_SLOTS],
-    /// Certificate chain state for each slot to store the recently computed cert chain format information.
-    pub(crate) cert_chain_state: [Option<SpdmCertChainState>; SPDM_MAX_CERT_SLOTS],
+// Type of Asymmetric Algorithm selected by the SPDM responder
+// Currently only ECC P384 is supported.
+// This can be extended to support PQC algorithms in future.
+pub enum AsymAlgo {
+    EccP384,
 }
 
-impl<'a> SpdmCertStore<'a> {
-    /// Create a new `SpdmCertStore` instance.
-    ///
-    /// # Arguments
-    /// * `supported_slot_mask` - The supported slot mask.
-    /// * `provisioned_slot_mask` - The provisioned slot mask.
-    pub fn new(
-        supported_slot_mask: u8,
-        provisioned_slot_mask: u8,
-        cert_chain: [Option<&'a mut dyn CertChain>; SPDM_MAX_CERT_SLOTS],
-    ) -> CertStoreResult<Self>;
-
-    /// Reset the certificate chain state for a given slot.
-    /// This is done before handling the `DIGESTS` response to ensure the state is fresh.
-    /// 
-    /// # Arguments
-    /// * `slot_id` - The ID of the slot to reset.
-    /// 
-    /// # Returns
-    /// * `CertStoreResult<()>` - Result indicating success or failure.
-    pub fn reset_cert_chain_state(&mut self, slot_id: u8) -> CertStoreResult<()>;
-
-    /// Get the certificate slot mask.
-    /// 
-    /// # Returns
-    /// * `(SupportedSlotMask, ProvisionedSlotMask)` - Tuple containing the supported and provisioned slot masks.
-    pub fn cert_slot_mask(&self) -> (SupportedSlotMask, ProvisionedSlotMask);
-        pub async fn cert_chain_hash(
-        &mut self,
-        slot_id: u8,
-        hash_algo_sel: BaseHashAlgoType,
-        digest: &mut [u8],
-    ) -> CertStoreResult<usize>;
-
-    /// Get the remaining length of the certificate chain in SPDM cert chain format from the given offset.
-    /// This is needed to fill `RemainderLength` field in the `CERTIFICATE` response.
-    /// 
-    /// # Arguments
-    /// * `hash_algo_sel` - The hash algorithm to use for the root certificate hash.
-    /// * `slot_id` - The ID of the slot to get the length for.
-    /// * `offset` - The offset in bytes from the start of the certificate chain.
-    /// 
-    /// # Returns
-    /// * `CertStoreResult<u16>` - Result containing the length of the SPDM certificate chain or an error.
-    pub async fn remainder_cert_chain_len(
-        &mut self,
-        hash_algo_sel: BaseHashAlgoType,
-        slot_id: u8,
-        offset: u16,
-    ) -> CertStoreResult<u16>;
-    
-    /// Read the certificate chain in SPDM cert chain format from the given offset in portion.
-    /// 
-    /// # Arguments
-    /// * `hash_algo_sel` - The hash algorithm to use for the root certificate hash.
-    /// * `slot_id` - The ID of the slot to read the certificate chain from.
-    /// * `offset` - The offset in bytes from the start of the certificate chain.
-    /// * `cert_portion` - The buffer to store the portion of the certificate chain.
-    /// 
-    /// # Returns
-    /// * `CertStoreResult<usize>` - Result containing the number of bytes read or an error.
-    /// If the certificate portion size is smaller than the buffer size, the remaining bytes in the buffer will be filled with 0,
-    /// indicating the end of the SPDM certificate chain.
-    pub async fn read_cert_chain(
-        &mut self,
-        hash_algo_sel: BaseHashAlgoType,
-        slot_id: u8,
-        offset: usize,
-        cert_portion: &mut [u8],
-    ) -> CertStoreResult<usize>;
-}
-
-///! `SpdmCertChainState` is used to store the recently computed cert chain format information.
-///! This information is refreshed when GET_DIGESTS command is received and is used to 
-/// ! serve data in subsequent commands (e.g., GET_CERTIFICATE, CHALLENGE)
-struct SpdmCertChainState {
-    /// The length of the certificate chain format in bytes.
-    pub(crate) cert_chain_format_len: u16,
-    /// The size of the hash algorithm used for the certificate chain.
-    pub(crate) hash_size: usize,
-    /// The hash of the root certificate in the certificate chain.
-    pub(crate) root_cert_hash: [u8; MAX_HASH_SIZE],
-    /// The hash of the SPDM certificate chain format.
-    pub(crate) cert_chain_format_hash: [u8; MAX_HASH_SIZE],
-}
-
-///! `CertChain` trait is responsible for managing SPDM certificate chain for a provisioned slot.
-///! Each provisioned slot corresponds to an instance of the `CertChain`, which handles
-///! the ASN.1 DER-encoded X.509 v3 certificate chain for that slot.
 #[async_trait]
-pub trait CertChain {
-    /// Get the digest of the root certificate in the certificate chain.
+pub trait SpdmCertStore {
+    /// Get supported certificate slot count
+    /// The supported slots are consecutive from 0 to slot_count - 1.
+    ///
+    /// # Returns
+    /// * `u8` - The number of supported certificate slots.
+    fn slot_count(&self) -> u8;
+
+    /// Check if the slot is provisioned.
     ///
     /// # Arguments
-    /// * `hash_algo` - The hash algorithm to use for the digest.
-    /// * `root_hash` - The buffer to store the digest of the root certificate.
+    /// * `slot_id` - The slot ID of the certificate chain.
     ///
     /// # Returns
-    /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
-    async fn root_cert_hash<'a>(
-        &mut self,
-        hash_algo: BaseHashAlgoType,
-        root_hash: &'a mut [u8],
-    ) -> CertChainResult<usize>;
+    /// * `bool` - True if the slot is provisioned, false otherwise.
+    fn is_provisioned(&self, slot_id: u8) -> bool;
 
-    /// Get the length of the certificate chain.
-    ///
-    /// # Returns
-    /// * `Ok(usize)` - The length of the certificate chain in bytes or an error.
-    async fn cert_chain_length(&mut self) -> CertChainResult<usize>;
-
-    /// Read the certificate chain in portion. The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
+    /// Get the length of the certificate chain in bytes.
+    /// The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
+    /// The type of the certificate chain is indicated by the asym_algo parameter.
     ///
     /// # Arguments
-    /// * `offset` - The offset in bytes from the start of the cert chain.
-    /// * `cert_portion` - The buffer to store the portion of cert chain.
+    /// * `slot_id` - The slot ID of the certificate chain.
+    /// * `asym_algo` - The asymmetric algorithm to indicate the type of Certificate chain.
     ///
     /// # Returns
-    /// * `Ok(usize)` - The number of bytes written to the buffer or an error.
+    /// * `usize` - The length of the certificate chain in bytes or error.
+    async fn cert_chain_len(&mut self, asym_algo: AsymAlgo, slot_id: u8) -> CertStoreResult<usize>;
+
+    /// Get the certificate chain in portion. The certificate chain is in ASN.1 DER-encoded X.509 v3 format.
+    /// The type of the certificate chain is indicated by the asym_algo parameter.
+    ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    /// * `asym_algo` - The asymmetric algorithm to indicate the type of Certificate chain.
+    /// * `offset` - The offset in bytes to start reading from.
+    /// * `cert_portion` - The buffer to read the certificate chain into.
+    ///
+    /// # Returns
+    /// * `usize` - The number of bytes read or error.
     /// If the cert portion size is smaller than the buffer size, the remaining bytes in the buffer will be filled with 0,
     /// indicating the end of the cert chain.
-    async fn read_cert_chain<'a>(
+    async fn get_cert_chain<'a>(
         &mut self,
+        slot_id: u8,
+        asym_algo: AsymAlgo,
         offset: usize,
         cert_portion: &'a mut [u8],
-    ) -> CertChainResult<usize>;
+    ) -> CertStoreResult<usize>;
+
+    /// Get the hash of the root certificate in the certificate chain.
+    /// The hash algorithm is always SHA-384. The type of the certificate chain is indicated by the asym_algo parameter.
+    ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    /// * `asym_algo` - The asymmetric algorithm to indicate the type of Certificate chain.
+    /// * `cert_hash` - The buffer to store the hash of the root certificate.
+    ///
+    /// # Returns
+    /// * `()` - Ok if successful, error otherwise.
+    async fn root_cert_hash<'a>(
+        &mut self,
+        slot_id: u8,
+        asym_algo: AsymAlgo,
+        cert_hash: &'a mut [u8; SHA384_HASH_SIZE],
+    ) -> CertStoreResult<()>;
 
     /// Get the KeyPairID associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
     ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    ///
     /// # Returns
-    /// * `Option<KeyPairID>` - The KeyPairID associated with the certificate chain or None if not supported or not found.
-    fn key_pair_id(&mut self) -> Option<KeyPairID>;
+    /// * u8 - The KeyPairID associated with the certificate chain or None if not supported or not found.
+    fn key_pair_id(&mut self, slot_id: u8) -> Option<u8>;
 
     /// Get CertificateInfo associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
     ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    ///
     /// # Returns
-    /// * `Option<CertificateInfo>` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
-    fn cert_info(&mut self) -> Option<CertificateInfo>;
+    /// * `CertificateInfo` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
+    fn cert_info(&mut self, slot_id: u8) -> Option<CertificateInfo>;
 
     /// Get the KeyUsageMask associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
     ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    ///
     /// # Returns
-    /// * `Option<KeyUsageMask>` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
-    fn key_usage_mask(&mut self) -> Option<KeyUsageMask>;
+    /// * `KeyUsageMask` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
+    fn key_usage_mask(&mut self, slot_id: u8) -> Option<KeyUsageMask>;
 }
-
-// KeypairID associated with the certificate chain (for SPDM version >= 1.3)
-pub type KeyPairID = u8; 
 
 // CertificateInfo fields associated with the certificate chain (for SPDM version >= 1.3)
 bitfield! {
@@ -409,7 +335,6 @@ reserved, _: 13,4;
 pub standards_key_usage, set_standards_key_usage: 15,14;
 pub vendor_key_usage, set_vendor_key_usage: 15,15;
 }
-
 
 
 ```
