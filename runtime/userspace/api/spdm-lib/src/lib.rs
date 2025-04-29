@@ -23,6 +23,3 @@ pub mod transport;
 
 // Device certificate management
 pub mod cert_store;
-
-// Configuration
-// pub mod config;

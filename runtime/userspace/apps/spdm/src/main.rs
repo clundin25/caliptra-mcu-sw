@@ -9,12 +9,10 @@ mod config;
 mod dev_cert_store;
 
 use core::fmt::Write;
+use dev_cert_store::{DeviceCertChain, DeviceCertStore};
 use libsyscall_caliptra::mctp::driver_num;
 use libtock_console::{Console, ConsoleWriter};
 use libtock_platform::Syscalls;
-// use spdm_lib::cert_mgr::DeviceCertsManager;
-use crate::config::*;
-use spdm_lib::cert_store::{CertChain, SpdmCertStore};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::context::SpdmContext;
 use spdm_lib::protocol::*;
@@ -111,32 +109,24 @@ async fn spdm_loop<S: Syscalls>(raw_buffer: &mut [u8], cw: &mut ConsoleWriter<S>
         },
     };
 
-    let mut slot0_cert_chain = match dev_cert_store::DeviceCertChain::new(0) {
+    let slot0_cert_chain = match DeviceCertChain::new(0).await {
         Ok(chain) => chain,
         Err(e) => {
-            writeln!(cw, "SPDM_APP: Failed to create device cert chain: {:?}", e).unwrap();
+            writeln!(cw, "SPDM_APP: Failed to create DeviceCertChain: {:?}", e).unwrap();
             return;
         }
     };
 
-    let mut cert_chains: [Option<&mut dyn CertChain>; SPDM_MAX_CERT_SLOTS] = Default::default();
-    cert_chains[0] = Some(&mut slot0_cert_chain);
-
-    let device_cert_store =
-        match SpdmCertStore::new(CERT_CHAIN_SLOT_MASK, CERT_CHAIN_SLOT_MASK, cert_chains) {
-            Ok(store) => store,
-            Err(e) => {
-                writeln!(cw, "SPDM_APP: Failed to create device cert store: {:?}", e).unwrap();
-                return;
-            }
-        };
+    let mut device_cert_store = DeviceCertStore {
+        cert_chains: [Some(slot0_cert_chain), None],
+    };
 
     let mut ctx = match SpdmContext::new(
         SPDM_VERSIONS,
         &mut mctp_spdm_transport,
         local_capabilities,
         local_algorithms,
-        device_cert_store,
+        &mut device_cert_store,
     ) {
         Ok(ctx) => ctx,
         Err(e) => {
@@ -196,9 +186,7 @@ fn device_algorithms() -> DeviceAlgorithms {
     base_asym_algo.set_tpm_alg_ecdsa_ecc_nist_p384(1);
 
     let mut base_hash_algo = BaseHashAlgo::default();
-    base_hash_algo.set_tpm_alg_sha_256(1);
     base_hash_algo.set_tpm_alg_sha_384(1);
-    base_hash_algo.set_tpm_alg_sha_512(1);
 
     let mut mel_specification = MelSpecification::default();
     mel_specification.set_dmtf_mel_spec(1);

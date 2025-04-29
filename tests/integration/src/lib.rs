@@ -56,6 +56,7 @@ mod test {
         runtime_path: PathBuf,
         i3c_port: String,
         active_mode: bool,
+        manufacturing_mode: bool,
     ) -> ExitStatus {
         let mut cargo_run_args = vec![
             "run",
@@ -77,6 +78,9 @@ mod test {
             CaliptraBuilder::new(true, None, None, None, None, Some(runtime_path.clone()));
 
         if active_mode {
+            if manufacturing_mode {
+                cargo_run_args.push("--manufacturing-mode");
+            }
             cargo_run_args.push("--active-mode");
             let caliptra_rom = caliptra_builder
                 .get_caliptra_rom()
@@ -123,8 +127,14 @@ mod test {
                 let feature = stringify!($test).replace("_", "-");
                 let test_runtime = compile_runtime(&feature, $example_app);
                 let i3c_port = "65534".to_string();
-                let test =
-                    run_runtime(&feature, ROM.to_path_buf(), test_runtime, i3c_port, $active);
+                let test = run_runtime(
+                    &feature,
+                    ROM.to_path_buf(),
+                    test_runtime,
+                    i3c_port,
+                    $active,
+                    false, //set this to true if you want to run in manufacturing mode
+                );
                 assert_eq!(0, test.code().unwrap_or_default());
 
                 // force the compiler to keep the lock
@@ -153,8 +163,9 @@ mod test {
     // * add the feature to the emulator and use it to implement any behavior needed
     // * add the feature to the runtime and use it in board.rs at the end of the main function to call your test
     // These use underscores but will be converted to dashes in the feature flags
-    run_test!(test_caliptra_mailbox, example_app, caliptra);
+    run_test!(test_caliptra_certs, example_app, caliptra);
     run_test!(test_caliptra_crypto, example_app, caliptra);
+    run_test!(test_caliptra_mailbox, example_app, caliptra);
     run_test!(test_dma, example_app);
     run_test!(test_i3c_simple);
     run_test!(test_i3c_constant_writes);
@@ -184,7 +195,14 @@ mod test {
         println!("Compiling test firmware {}", &feature);
         let test_runtime = compile_runtime(&feature, false);
         let i3c_port = "65534".to_string();
-        let test = run_runtime(&feature, ROM.to_path_buf(), test_runtime, i3c_port, true);
+        let test = run_runtime(
+            &feature,
+            ROM.to_path_buf(),
+            test_runtime,
+            i3c_port,
+            true,
+            false,
+        );
         assert_eq!(0, test.code().unwrap_or_default());
 
         // force the compiler to keep the lock

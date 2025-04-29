@@ -5,6 +5,7 @@ use crate::cert_store::CertStoreError;
 use crate::codec::CodecError;
 use crate::commands::error_rsp::ErrorCode;
 use crate::transport::TransportError;
+use libapi_caliptra::crypto::error::CryptoError;
 
 #[derive(Debug)]
 pub enum SpdmError {
@@ -29,4 +30,5 @@ pub enum CommandError {
     ErrorCode(ErrorCode),
     UnsupportedRequest,
     CertStore(CertStoreError),
+    Crypto(CryptoError),
 }

@@ -12,6 +12,7 @@ caliptra-error.workspace = true
 libtock_platform.workspace = true
 zerocopy.workspace = true
 libsyscall-caliptra.workspace = true
+dpe.workspace = true
 
 [dev-dependencies]
 libtock_unittest.workspace = true

@@ -186,6 +186,7 @@ caliptra-image-types = { git = "https://github.com/chipsalliance/caliptra-sw", r
 caliptra-registers = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2c0c6a81f569e72622001fab3732a21a1be4c78a" }
 caliptra-test = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2c0c6a81f569e72622001fab3732a21a1be4c78a" }
 ureg = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2c0c6a81f569e72622001fab3732a21a1be4c78a" }
+dpe = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2c0c6a81f569e72622001fab3732a21a1be4c78a", default-features = false, features = ["dpe_profile_p384_sha384"] }
 
 # local caliptra dependency; useful when developing
 # caliptra-api = { path = "../caliptra-sw/api" }

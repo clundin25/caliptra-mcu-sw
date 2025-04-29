@@ -1,11 +1,19 @@
 // Licensed under the Apache-2.0 license
 
-use core::hash::Hash;
-
 use crate::error::{SpdmError, SpdmResult};
 use bitfield::bitfield;
 use libapi_caliptra::crypto::hash::HashAlgoType;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
+
+pub const SHA384_HASH_SIZE: usize = 48;
+
+// Type of Asymmetric Algorithm selected by the responder.
+// Currently only ECC P384 is supported.
+// This can be extended to support PQC algorithms in the future.
+#[derive(Debug, Clone, Copy)]
+pub enum AsymAlgo {
+    EccP384,
+}
 
 pub(crate) trait Prioritize<T>
 where

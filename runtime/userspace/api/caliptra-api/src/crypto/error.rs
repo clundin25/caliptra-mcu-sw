@@ -7,9 +7,10 @@ pub type CryptoResult<T> = Result<T, CryptoError>;
 
 #[derive(Debug)]
 pub enum CryptoError {
-    MailboxError(MailboxError),
-    SyscallError(ErrorCode),
+    Mailbox(MailboxError),
+    Syscall(ErrorCode),
     InvalidArgument(&'static str),
     InvalidOperation(&'static str),
     InvalidResponse,
+    UnprovisionedCsr,
 }

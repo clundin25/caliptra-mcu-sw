@@ -3,11 +3,13 @@ use bitfield::bitfield;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const SPDM_MAX_CERT_SLOTS: usize = 2;
+
 pub type SupportedSlotMask = u8;
 pub type ProvisionedSlotMask = u8;
 pub type KeyPairID = u8;
 
-#[repr(C, packed)]
+#[derive(IntoBytes, FromBytes, Immutable)]
+#[repr(packed)]
 pub struct SpdmCertChainHeader {
     pub length: u16,
     pub reserved: u16,

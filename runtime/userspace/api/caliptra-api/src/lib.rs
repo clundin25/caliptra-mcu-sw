@@ -2,6 +2,7 @@
 
 #![no_std]
 
+pub mod certificate;
 pub mod checksum;
 pub mod crypto;
 pub mod image_loading;
