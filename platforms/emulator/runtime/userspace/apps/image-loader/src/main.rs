@@ -102,7 +102,7 @@ pub async fn image_loading() -> Result<(), ErrorCode> {
         let flash_image_loader: ImageLoaderAPI =
             ImageLoaderAPI::new(ImageSource::Flash, EXECUTOR.get().spawner());
         flash_image_loader
-            .load_and_authorize(config::IMAGE_ID1)
+            .load_and_authorize(config::IMAGE_ID2)
             .await?;
         flash_image_loader.finalize().await?;
     }

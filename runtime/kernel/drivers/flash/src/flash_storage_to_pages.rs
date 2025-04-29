@@ -24,6 +24,9 @@ use kernel::utilities::cells::NumericCellExt;
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::ErrorCode;
 
+use romtime::println;
+use core::fmt::Write;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum State {
     Idle,
@@ -101,10 +104,13 @@ impl<'a, F: hil::flash::Flash> crate::hil::FlashStorage<'a> for FlashStorageToPa
                 self.remaining_length.set(length);
                 self.buffer_index.set(0);
 
+                println!("[xs debug]flash_storage_driver: read address: {}, length: {}, remaining_len: {}", address, length, self.remaining_length.get());
+
                 match self.driver.read_page(address / page_size, page_buffer) {
                     Ok(()) => Ok(()),
                     Err((error_code, page_buffer)) => {
                         self.page_buffer.replace(page_buffer);
+                        println!("[xs debug]flash_storage_driver: read page failed: address = {}", address);
                         Err(error_code)
                     }
                 }
@@ -223,6 +229,9 @@ impl<F: hil::flash::Flash> hil::flash::Client<F> for FlashStorageToPages<'_, F> 
                     buffer[buffer_index..(len + buffer_index)]
                         .copy_from_slice(&page_buffer.as_mut()[page_index..(len + page_index)]);
 
+                    // debug prints the buffer content copied to the user buffer
+                    println!("[xs debug]flash_storage_driver: page buffer index={} len={} contents: {:?}", page_index, len, &page_buffer.as_mut()[page_index..(len + page_index)]);
+
                     // Decide if the operation is done.
                     let new_len = self.remaining_length.get() - len;
                     if new_len == 0 {
@@ -231,6 +240,9 @@ impl<F: hil::flash::Flash> hil::flash::Client<F> for FlashStorageToPages<'_, F> 
                         self.state.set(State::Idle);
                         self.client
                             .map(move |client| client.read_done(buffer, self.length.get()));
+
+                        println!("[xs debug]flash_storage_driver: read complete: page_index = {}, length: {}", page_index, len);
+
                     } else {
                         // More to read.
                         self.buffer.replace(buffer);
@@ -239,11 +251,14 @@ impl<F: hil::flash::Flash> hil::flash::Client<F> for FlashStorageToPages<'_, F> 
                         self.address.add(len);
                         self.buffer_index.set(buffer_index + len);
 
+                        println!("[xs debug]flash_storage_driver: read more: address = {}, remaining_len = {}", self.address.get(), self.remaining_length.get());
+
                         if let Err((_, page_buffer)) = self
                             .driver
                             .read_page(self.address.get() / page_size, page_buffer)
                         {
                             self.page_buffer.replace(page_buffer);
+                            println!("[xs debug]flash_storage_driver: read page failed: address = {}", self.address.get());
                         }
                     }
                 }

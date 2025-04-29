@@ -226,6 +226,8 @@ impl DummyFlashCtrl {
             || self.file.is_none()
             || !self.dma_ram_access_check(self.page_addr.reg.get())
         {
+            println!("[xs debug]emulator: flash_ctrl ERROR: read_page: page_num = {}, page_size = {}, file = {:?}, page_addr = {}",
+                page_num, self.page_size.reg.get(), self.file, self.page_addr.reg.get());
             return Err(FlashOpError::ReadError);
         }
 
@@ -233,9 +235,13 @@ impl DummyFlashCtrl {
         if let Some(file) = &mut self.file {
             let offset = (page_num * Self::PAGE_SIZE as u32) as u64;
             // Error handling for seek and read operations
-            if file.seek(std::io::SeekFrom::Start(offset)).is_err()
-                || file.read_exact(&mut self.buffer).is_err()
-            {
+            if let Err(err) = file.seek(std::io::SeekFrom::Start(offset)) {
+                println!("[xs debug]flash_ctrl emulator: Error seeking to offset {}: {:?}", offset, err);
+                return Err(FlashOpError::ReadError);
+            }
+
+            if let Err(err) = file.read_exact(&mut self.buffer) {
+                println!("[xs debug]flash ctrl emulator: Error reading from file at offset {}: {:?}", offset, err);
                 return Err(FlashOpError::ReadError);
             }
         }

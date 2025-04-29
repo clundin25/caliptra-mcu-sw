@@ -15,6 +15,8 @@ use registers_generated::main_flash_ctrl::{
 };
 use registers_generated::recovery_flash_ctrl::RECOVERY_FLASH_CTRL_ADDR;
 
+use romtime::println;
+
 // The recovery flash controller is identical to the main flash controller in the emulator.
 // Both controllers use the same register structures, differing only in their base addresses.
 // Therefore, we can use MainFlashCtrl to represent both flash controllers.
@@ -47,6 +49,7 @@ impl TryInto<FlashOperation> for u32 {
     }
 }
 
+#[derive(Debug)]
 pub struct EmulatedFlashPage(pub [u8; PAGE_SIZE]);
 
 impl Default for EmulatedFlashPage {
@@ -143,6 +146,8 @@ impl<'a> EmulatedFlashCtrl<'a> {
             if let Some(buf) = read_buf {
                 // We were doing a read
                 self.flash_client.map(move |client| {
+                    // print out the error
+                    println!("[xs debug] FlashCtrl handle_read_interrupt Error interrupt");
                     client.read_complete(buf, Err(hil::flash::Error::FlashError));
                 });
             }
@@ -185,8 +190,13 @@ impl<'a> EmulatedFlashCtrl<'a> {
                 if let Some(buf) = read_buf {
                     // We were doing a read
                     self.flash_client.map(move |client| {
+                        // print the read buffer for debugging
+                        println!("[xs debug] FlashCtrl handle_read_interrupt success: read_page: buf = {:?}", buf);
                         client.read_complete(buf, Ok(()));
                     });
+                } else {
+                    // print out the error
+                    println!("[xs debug] FlashCtrl handle_read_interrupt failed: read_page: buf = None");
                 }
             } else if self
                 .registers
@@ -265,6 +275,8 @@ impl hil::flash::Flash for EmulatedFlashCtrl<'_> {
         self.registers
             .fl_control
             .modify(FlControl::Op.val(FlashOperation::ReadPage as u32) + FlControl::Start::SET);
+
+        println!("[xs debug] FlashCtrl: read_page: page_num = {}", page_number);
 
         Ok(())
     }
