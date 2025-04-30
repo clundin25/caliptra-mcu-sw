@@ -59,7 +59,7 @@ async fn encode_cert_chain_digest<'a>(
     hash_ctx
         .init(HashAlgoType::SHA384, Some(header_bytes))
         .await
-        .map_err(|e| (false, CommandError::Crypto(e)))?;
+        .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
     // Root certificate hash
     let mut root_hash = [0u8; SHA384_HASH_SIZE];
@@ -71,7 +71,7 @@ async fn encode_cert_chain_digest<'a>(
     hash_ctx
         .update(&root_hash)
         .await
-        .map_err(|e| (false, CommandError::Crypto(e)))?;
+        .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
     // Hash the certificate chain
     let mut cert_portion = [0u8; 1024];
@@ -86,7 +86,7 @@ async fn encode_cert_chain_digest<'a>(
         hash_ctx
             .update(&cert_portion[..bytes_read])
             .await
-            .map_err(|e| (false, CommandError::Crypto(e)))?;
+            .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
         offset += bytes_read;
 
@@ -99,13 +99,13 @@ async fn encode_cert_chain_digest<'a>(
     // Fill the response buffer with the certificate chain digest
     rsp.put_data(SHA384_HASH_SIZE)
         .map_err(|e| (false, CommandError::Codec(e)))?;
-    let mut cert_chain_digest_buf = rsp
+    let cert_chain_digest_buf = rsp
         .data_mut(SHA384_HASH_SIZE)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
     hash_ctx
         .finalize(cert_chain_digest_buf)
         .await
-        .map_err(|e| (false, CommandError::Crypto(e)))?;
+        .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
     rsp.pull_data(SHA384_HASH_SIZE)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
 

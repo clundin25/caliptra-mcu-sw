@@ -10,6 +10,7 @@ edition.workspace = true
 async-trait.workspace = true
 critical-section.workspace = true
 embassy-executor.workspace = true
+libapi-caliptra.workspace = true
 libsyscall-caliptra.workspace = true
 libtock_console.workspace = true
 libtock_debug_panic.workspace = true

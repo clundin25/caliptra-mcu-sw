@@ -3046,6 +3046,7 @@ dependencies = [
  "critical-section",
  "embassy-executor",
  "embedded-alloc",
+ "libapi-caliptra",
  "libsyscall-caliptra",
  "libtock",
  "libtock_console",

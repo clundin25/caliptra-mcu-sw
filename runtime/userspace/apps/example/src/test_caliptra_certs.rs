@@ -1,6 +1,13 @@
-use libapi_caliptra::certificate::{CertStoreContext, IDEV_ECC_CSR_MAX_SIZE, MAX_ECC_CERT_SIZE};
+use libapi_caliptra::certificate::{
+    CertContext, IDEV_ECC_CSR_MAX_SIZE, KEY_LABEL_SIZE, MAX_ECC_CERT_SIZE,
+};
 use romtime::println;
 use romtime::test_exit;
+
+const TEST_KEY_LABEL: [u8; KEY_LABEL_SIZE] = [
+    48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25,
+    24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+];
 
 const SIGNED_IDEV_CERT_DER: [u8; 541] = [
     0x30, 0x82, 0x02, 0x19, 0x30, 0x82, 0x01, 0x9f, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01, 0x00,
@@ -43,7 +50,7 @@ const SIGNED_IDEV_CERT_DER: [u8; 541] = [
 pub async fn test_get_idev_csr() {
     println!("Starting Caliptra mailbox get idev csr test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut csr_der = [0u8; IDEV_ECC_CSR_MAX_SIZE];
     let result = cert_mgr.get_idev_csr(&mut csr_der).await;
     match result {
@@ -68,11 +75,13 @@ pub async fn test_get_idev_csr() {
     println!("Get idev csr test completed successfully");
 }
 
-pub async fn test_populate_idev_cert() {
+pub async fn test_populate_idev_ecc384_cert() {
     println!("Starting Caliptra mailbox populate idev cert test");
 
-    let mut cert_mgr = CertStoreContext::new();
-    let result = cert_mgr.populate_idev_cert(&SIGNED_IDEV_CERT_DER).await;
+    let mut cert_mgr = CertContext::new();
+    let result = cert_mgr
+        .populate_idev_ecc384_cert(&SIGNED_IDEV_CERT_DER)
+        .await;
     match result {
         Ok(_) => {
             println!("Successfully populated idev certificate");
@@ -85,12 +94,12 @@ pub async fn test_populate_idev_cert() {
     println!("Populate idev cert test completed successfully");
 }
 
-pub async fn test_get_ldev_cert() {
+pub async fn test_get_ldev_ecc384_cert() {
     println!("Starting Caliptra mailbox get ldev cert test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_ldev_cert(&mut cert).await;
+    let result = cert_mgr.get_ldev_ecc384_cert(&mut cert).await;
     match result {
         Ok(size) => {
             println!("Retrieved LDEV certificate of size: {}", size);
@@ -110,12 +119,12 @@ pub async fn test_get_ldev_cert() {
     println!("Get ldev cert test completed successfully");
 }
 
-pub async fn test_get_fmc_alias_cert() {
+pub async fn test_get_fmc_alias_ecc384cert() {
     println!("Starting Caliptra mailbox get FMC alias cert test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_fmc_alias_cert(&mut cert).await;
+    let result = cert_mgr.get_fmc_alias_ecc384_cert(&mut cert).await;
     match result {
         Ok(size) => {
             println!("Retrieved FMC alias certificate of size: {}", size);
@@ -135,12 +144,12 @@ pub async fn test_get_fmc_alias_cert() {
     println!("Get FMC alias cert test completed successfully");
 }
 
-pub async fn test_get_rt_alias_cert() {
+pub async fn test_get_rt_alias_ecc384cert() {
     println!("Starting Caliptra mailbox get FMC cert test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
-    let result = cert_mgr.get_rt_alias_cert(&mut cert).await;
+    let result = cert_mgr.get_rt_alias_384cert(&mut cert).await;
     match result {
         Ok(size) => {
             println!("Retrieved RT alias certificate of size: {}", size);
@@ -166,7 +175,7 @@ pub async fn test_get_cert_chain() {
     let mut cert_chain = [0u8; 4098];
     const CERT_CHUNK_SIZE: usize = 1024;
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut cert_chunk = [0u8; CERT_CHUNK_SIZE];
     let mut offset = 0;
 
@@ -210,15 +219,20 @@ pub async fn test_get_cert_chain() {
     println!("Cert chain data: {:?}", &cert_chain[..offset]);
 }
 
-pub async fn test_certify_attestation_key() {
+pub async fn test_certify_key() {
     println!("Starting Caliptra mailbox certify attestation key test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let mut cert = [0u8; MAX_ECC_CERT_SIZE];
     let mut pubkey_x = [0u8; 48];
     let mut pubkey_y = [0u8; 48];
     let result = cert_mgr
-        .certify_attestation_key(&mut cert, Some(&mut pubkey_x), Some(&mut pubkey_y))
+        .certify_key(
+            &mut cert,
+            Some(&TEST_KEY_LABEL),
+            Some(&mut pubkey_x),
+            Some(&mut pubkey_y),
+        )
         .await;
     match result {
         Ok(size) => {
@@ -245,10 +259,10 @@ pub async fn test_certify_attestation_key() {
     println!("Certify attestation key test completed successfully");
 }
 
-pub async fn test_sign_with_attestation_key() {
+pub async fn test_sign_with_test_key() {
     println!("Starting Caliptra mailbox sign with attestation key test");
 
-    let mut cert_mgr = CertStoreContext::new();
+    let mut cert_mgr = CertContext::new();
     let test_digest: [u8; 48] = [
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
         0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
@@ -257,7 +271,7 @@ pub async fn test_sign_with_attestation_key() {
     ];
     let mut signature = [0u8; 128];
     let result = cert_mgr
-        .sign_with_attestation_key(&test_digest, &mut signature)
+        .sign(Some(&TEST_KEY_LABEL), &test_digest, &mut signature)
         .await;
     match result {
         Ok(size) => {

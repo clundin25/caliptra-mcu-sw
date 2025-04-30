@@ -8,7 +8,7 @@ use core::mem::size_of;
 use libsyscall_caliptra::mailbox::Mailbox;
 use zerocopy::{FromBytes, IntoBytes};
 
-use crate::crypto::error::{CryptoError, CryptoResult};
+use crate::error::{CaliptraApiError, CaliptraApiResult};
 
 pub const MAX_HASH_SIZE: usize = 64; // SHA512
 
@@ -61,10 +61,10 @@ impl HashContext {
         hash_algo: HashAlgoType,
         data: &[u8],
         hash: &mut [u8],
-    ) -> CryptoResult<()> {
+    ) -> CaliptraApiResult<()> {
         let mut ctx = HashContext::new();
         if hash.len() < hash_algo.hash_size() {
-            Err(CryptoError::InvalidArgument("Hash buffer too small"))?;
+            Err(CaliptraApiError::InvalidArgument("Hash buffer too small"))?;
         }
         ctx.init(hash_algo, Some(data)).await?;
         ctx.finalize(hash).await
@@ -74,7 +74,11 @@ impl HashContext {
         self.algo
     }
 
-    pub async fn init(&mut self, hash_algo: HashAlgoType, data: Option<&[u8]>) -> CryptoResult<()> {
+    pub async fn init(
+        &mut self,
+        hash_algo: HashAlgoType,
+        data: Option<&[u8]>,
+    ) -> CaliptraApiResult<()> {
         self.algo = Some(hash_algo);
 
         let mut init_req = CmShaInitReq {
@@ -95,17 +99,17 @@ impl HashContext {
         let req_bytes = init_req.as_mut_bytes();
         self.mbox
             .populate_checksum(CmShaInitReq::ID.0, req_bytes)
-            .map_err(CryptoError::Syscall)?;
+            .map_err(CaliptraApiError::Syscall)?;
 
         let init_rsp_bytes = &mut [0u8; size_of::<CmShaInitResp>()];
 
         self.mbox
             .execute(CmShaInitReq::ID.0, init_req.as_bytes(), init_rsp_bytes)
             .await
-            .map_err(CryptoError::Mailbox)?;
+            .map_err(CaliptraApiError::Mailbox)?;
 
         let init_rsp = CmShaInitResp::ref_from_bytes(init_rsp_bytes)
-            .map_err(|_| CryptoError::InvalidResponse)?;
+            .map_err(|_| CaliptraApiError::InvalidResponse)?;
 
         self.ctx = Some(init_rsp.context);
 
@@ -118,13 +122,13 @@ impl HashContext {
         Ok(())
     }
 
-    pub async fn update(&mut self, data: &[u8]) -> CryptoResult<()> {
+    pub async fn update(&mut self, data: &[u8]) -> CaliptraApiResult<()> {
         let mut data_offset = 0;
 
         while data_offset < data.len() {
-            let ctx = self
-                .ctx
-                .ok_or(CryptoError::InvalidOperation("Context not initialized"))?;
+            let ctx = self.ctx.ok_or(CaliptraApiError::InvalidOperation(
+                "Context not initialized",
+            ))?;
 
             let mut update_req = CmShaUpdateReq {
                 hdr: MailboxReqHeader::default(),
@@ -140,7 +144,7 @@ impl HashContext {
             let req_bytes = update_req.as_mut_bytes();
             self.mbox
                 .populate_checksum(CmShaUpdateReq::ID.0, req_bytes)
-                .map_err(CryptoError::Syscall)?;
+                .map_err(CaliptraApiError::Syscall)?;
 
             let update_rsp_bytes = &mut [0u8; size_of::<CmShaInitResp>()];
 
@@ -151,10 +155,10 @@ impl HashContext {
                     update_rsp_bytes,
                 )
                 .await
-                .map_err(CryptoError::Mailbox)?;
+                .map_err(CaliptraApiError::Mailbox)?;
 
             let update_rsp = CmShaInitResp::ref_from_bytes(update_rsp_bytes)
-                .map_err(|_| CryptoError::InvalidResponse)?;
+                .map_err(|_| CaliptraApiError::InvalidResponse)?;
             self.ctx = Some(update_rsp.context);
 
             data_offset += data_size;
@@ -163,21 +167,21 @@ impl HashContext {
         Ok(())
     }
 
-    pub async fn finalize(&mut self, hash: &mut [u8]) -> CryptoResult<()> {
-        let ctx = self
-            .ctx
-            .ok_or(CryptoError::InvalidOperation("Context not initialized"))?;
+    pub async fn finalize(&mut self, hash: &mut [u8]) -> CaliptraApiResult<()> {
+        let ctx = self.ctx.ok_or(CaliptraApiError::InvalidOperation(
+            "Context not initialized",
+        ))?;
 
         let hash_size = self
             .algo
             .as_ref()
-            .ok_or(CryptoError::InvalidOperation(
+            .ok_or(CaliptraApiError::InvalidOperation(
                 "Hash algorithm not initialized",
             ))?
             .hash_size();
 
         if hash.len() < hash_size {
-            return Err(CryptoError::InvalidArgument("Hash buffer too small"));
+            return Err(CaliptraApiError::InvalidArgument("Hash buffer too small"));
         }
 
         let mut final_req = CmShaFinalReq {
@@ -189,17 +193,17 @@ impl HashContext {
         let req_bytes = final_req.as_mut_bytes();
         self.mbox
             .populate_checksum(CmShaFinalReq::ID.0, req_bytes)
-            .map_err(CryptoError::Syscall)?;
+            .map_err(CaliptraApiError::Syscall)?;
 
         let final_rsp_bytes = &mut [0u8; size_of::<CmShaFinalResp>()];
 
         self.mbox
             .execute(CmShaFinalReq::ID.0, final_req.as_bytes(), final_rsp_bytes)
             .await
-            .map_err(CryptoError::Mailbox)?;
+            .map_err(CaliptraApiError::Mailbox)?;
 
         let final_rsp = CmShaFinalResp::ref_from_bytes(final_rsp_bytes)
-            .map_err(|_| CryptoError::InvalidResponse)?;
+            .map_err(|_| CaliptraApiError::InvalidResponse)?;
 
         hash[..hash_size].copy_from_slice(&final_rsp.hash[..hash_size]);
 

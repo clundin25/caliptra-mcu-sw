@@ -320,16 +320,6 @@ impl TryFrom<BaseHashAlgoType> for HashAlgoType {
     }
 }
 
-impl BaseHashAlgoType {
-    pub fn hash_size(self) -> SpdmResult<usize> {
-        match self {
-            BaseHashAlgoType::TpmAlgSha384 => Ok(HashAlgoType::SHA384.hash_size()),
-            BaseHashAlgoType::TpmAlgSha512 => Ok(HashAlgoType::SHA512.hash_size()),
-            _ => Err(SpdmError::InvalidParam),
-        }
-    }
-}
-
 // Measurement Extension Log Specification field
 bitfield! {
 #[derive(FromBytes, IntoBytes, Immutable, Default, Clone, Copy)]

@@ -8,6 +8,7 @@ use crate::protocol::certs::{CertificateInfo, KeyUsageMask};
 use crate::protocol::SpdmCertChainHeader;
 use alloc::boxed::Box;
 use async_trait::async_trait;
+use libapi_caliptra::error::CaliptraApiError;
 
 pub const MAX_CERT_SLOTS_SUPPORTED: u8 = 2;
 pub const SPDM_CERT_CHAIN_METADATA_LEN: u16 =
@@ -15,10 +16,13 @@ pub const SPDM_CERT_CHAIN_METADATA_LEN: u16 =
 
 #[derive(Debug)]
 pub enum CertStoreError {
+    InitFailed,
     InvalidSlotId,
     UnsupportedHashAlgo,
     BufferTooSmall,
     InvalidOffset,
+    CertReadError,
+    CaliptraApi(CaliptraApiError),
 }
 pub type CertStoreResult<T> = Result<T, CertStoreError>;
 
@@ -90,6 +94,15 @@ pub trait SpdmCertStore {
         cert_hash: &'a mut [u8; SHA384_HASH_SIZE],
     ) -> CertStoreResult<()>;
 
+    /// Get the leaf certificate key label
+    ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    ///
+    /// # Returns
+    /// * `Option<[u8; SHA384_HASH_SIZE]>` - The leaf certificate key label or None if not supported or not found.
+    fn leaf_cert_key_label(&self, slot_id: u8) -> Option<[u8; SHA384_HASH_SIZE]>;
+
     /// Get the KeyPairID associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
     ///
@@ -98,7 +111,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * u8 - The KeyPairID associated with the certificate chain or None if not supported or not found.
-    fn key_pair_id(&mut self, slot_id: u8) -> Option<u8>;
+    fn key_pair_id(&self, slot_id: u8) -> Option<u8>;
 
     /// Get CertificateInfo associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
@@ -108,7 +121,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `CertificateInfo` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
-    fn cert_info(&mut self, slot_id: u8) -> Option<CertificateInfo>;
+    fn cert_info(&self, slot_id: u8) -> Option<CertificateInfo>;
 
     /// Get the KeyUsageMask associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
@@ -118,7 +131,7 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * `KeyUsageMask` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
-    fn key_usage_mask(&mut self, slot_id: u8) -> Option<KeyUsageMask>;
+    fn key_usage_mask(&self, slot_id: u8) -> Option<KeyUsageMask>;
 }
 
 pub(crate) fn validate_cert_store(cert_store: &dyn SpdmCertStore) -> SpdmResult<()> {

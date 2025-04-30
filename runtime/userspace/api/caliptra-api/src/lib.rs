@@ -5,5 +5,6 @@
 pub mod certificate;
 pub mod checksum;
 pub mod crypto;
+pub mod error;
 pub mod image_loading;
 pub mod mailbox;
