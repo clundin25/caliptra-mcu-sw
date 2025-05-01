@@ -1,20 +1,19 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_store::{
-    cert_slot_mask, total_cert_chain_len, SpdmCertStore, SPDM_CERT_CHAIN_METADATA_LEN,
-};
+use crate::cert_store::{cert_slot_mask, SpdmCertStore, MAX_CERT_SLOTS_SUPPORTED};
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
 use crate::context::SpdmContext;
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::common::SpdmMsgHdr;
 use crate::protocol::version::SpdmVersion;
-use crate::protocol::{AsymAlgo, SpdmCertChainHeader, SHA384_HASH_SIZE, SPDM_MAX_CERT_SLOTS};
+use crate::protocol::{
+    AsymAlgo, SpdmCertChainHeader, SHA384_HASH_SIZE, SPDM_CERT_CHAIN_METADATA_LEN,
+    SPDM_MAX_CERT_CHAIN_PORTION_LEN,
+};
 use crate::state::ConnectionState;
 use bitfield::bitfield;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-
-const SPDM_MAX_CERT_CHAIN_PORTION_LEN: u16 = 512;
 
 #[derive(FromBytes, IntoBytes, Immutable)]
 #[repr(C)]
@@ -44,17 +43,6 @@ bitfield! {
     pub slot_size_requested, set_slot_size_requested: 0,0;
     reserved, _: 7,1;
 }
-
-// impl GetCertificateReq {
-//     pub fn new(slot_id: SlotId, param2: CertificateReqAttributes, offset: u16, length: u16) -> Self {
-//         Self {
-//             slot_id,
-//             param2,
-//             offset,
-//             length,
-//         }
-//     }
-// }
 
 impl CommonCodec for GetCertificateReq {
     const DATA_KIND: DataKind = DataKind::Payload;
@@ -90,19 +78,13 @@ impl CertificateRespCommon {
 }
 
 bitfield! {
-    #[derive(FromBytes, IntoBytes, Immutable)]
+    #[derive(FromBytes, IntoBytes, Immutable, Default)]
     #[repr(C)]
     pub struct CertificateRespAttributes(u8);
     impl Debug;
     u8;
     pub certificate_info, set_certificate_info: 2,0;
     reserved, _: 7,3;
-}
-
-impl Default for CertificateRespAttributes {
-    fn default() -> Self {
-        Self(0)
-    }
 }
 
 pub(crate) async fn handle_certificates<'a>(
@@ -131,7 +113,7 @@ pub(crate) async fn handle_certificates<'a>(
     })?;
 
     let slot_id = req.slot_id.slot_id();
-    if slot_id >= SPDM_MAX_CERT_SLOTS as u8 {
+    if slot_id >= MAX_CERT_SLOTS_SUPPORTED {
         Err(ctx.generate_error_response(req_payload, ErrorCode::InvalidRequest, 0, None))?;
     }
 
@@ -196,18 +178,15 @@ async fn encode_certchain_metadata<'a>(
         reserved: 0,
     };
     let cert_chain_hdr_bytes = cert_chain_hdr.as_bytes();
-    certchain_metadata[..cert_chain_hdr_bytes.len()].copy_from_slice(&cert_chain_hdr_bytes[..]);
+    certchain_metadata[..cert_chain_hdr_bytes.len()].copy_from_slice(cert_chain_hdr_bytes);
 
     // Read the root cert hash next
-    let root_hash_buf: &mut [u8; SHA384_HASH_SIZE] = &mut certchain_metadata
-        [cert_chain_hdr_bytes.len()..]
-        .try_into()
-        .map_err(|_| (false, CommandError::BufferTooSmall))?;
-
-    let _ = cert_store
-        .root_cert_hash(slot_id, asym_algo, root_hash_buf)
+    let mut root_hash_buf = [0u8; SHA384_HASH_SIZE];
+    cert_store
+        .root_cert_hash(slot_id, asym_algo, &mut root_hash_buf)
         .await
         .map_err(|e| (false, CommandError::CertStore(e)))?;
+    certchain_metadata[cert_chain_hdr_bytes.len()..].copy_from_slice(&root_hash_buf[..]);
 
     let write_len = (SPDM_CERT_CHAIN_METADATA_LEN - offset as u16).min(length as u16) as usize;
 
@@ -252,9 +231,13 @@ async fn fill_certificate_response<'a>(
         resp_attr.set_certificate_info(cert_info.cert_model());
     }
 
-    let total_cert_chain_len = total_cert_chain_len(ctx.device_certs_store, asym_algo, slot_id)
+    // Get total cert chain length in SPDM cert chain format
+    let cert_chain_len = ctx
+        .device_certs_store
+        .cert_chain_len(asym_algo, slot_id)
         .await
         .map_err(|_| ctx.generate_error_response(rsp, ErrorCode::InvalidRequest, 0, None))?;
+    let total_cert_chain_len = cert_chain_len as u16 + SPDM_CERT_CHAIN_METADATA_LEN;
 
     if offset >= total_cert_chain_len {
         return Err(ctx.generate_error_response(rsp, ErrorCode::InvalidRequest, 0, None));
@@ -282,7 +265,7 @@ async fn fill_certificate_response<'a>(
     let cert_offset: usize;
 
     if portion_len > 0 {
-        // Encode the certificate chain metadata first if it the beginning of the chain
+        // Encode the certificate chain metadata first if it the beginning of the certificate chain
         if offset < SPDM_CERT_CHAIN_METADATA_LEN {
             let read_len = encode_certchain_metadata(
                 ctx.device_certs_store,
@@ -324,44 +307,3 @@ async fn fill_certificate_response<'a>(
 
     Ok(())
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn test_encode_get_cert_chain_resp() {
-//         let cert_chain_portion = [0xaau8; MAX_SPDM_CERT_PORTION_LEN];
-//         let remainder_length = 0;
-//         let slot_id = 0;
-
-//         let resp =
-//             GetCertificateResp::new(slot_id, 0, &cert_chain_portion, remainder_length).unwrap();
-//         let mut bytes = [0u8; 1024];
-//         let mut buffer = MessageBuf::new(&mut bytes);
-//         let encoded_len = resp.encode(&mut buffer).unwrap();
-
-//         assert_eq!(
-//             encoded_len,
-//             core::mem::size_of::<CertificateRespCommon>() + cert_chain_portion.len() as usize
-//         );
-//         assert_eq!(encoded_len, buffer.msg_len());
-//         assert_eq!(encoded_len, buffer.data_offset());
-
-//         // Verify the encoded data
-//         assert_eq!(buffer.total_message()[0], resp.common.slot_id);
-//         assert_eq!(buffer.total_message()[1], resp.common.param2);
-//         assert_eq!(
-//             buffer.total_message()[2..4],
-//             resp.common.portion_length.to_le_bytes()
-//         );
-//         assert_eq!(
-//             buffer.total_message()[4..6],
-//             resp.common.remainder_length.to_le_bytes()
-//         );
-//         assert_eq!(
-//             buffer.total_message()[core::mem::size_of::<CertificateRespCommon>()..],
-//             cert_chain_portion
-//         );
-//     }
-// }

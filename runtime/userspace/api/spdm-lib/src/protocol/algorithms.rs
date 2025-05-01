@@ -6,6 +6,7 @@ use libapi_caliptra::crypto::hash::HashAlgoType;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 pub const SHA384_HASH_SIZE: usize = 48;
+pub const ECC_P384_SIGNATURE_SIZE: usize = 96;
 
 // Type of Asymmetric Algorithm selected by the responder.
 // Currently only ECC P384 is supported.

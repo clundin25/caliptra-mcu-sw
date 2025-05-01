@@ -1,3 +1,5 @@
+// Licensed under the Apache-2.0 license
+
 use libapi_caliptra::certificate::{
     CertContext, IDEV_ECC_CSR_MAX_SIZE, KEY_LABEL_SIZE, MAX_ECC_CERT_SIZE,
 };

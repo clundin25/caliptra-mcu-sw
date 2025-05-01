@@ -1,31 +1,22 @@
 // Licensed under the Apache-2.0 license
+use crate::protocol::SHA384_HASH_SIZE;
 use bitfield::bitfield;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-pub const SPDM_MAX_CERT_SLOTS: usize = 2;
+pub(crate) const SPDM_MAX_CERT_CHAIN_PORTION_LEN: u16 = 512;
+pub(crate) const SPDM_CERT_CHAIN_METADATA_LEN: u16 =
+    size_of::<SpdmCertChainHeader>() as u16 + SHA384_HASH_SIZE as u16;
 
-pub type SupportedSlotMask = u8;
-pub type ProvisionedSlotMask = u8;
-pub type KeyPairID = u8;
-
-#[derive(IntoBytes, FromBytes, Immutable)]
-#[repr(packed)]
-pub struct SpdmCertChainHeader {
+#[derive(IntoBytes, FromBytes, Immutable, Debug, Default)]
+#[repr(C, packed)]
+pub(crate) struct SpdmCertChainHeader {
     pub length: u16,
     pub reserved: u16,
 }
 
-#[derive(Debug, Clone)]
-#[repr(u8)]
-pub enum SpdmCertModel {
-    DeviceCertModel = 1,
-    AliasCertModel = 2,
-    GenericCertModel = 3,
-}
-
 // SPDM CertificateInfo fields
 bitfield! {
-#[derive(FromBytes, IntoBytes, Immutable, Default, Clone)]
+#[derive(FromBytes, IntoBytes, Immutable, Default)]
 #[repr(C, packed)]
 pub struct CertificateInfo(u8);
 impl Debug;
@@ -36,7 +27,7 @@ reserved, _: 3,7;
 
 // SPDM KeyUsageMask fields
 bitfield! {
-#[derive(FromBytes, IntoBytes, Immutable, Default, Clone)]
+#[derive(FromBytes, IntoBytes, Immutable, Default)]
 #[repr(C)]
 pub struct KeyUsageMask(u16);
 impl Debug;

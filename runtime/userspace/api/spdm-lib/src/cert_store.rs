@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use crate::error::{SpdmError, SpdmResult};
-use crate::protocol::algorithms::{AsymAlgo, SHA384_HASH_SIZE};
+use crate::protocol::algorithms::{AsymAlgo, ECC_P384_SIGNATURE_SIZE, SHA384_HASH_SIZE};
 use crate::protocol::certs::{CertificateInfo, KeyUsageMask};
 use crate::protocol::SpdmCertChainHeader;
 use alloc::boxed::Box;
@@ -94,14 +94,21 @@ pub trait SpdmCertStore {
         cert_hash: &'a mut [u8; SHA384_HASH_SIZE],
     ) -> CertStoreResult<()>;
 
-    /// Get the leaf certificate key label
+    /// Sign hash with leaf certificate key
     ///
     /// # Arguments
     /// * `slot_id` - The slot ID of the certificate chain.
+    /// * `hash` - The hash to sign.
+    /// * `signature` - The output buffer to store the ECC384 signature.
     ///
     /// # Returns
-    /// * `Option<[u8; SHA384_HASH_SIZE]>` - The leaf certificate key label or None if not supported or not found.
-    fn leaf_cert_key_label(&self, slot_id: u8) -> Option<[u8; SHA384_HASH_SIZE]>;
+    /// * `()` - Ok if successful, error otherwise.
+    async fn sign_hash<'a>(
+        &self,
+        slot_id: u8,
+        hash: &'a [u8; SHA384_HASH_SIZE],
+        signature: &'a mut [u8; ECC_P384_SIGNATURE_SIZE],
+    ) -> CertStoreResult<()>;
 
     /// Get the KeyPairID associated with the certificate chain if SPDM responder supports
     /// multiple assymmetric keys in connection.
@@ -151,15 +158,4 @@ pub(crate) fn cert_slot_mask(cert_store: &dyn SpdmCertStore) -> (u8, u8) {
         .fold(0, |mask, i| mask | (1 << i));
 
     (supported_slot_mask, provisioned_slot_mask)
-}
-
-pub(crate) async fn total_cert_chain_len(
-    cert_store: &mut dyn SpdmCertStore,
-    asym_algo: AsymAlgo,
-    slot_id: u8,
-) -> CertStoreResult<u16> {
-    cert_store
-        .cert_chain_len(asym_algo, slot_id)
-        .await
-        .map(|len| len as u16 + SPDM_CERT_CHAIN_METADATA_LEN)
 }

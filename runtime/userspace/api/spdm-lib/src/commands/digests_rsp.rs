@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::cert_store::{cert_slot_mask, total_cert_chain_len, SpdmCertStore};
+use crate::cert_store::{cert_slot_mask, SpdmCertStore};
 use crate::codec::{Codec, CommonCodec, DataKind, MessageBuf};
 use crate::commands::error_rsp::ErrorCode;
 use crate::context::SpdmContext;
@@ -8,13 +8,12 @@ use crate::error::{CommandError, CommandResult};
 use crate::protocol::common::SpdmMsgHdr;
 use crate::protocol::{
     AsymAlgo, CertificateInfo, KeyUsageMask, SpdmCertChainHeader, SpdmVersion, SHA384_HASH_SIZE,
+    SPDM_CERT_CHAIN_METADATA_LEN, SPDM_MAX_CERT_CHAIN_PORTION_LEN,
 };
 use crate::state::ConnectionState;
 use core::mem::size_of;
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-
-use core::fmt::Write;
 
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
 #[repr(C)]
@@ -44,9 +43,11 @@ async fn encode_cert_chain_digest<'a>(
     asym_algo: AsymAlgo,
     rsp: &mut MessageBuf<'a>,
 ) -> CommandResult<usize> {
-    let cert_chain_format_len = total_cert_chain_len(cert_store, asym_algo, slot_id)
+    let crt_chain_len = cert_store
+        .cert_chain_len(asym_algo, slot_id)
         .await
         .map_err(|e| (false, CommandError::CertStore(e)))?;
+    let cert_chain_format_len = crt_chain_len + SPDM_CERT_CHAIN_METADATA_LEN as usize;
 
     let header = SpdmCertChainHeader {
         length: cert_chain_format_len as u16,
@@ -74,7 +75,7 @@ async fn encode_cert_chain_digest<'a>(
         .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
     // Hash the certificate chain
-    let mut cert_portion = [0u8; 1024];
+    let mut cert_portion = [0u8; SPDM_MAX_CERT_CHAIN_PORTION_LEN as usize];
     let mut offset = 0;
 
     loop {
@@ -162,10 +163,6 @@ async fn fill_digests_response<'a>(
     // Push data offset up by total payload length
     rsp.push_data(payload_len)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
-
-    // if exp_payload_len != payload_len {
-    //     Err(ctx.generate_error_response(rsp, ErrorCode::Unspecified, 0, None))?;
-    // }
 
     Ok(())
 }
@@ -280,42 +277,3 @@ pub(crate) async fn handle_digests<'a>(
 
     Ok(())
 }
-
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-
-//     #[test]
-//     fn test_get_encode_digests_response() {
-//         let slot_mask = 0b00000011; // Two slots enabled
-//         let digest1 = SpdmDigest::new(&[0xAA; SPDM_MAX_HASH_SIZE]);
-//         let digest2 = SpdmDigest::new(&[0xBB; SPDM_MAX_HASH_SIZE]);
-//         let digests = [digest1, digest2];
-
-//         let resp = GetDigestsResp::new(slot_mask, slot_mask, &digests);
-//         let mut bytes = [0u8; 1024];
-//         let mut buffer = MessageBuf::new(&mut bytes);
-//         let encode_result = resp.encode(&mut buffer);
-
-//         assert!(encode_result.is_ok());
-//         let encoded_len = encode_result.unwrap();
-//         assert_eq!(encoded_len, buffer.msg_len());
-//         assert_eq!(encoded_len, buffer.data_offset());
-
-//         // Verify the encoded data
-//         let expected_len = 2 + (SPDM_MAX_HASH_SIZE * 2);
-//         assert_eq!(encoded_len, expected_len);
-
-//         // Verify the contents in the message buffer
-//         assert_eq!(buffer.total_message()[0], slot_mask); // param1
-//         assert_eq!(buffer.total_message()[1], slot_mask); // slot_mask
-//         assert_eq!(
-//             buffer.total_message()[2..2 + SPDM_MAX_HASH_SIZE],
-//             [0xAA; SPDM_MAX_HASH_SIZE]
-//         ); // digest1
-//         assert_eq!(
-//             buffer.total_message()[2 + SPDM_MAX_HASH_SIZE..],
-//             [0xBB; SPDM_MAX_HASH_SIZE]
-//         ); // digest2
-//     }
-// }
