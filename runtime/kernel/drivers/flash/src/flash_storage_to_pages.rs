@@ -212,8 +212,19 @@ impl<F: hil::flash::Flash> hil::flash::Client<F> for FlashStorageToPages<'_, F> 
     fn read_complete(
         &self,
         page_buffer: &'static mut F::Page,
-        _result: Result<(), hil::flash::Error>,
+        result: Result<(), hil::flash::Error>,
     ) {
+        if result.is_err() {
+            // Read failed. Put things back and issue callback.
+            self.page_buffer.replace(page_buffer);
+            self.state.set(State::Idle);
+            self.client
+                .map(move |client| client.read_done(self.buffer.take().unwrap(), 0));
+
+            println!("[xs debug]flash_storage_driver: read failed: address = {:02x}", self.address.get());
+            return;
+        }
+
         match self.state.get() {
             State::Read => {
                 if let Some(buffer) = self.buffer.take() {
