@@ -5,7 +5,7 @@ use libtock_platform::ErrorCode;
 
 pub type CaliptraApiResult<T> = Result<T, CaliptraApiError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CaliptraApiError {
     Mailbox(MailboxError),
     Syscall(ErrorCode),

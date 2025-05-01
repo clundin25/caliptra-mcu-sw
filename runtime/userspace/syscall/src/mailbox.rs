@@ -141,7 +141,7 @@ mod mailbox_subscribe {
     pub const COMMAND_DONE: u32 = 0;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MailboxError {
     ErrorCode(ErrorCode),
     MailboxError(u32),
