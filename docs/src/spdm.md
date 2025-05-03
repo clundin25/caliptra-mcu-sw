@@ -121,87 +121,97 @@ impl<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> Sp
 ```
 
 ## Transcript Manager
-The Transcript Manager is for managing the transcript and the transcript hash. The transcript is a sequential concatenation of prescribed full messages or message fields. The transcript hash is the cryptographic hash of this transcript, computed using the negotiated hash algorithm. This component ensures the integrity and authenticity of SPDM communications by managing these essential elements.
+The Transcript Manager is responsible for handling the transcript and its associated hash. The transcript represents a sequential concatenation of specific full messages or message fields, while the transcript hash is a cryptographic hash of this transcript. The transcript hash is computed using the negotiated hash algorithm (SHA384). This functionality is critical for ensuring the integrity and authenticity of SPDM communications.
+
+In the SPDM responder library, the transcript and transcript hash for SPDM messages are managed internally. The library leverages the Caliptra mailbox crypto API to compute the transcript hash.
 
 ### Transcript Manager Interface
 ```Rust
-pub trait SpdmTranscriptManager {
-    /// Set the hash algorithm. The algorithm can be set only once.
+// VCA buffer to store the concatenated VCA messages
+struct VcaBuffer {
+    data: [u8; Self::SPDM_MAX_BUFFER_SIZE],
+    size: usize,
+}
+
+pub enum TranscriptContext {
+    Vca,
+    M1,
+    L1,
+}
+
+/// Transcript management for the SPDM responder.
+pub(crate) struct TranscriptManager {
+    spdm_version: SpdmVersion,
+    // Buffer for storing `VCA`
+    // VCA or A = Concatenate (GET_VERSION, VERSION, GET_CAPABILITIES, CAPABILITIES, NEGOTIATE_ALGORITHMS, ALGORITHMS)
+    vca_buf: VcaBuffer,
+    // Hash context for `M1`
+    // M1 = Concatenate(A, B, C)
+    // where
+    // B = Concatenate (GET_DIGESTS, DIGESTS, GET_CERTIFICATE, CERTIFICATE)
+    // C = Concatenate (CHALLENGE, CHALLENGE_AUTH\signature)
+    hash_ctx_m1: Option<HashContext>,
+    // Hash Context for `L1``
+    // L1 = Concatenate(A, M) if SPDM_VERSION >= 1.2 or L1 = Concatenate(M) if SPDM_VERSION < 1.2
+    // where
+    // M = Concatenate (GET_MEASUREMENTS, MEASUREMENTS\signature)
+    hash_ctx_l1: Option<HashContext>,
+}
+
+pub struct TranscriptManager {
+    /// Create a new instance of the `TranscriptManager`.
+    pub fn new() -> Self;
+
+    /// Set the SPDM version selected by the SPDM responder.
     ///
-    /// # Parameters
-    /// - `hash_algo`: Hash algorithm to set.
+    /// # Arguments
+    /// * `spdm_version` - The SPDM version to set.
+    pub fn set_spdm_version(&mut self, spdm_version: SpdmVersion);
+
+    /// Append data to a transcript context.
+    ///
+    /// # Arguments
+    /// * `context` - The context to append data to.
+    /// * `data` - The data to append.
     ///
     /// # Returns
-    /// - `Result<(), SpdmError>`: Returns `Ok(())` if the hash algorithm was set, or an error code.
-    fn set_hash_algo(&self, hash_algo: HashType) -> Result<(), SpdmError>;
+    /// * `TranscriptResult<()>` - Result indicating success or failure.
+    pub async fn append(
+        &mut self,
+        context: TranscriptContext,
+        data: &[u8],
+    ) -> TranscriptResult<()>;
 
-    /// Set the SPDM negotiated version to be used for communication.
+    /// Finalize the hash for a given context.
     ///
-    /// # Parameters
-    /// - `spdm_version`: SPDM negotiated version.
-    fn set_spdm_version(&self, spdm_version: u8);
-
-    /// Update the transcript with a message.
-    ///
-    /// # Parameters
-    /// - `context_type`:        Transcript context to update.
-    /// - `message`:             Message to add to the transcript.
-    /// - `use_session_context`: Use session context to update an SPDM session transcript.
-    /// - `session_idx`:         SPDM session index.
+    /// # Arguments
+    /// * `context` - The context to finalize the hash for.
+    /// * `hash` - The buffer to store the resulting hash.
     ///
     /// # Returns
-    /// - `Result<(), SpdmError>`:
-    /// Returns `Ok(())` if the message was added to the transcript successfully, or an error code.
-    async fn update(
-        &self,
-        context_type: SpdmTranscriptManagerContextType, // [VCA, M1M2, L1L2, TH]
-        message: &[u8],
-        use_session_context: bool,
-        session_idx: u8,
-    ) -> Result<(), SpdmError>;
+    /// * `TranscriptResult<()>` - Result indicating success or failure.
+    pub async fn hash(
+        &mut self,
+        context: TranscriptContext,
+        hash: &mut [u8; SHA384_HASH_SIZE],
+    ) -> TranscriptResult<()>;
 
-    /// Get the hash based on the hash type. The hashing operation is finished if `finish_hash` is set
-    /// to `true`. In that case, an additional call to update will start a new hashing operation.
-    /// If `finish_hash` is set to `false`, the hash is not finalized and can be updated with additional
-    /// calls to update.
+    /// Reset a transcript context or all contexts.
     ///
-    /// # Parameters
-    /// - `context_type`:        Transcript context type to get the hash from.
-    /// - `finish_hash`:         Flag to indicate to finish the hash.
-    /// - `use_session_context`: Use session context to update an SPDM session transcript.
-    /// - `session_idx`:         SPDM session index.
-    /// - `hash`:                Buffer to copy the hash to.
-    ///
-    /// # Returns
-    /// - `Result<Vec<u8>, SpdmError>`: Returns the hash if the operation was successful, or an error code.
-    fn get_hash(
-        &self,
-        context_type: SpdmTranscriptManagerContextType, // [VCA, M1M2, L1L2, TH]
-        finish_hash: bool,
-        use_session_context: bool,
-        session_idx: u8,
-        hash: &mut [u8]
-    ) -> Result<(), SpdmError>;
-
-    /// Reset a transcript context.
-    ///
-    /// # Parameters
-    /// - `context_type`:        Transcript context to reset.
-    /// - `use_session_context`: Use session context to update an SPDM session transcript.
-    /// - `session_idx`:         SPDM session index.
-    fn reset_transcript(
-        &self,
-        context_type: SpdmTranscriptManagerContextType, // [VCA, M1M2, L1L2, TH]
-        use_session_context: bool,
-        session_idx: u8,
-    );
+    /// # Arguments
+    /// * `context` - The context to reset. If `None`, all contexts are reset.
+    pub fn reset(&mut self, context: Option<TranscriptContext>);
 }
 ```
+
 ## SPDM Certificate Store
 The `SpdmCertStore` trait provides the interfaces to retrieve and manage the certificate chain for all available slots in the device.
 
 ### Certificate Manager Interface
 ```Rust
+
+pub const SHA384_HASH_SIZE: usize = 48;
+pub const ECC_P384_SIGNATURE_SIZE: usize = 96;
 
 // Type of Asymmetric Algorithm selected by the SPDM responder
 // Currently only ECC P384 is supported.
@@ -276,6 +286,22 @@ pub trait SpdmCertStore {
         slot_id: u8,
         asym_algo: AsymAlgo,
         cert_hash: &'a mut [u8; SHA384_HASH_SIZE],
+    ) -> CertStoreResult<()>;
+
+    /// Sign hash with leaf certificate key
+    ///
+    /// # Arguments
+    /// * `slot_id` - The slot ID of the certificate chain.
+    /// * `hash` - The hash to sign.
+    /// * `signature` - The output buffer to store the ECC384 signature.
+    ///
+    /// # Returns
+    /// * `()` - Ok if successful, error otherwise.
+    async fn sign_hash<'a>(
+        &self,
+        slot_id: u8,
+        hash: &'a [u8; SHA384_HASH_SIZE],
+        signature: &'a mut [u8; ECC_P384_SIGNATURE_SIZE],
     ) -> CertStoreResult<()>;
 
     /// Get the KeyPairID associated with the certificate chain if SPDM responder supports
