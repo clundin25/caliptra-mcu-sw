@@ -33,6 +33,7 @@ use emulator_cpu::{Cpu, Pic, RvInstr, StepAction};
 use emulator_periph::{
     CaliptraRootBus, CaliptraRootBusArgs, DummyFlashCtrl, I3c, I3cController, Mci, Otp,
 };
+use emulator_registers_generated::dma::DmaPeripheral;
 use emulator_registers_generated::root_bus::AutoRootBus;
 use gdb::gdb_state;
 use gdb::gdb_target::GdbTarget;
@@ -49,6 +50,7 @@ use std::process::exit;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
+use tests::mctp_util::base_protocol::LOCAL_TEST_ENDPOINT_EID;
 use tests::pldm_request_response_test::PldmRequestResponseTest;
 
 #[derive(Parser)]
@@ -117,6 +119,9 @@ struct Emulator {
     /// Path to the streaming boot PLDM firmware package
     #[arg(long)]
     streaming_boot: Option<PathBuf>,
+
+    #[arg(long)]
+    flash_image: Option<PathBuf>,
 }
 
 //const EXPECTED_CALIPTRA_BOOT_TIME_IN_CYCLES: u64 = 20_000_000; // 20 million cycles
@@ -501,46 +506,77 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         tests::pldm_fw_update_test::PldmFwUpdateTest::run(pldm_socket, running.clone());
     }
 
-    let create_flash_controller = |default_path: &str, error_irq: u8, event_irq: u8| {
-        // Use a temporary file for flash storage if we're running a test
-        let flash_file = if cfg!(any(
-            feature = "test-flash-ctrl-init",
-            feature = "test-flash-ctrl-read-write-page",
-            feature = "test-flash-ctrl-erase-page",
-            feature = "test-flash-storage-read-write",
-            feature = "test-flash-storage-erase",
-            feature = "test-flash-usermode",
-        )) {
-            Some(
-                tempfile::NamedTempFile::new()
-                    .unwrap()
-                    .into_temp_path()
-                    .to_path_buf(),
+    let create_flash_controller =
+        |default_path: &str, error_irq: u8, event_irq: u8, initial_content: Option<&[u8]>| {
+            // Use a temporary file for flash storage if we're running a test
+            let flash_file = if cfg!(any(
+                feature = "test-flash-ctrl-init",
+                feature = "test-flash-ctrl-read-write-page",
+                feature = "test-flash-ctrl-erase-page",
+                feature = "test-flash-storage-read-write",
+                feature = "test-flash-storage-erase",
+                feature = "test-flash-usermode",
+            )) {
+                Some(
+                    tempfile::NamedTempFile::new()
+                        .unwrap()
+                        .into_temp_path()
+                        .to_path_buf(),
+                )
+            } else {
+                Some(PathBuf::from(default_path))
+            };
+
+            DummyFlashCtrl::new(
+                &clock.clone(),
+                flash_file,
+                pic.register_irq(error_irq),
+                pic.register_irq(event_irq),
+                initial_content,
             )
-        } else {
-            Some(PathBuf::from(default_path))
+            .unwrap()
         };
 
-        DummyFlashCtrl::new(
-            &clock.clone(),
-            flash_file,
-            pic.register_irq(error_irq),
-            pic.register_irq(event_irq),
-        )
-        .unwrap()
+    let main_flash_initial_content = if cli.flash_image.is_some() {
+        let flash_image_path = cli.flash_image.as_ref().unwrap();
+        println!("Loading flash image from {}", flash_image_path.display());
+        const FLASH_SIZE: usize = DummyFlashCtrl::PAGE_SIZE * DummyFlashCtrl::MAX_PAGES as usize;
+        let mut flash_image = vec![0; FLASH_SIZE];
+        let mut file = File::open(flash_image_path)?;
+        let bytes_read = file.read(&mut flash_image)?;
+        if bytes_read > FLASH_SIZE {
+            println!("Flash image size exceeds {} bytes", FLASH_SIZE);
+            exit(-1);
+        }
+
+        Some(flash_image[..bytes_read].to_vec())
+    } else {
+        None
     };
 
     let main_flash_controller = create_flash_controller(
         "main_flash",
         CaliptraRootBus::MAIN_FLASH_CTRL_ERROR_IRQ,
         CaliptraRootBus::MAIN_FLASH_CTRL_EVENT_IRQ,
+        main_flash_initial_content.as_deref(),
     );
 
     let recovery_flash_controller = create_flash_controller(
         "recovery_flash",
         CaliptraRootBus::RECOVERY_FLASH_CTRL_ERROR_IRQ,
         CaliptraRootBus::RECOVERY_FLASH_CTRL_EVENT_IRQ,
+        None,
     );
+
+    let mut dma_ctrl = emulator_periph::DummyDmaCtrl::new(
+        &clock.clone(),
+        pic.register_irq(CaliptraRootBus::DMA_ERROR_IRQ),
+        pic.register_irq(CaliptraRootBus::DMA_EVENT_IRQ),
+        Some(root_bus.external_test_sram.clone()),
+    )
+    .unwrap();
+
+    emulator_periph::DummyDmaCtrl::set_dma_ram(&mut dma_ctrl, dma_ram.clone());
 
     let delegates: Vec<Box<dyn Bus>> = vec![
         Box::new(root_bus),
@@ -564,6 +600,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         Some(Box::new(main_flash_controller)),
         Some(Box::new(recovery_flash_controller)),
         Some(Box::new(mci)),
+        Some(Box::new(dma_ctrl)),
         None,
         None,
         None,
@@ -635,6 +672,9 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
     }
 
     if cli.streaming_boot.is_some() {
+        let _ = simple_logger::SimpleLogger::new()
+            .with_level(log::LevelFilter::Debug)
+            .init();
         let pldm_fw_pkg_path = cli.streaming_boot.as_ref().unwrap();
         println!(
             "Starting streaming boot using PLDM package {}",
@@ -655,7 +695,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         i3c_controller.start();
         let pldm_transport = MctpTransport::new(cli.i3c_port.unwrap(), i3c_dynamic_address);
         let pldm_socket = pldm_transport
-            .create_socket(EndpointId(0), EndpointId(1))
+            .create_socket(EndpointId(LOCAL_TEST_ENDPOINT_EID), EndpointId(1))
             .unwrap();
         let _ = PldmDaemon::run(
             pldm_socket,
