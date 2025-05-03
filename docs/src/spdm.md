@@ -96,20 +96,20 @@ The SPDM Responder supports the following messages:
 
 ### Responder Interface
 ```Rust
-pub struct SpdmResponder<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> {
+pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> {
     transport: &'a dyn T,
-    transcript_manager: &'a dyn U,
+    transcript_manager: TranscriptManager,
     session_manager: &'a dyn V,
-    cert_store: &'a SpdmCertStore,
+    cert_store: &'a dyn C,
 }
 
-impl<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> SpdmResponder<T, U, V> {
-    pub fn new(transport: T, transcript_manager: U, session_manager: V, cert_store: &'a SpdmCertStore) -> Self {
+impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> SpdmResponder<T, V, C> {
+    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C) -> Self {
         SpdmResponder {
             transport,
-            transcript_manager,
+            transcript_manager : TranscriptManager::new(),
             session_manager,
-            cert_store,
+            cert_store
         }
     }
 
@@ -119,11 +119,10 @@ impl<T: MctpTransport, U: SpdmTranscriptManager, V: SpdmSecureSessionManager> Sp
 }
 
 ```
-
 ## Transcript Manager
-The Transcript Manager is responsible for handling the transcript and its associated hash. The transcript represents a sequential concatenation of specific full messages or message fields, while the transcript hash is a cryptographic hash of this transcript. The transcript hash is computed using the negotiated hash algorithm (SHA384). This functionality is critical for ensuring the integrity and authenticity of SPDM communications.
+The Transcript Manager is responsible for handling the transcript and its associated hash. The transcript represents a sequential concatenation of specific full SPDM messages or message fields, while the transcript hash is a cryptographic hash of this transcript. The transcript hash is computed using the negotiated hash algorithm (SHA384).
 
-In the SPDM responder library, the transcript and transcript hash for SPDM messages are managed internally. The library leverages the Caliptra mailbox crypto API to compute the transcript hash.
+In the SPDM responder library, the transcript and transcript hash for SPDM messages are managed internally. The library leverages the Caliptra mailbox crypto API for SHA384 to compute the transcript hash.
 
 ### Transcript Manager Interface
 ```Rust
@@ -151,7 +150,7 @@ pub(crate) struct TranscriptManager {
     // B = Concatenate (GET_DIGESTS, DIGESTS, GET_CERTIFICATE, CERTIFICATE)
     // C = Concatenate (CHALLENGE, CHALLENGE_AUTH\signature)
     hash_ctx_m1: Option<HashContext>,
-    // Hash Context for `L1``
+    // Hash Context for `L1`
     // L1 = Concatenate(A, M) if SPDM_VERSION >= 1.2 or L1 = Concatenate(M) if SPDM_VERSION < 1.2
     // where
     // M = Concatenate (GET_MEASUREMENTS, MEASUREMENTS\signature)
