@@ -408,6 +408,7 @@ mod test {
             test_runtime,
             i3c_port,
             true,
+            false,
             soc_images,
             streaming_boot,
             flash_image,
