@@ -1,16 +1,48 @@
 // Licensed under the Apache-2.0 license
 
+use crate::error::{CaliptraApiError, CaliptraApiResult};
 use caliptra_api::mailbox::{
     CmHashAlgorithm, CmShaFinalReq, CmShaFinalResp, CmShaInitReq, CmShaInitResp, CmShaUpdateReq,
-    MailboxReqHeader, Request, CMB_SHA_CONTEXT_SIZE, MAX_CMB_DATA_SIZE,
+    MailboxReqHeader, MailboxRespHeader, Request, CMB_SHA_CONTEXT_SIZE, MAX_CMB_DATA_SIZE,
 };
 use core::mem::size_of;
 use libsyscall_caliptra::mailbox::Mailbox;
-use zerocopy::{FromBytes, IntoBytes};
-
-use crate::error::{CaliptraApiError, CaliptraApiResult};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub const MAX_HASH_SIZE: usize = 64; // SHA512
+
+pub const MAX_DATA_SIZE: usize = 1024;
+
+const _: () = assert!(MAX_DATA_SIZE <= MAX_CMB_DATA_SIZE);
+
+#[repr(C)]
+#[derive(Debug, IntoBytes, FromBytes, KnownLayout, Immutable, PartialEq, Eq)]
+pub struct ShaInitReq {
+    pub hdr: MailboxReqHeader,
+    pub hash_algorithm: u32,
+    pub input_size: u32,
+    pub input: [u8; MAX_DATA_SIZE],
+}
+
+// CM_SHA_UPDATE
+#[repr(C)]
+#[derive(Debug, IntoBytes, FromBytes, KnownLayout, Immutable, PartialEq, Eq)]
+pub struct ShaUpdateReq {
+    pub hdr: MailboxReqHeader,
+    pub context: [u8; CMB_SHA_CONTEXT_SIZE],
+    pub input_size: u32,
+    pub input: [u8; MAX_DATA_SIZE],
+}
+
+// CM_SHA_FINAL
+#[repr(C)]
+#[derive(Debug, IntoBytes, FromBytes, KnownLayout, Immutable, PartialEq, Eq)]
+pub struct ShaFinalReq {
+    pub hdr: MailboxReqHeader,
+    pub context: [u8; CMB_SHA_CONTEXT_SIZE],
+    pub input_size: u32,
+    pub input: [u8; 0],
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HashAlgoType {
@@ -57,6 +89,16 @@ impl HashContext {
         }
     }
 
+    /// Hashes the input data using the specified hash algorithm and returns the hash.
+    /// The hash is written to the provided buffer. This can be used for one-shot hashing.
+    ///
+    /// # Arguments
+    /// `hash_algo` - The hash algorithm to use.
+    /// `data` - The input data to hash. Data size must be less than `MAX_CMB_DATA_SIZE`.
+    /// `hash` - The buffer to store the resulting hash.
+    ///
+    /// # Returns
+    /// A `CaliptraApiResult` indicating success or failure.
     pub async fn hash_all(
         hash_algo: HashAlgoType,
         data: &[u8],
@@ -74,6 +116,54 @@ impl HashContext {
         self.algo
     }
 
+    // pub async fn init(
+    //     &mut self,
+    //     hash_algo: HashAlgoType,
+    //     data: Option<&[u8]>,
+    // ) -> CaliptraApiResult<()> {
+    //     self.algo = Some(hash_algo);
+
+    //     let mut init_req = CmShaInitReq {
+    //         hdr: MailboxReqHeader::default(),
+    //         hash_algorithm: hash_algo.into(),
+    //         input_size: 0,
+    //         ..Default::default()
+    //     };
+
+    //     let mut data_size = 0;
+
+    //     if let Some(data) = data {
+    //         data_size = data.len().min(MAX_CMB_DATA_SIZE);
+    //         init_req.input_size = data_size as u32;
+    //         init_req.input[..data_size].copy_from_slice(&data[..data_size]);
+    //     }
+
+    //     let req_bytes = init_req.as_mut_bytes();
+    //     self.mbox
+    //         .populate_checksum(CmShaInitReq::ID.0, req_bytes)
+    //         .map_err(CaliptraApiError::Syscall)?;
+
+    //     let init_rsp_bytes = &mut [0u8; size_of::<CmShaInitResp>()];
+
+    //     self.mbox
+    //         .execute(CmShaInitReq::ID.0, init_req.as_bytes(), init_rsp_bytes)
+    //         .await
+    //         .map_err(CaliptraApiError::Mailbox)?;
+
+    //     let init_rsp = CmShaInitResp::ref_from_bytes(init_rsp_bytes)
+    //         .map_err(|_| CaliptraApiError::InvalidResponse)?;
+
+    //     self.ctx = Some(init_rsp.context);
+
+    //     if let Some(data) = data {
+    //         if data_size < data.len() {
+    //             self.update(&data[data_size..]).await?;
+    //         }
+    //     }
+
+    //     Ok(())
+    // }
+
     pub async fn init(
         &mut self,
         hash_algo: HashAlgoType,
@@ -81,17 +171,20 @@ impl HashContext {
     ) -> CaliptraApiResult<()> {
         self.algo = Some(hash_algo);
 
-        let mut init_req = CmShaInitReq {
+        let mut init_req = ShaInitReq {
             hdr: MailboxReqHeader::default(),
             hash_algorithm: hash_algo.into(),
             input_size: 0,
-            ..Default::default()
+            input: [0; MAX_DATA_SIZE],
         };
 
-        let mut data_size = 0;
-
         if let Some(data) = data {
-            data_size = data.len().min(MAX_CMB_DATA_SIZE);
+            if data.len() > MAX_DATA_SIZE {
+                return Err(CaliptraApiError::InvalidArgument(
+                    "Data size exceeds maximum limit",
+                ));
+            }
+            let data_size = data.len();
             init_req.input_size = data_size as u32;
             init_req.input[..data_size].copy_from_slice(&data[..data_size]);
         }
@@ -113,11 +206,11 @@ impl HashContext {
 
         self.ctx = Some(init_rsp.context);
 
-        if let Some(data) = data {
-            if data_size < data.len() {
-                self.update(&data[data_size..]).await?;
-            }
-        }
+        // if let Some(data) = data {
+        //     if data.len() > MAX_CMB_DATA_SIZE {
+        //         self.update(&data[MAX_CMB_DATA_SIZE..]).await?;
+        //     }
+        // }
 
         Ok(())
     }
@@ -130,10 +223,11 @@ impl HashContext {
                 "Context not initialized",
             ))?;
 
-            let mut update_req = CmShaUpdateReq {
+            let mut update_req = ShaUpdateReq {
                 hdr: MailboxReqHeader::default(),
                 context: ctx,
-                ..Default::default()
+                input_size: 0,
+                input: [0; MAX_DATA_SIZE],
             };
 
             let remaining_data = &data[data_offset..];
@@ -184,10 +278,11 @@ impl HashContext {
             return Err(CaliptraApiError::InvalidArgument("Hash buffer too small"));
         }
 
-        let mut final_req = CmShaFinalReq {
+        let mut final_req = ShaFinalReq {
             hdr: MailboxReqHeader::default(),
             context: ctx,
-            ..Default::default()
+            input_size: 0,
+            input: [0; 0],
         };
 
         let req_bytes = final_req.as_mut_bytes();
