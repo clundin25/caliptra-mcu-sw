@@ -69,7 +69,7 @@ impl<S: Syscalls> Mailbox<S> {
         response_buffer: &mut [u8],
     ) -> Result<usize, MailboxError> {
         // Subscribe to the asynchronous notification for when the command is processed
-        let result: Result<(u32, u32, u32), ErrorCode> = share::scope::<(), _, _>(|_handle| {
+        let command_result = share::scope::<(), _, _>(|_handle| {
             let sub = TockSubscribe::subscribe_allow_ro_rw::<S, DefaultConfig>(
                 self.driver_num,
                 mailbox_subscribe::COMMAND_DONE,
@@ -84,19 +84,26 @@ impl<S: Syscalls> Mailbox<S> {
                 .to_result::<(), ErrorCode>()
             {
                 Ok(()) => Ok(sub),
-                Err(err) => {
-                    S::unallow_ro(self.driver_num, mailbox_ro_buffer::INPUT);
-                    S::unallow_rw(self.driver_num, mailbox_rw_buffer::RESPONSE);
-                    Err(MailboxError::ErrorCode(err))
-                }
+                Err(err) => Err((MailboxError::ErrorCode(err), sub)),
             }
-        })?
-        .await;
+        });
+
+        let exec_result = match command_result {
+            Ok(subscribe) => {
+                // Wait for the command to complete
+                subscribe.await
+            }
+            Err((err, subscribe)) => {
+                // Still need to await the subscription to clean up
+                let _ = subscribe.await;
+                return Err(err);
+            }
+        };
 
         S::unallow_ro(self.driver_num, mailbox_ro_buffer::INPUT);
         S::unallow_rw(self.driver_num, mailbox_rw_buffer::RESPONSE);
 
-        match result {
+        match exec_result {
             Ok((bytes, error_code, _)) => {
                 if error_code != 0 {
                     Err(MailboxError::MailboxError(error_code))

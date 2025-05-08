@@ -88,6 +88,9 @@ impl<'a, A: Alarm<'a>> Mailbox<'a, A> {
     fn enqueue_command(&self, command: u32, processid: ProcessId) -> Result<(), ErrorCode> {
         // Check if we're already executing a mailbox command.
         if self.current_app.is_some() {
+            let _ = self.apps.enter(processid, |_app, kernel_data| {
+                kernel_data.schedule_upcall(upcall::COMMAND_DONE, (0, 0, 0))
+            });
             return Err(ErrorCode::BUSY);
         }
         self.apps.enter(processid, |_app, kernel_data| {
