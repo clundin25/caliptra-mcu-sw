@@ -1,23 +1,30 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "spdm-app"
+name = "example-app"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+caliptra-api.workspace = true
+caliptra-error.workspace = true
+caliptra-auth-man-types.workspace = true
 critical-section.workspace = true
 embassy-executor.workspace = true
+libapi-caliptra.workspace = true
 libsyscall-caliptra.workspace = true
+libtock_alarm.workspace = true
 libtock_console.workspace = true
 libtock_debug_panic.workspace = true
 libtock_platform.workspace = true
 libtock_runtime.workspace = true
 libtock.workspace = true
 libtockasync.workspace = true
+pldm-common.workspace = true
 portable-atomic.workspace = true
-spdm-lib.workspace = true
+romtime.workspace = true
+zerocopy.workspace = true
 
 [target.'cfg(not(target_arch = "riscv32"))'.dependencies]
 libtock_unittest.workspace = true
@@ -28,9 +35,11 @@ embedded-alloc.workspace = true
 
 [features]
 default = []
-test-exit-immediately = []
+test-caliptra-certs = []
 test-caliptra-crypto = []
 test-caliptra-mailbox = []
+test-dma = []
+test-exit-immediately = []
 test-i3c-simple = []
 test-i3c-constant-writes = []
 test-flash-based-boot = []
@@ -39,14 +48,13 @@ test-flash-ctrl-read-write-page = []
 test-flash-ctrl-erase-page = []
 test-flash-storage-read-write = []
 test-flash-storage-erase = []
+test-flash-usermode = []
 test-mctp-ctrl-cmds = []
 test-mctp-capsule-loopback = []
 test-mctp-user-loopback = []
-test-flash-usermode = []
 test-pldm-request-response = []
 test-pldm-discovery = []
 test-pldm-fw-update = []
 test-pldm-fw-update-e2e = []
 test-pldm-streaming-boot = []
 test-spdm-validator = []
-

@@ -110,6 +110,10 @@ struct Emulator {
     #[arg(long)]
     active_mode: bool,
 
+    /// This is only needed if the IDevID CSR needed to be generated in the Caliptra Core.
+    #[arg(long)]
+    manufacturing_mode: bool,
+
     #[arg(long)]
     vendor_pk_hash: Option<String>,
 
@@ -329,9 +333,23 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             println!("Caliptra ROM File is required if Caliptra is enabled");
             exit(-1);
         }
+
+        let device_lifecycle: Option<String> = if cli.manufacturing_mode {
+            Some("manufacturing".into())
+        } else {
+            Some("production".into())
+        };
+
+        let req_idevid_csr: Option<bool> = if cli.manufacturing_mode {
+            Some(true)
+        } else {
+            None
+        };
+
         let (caliptra_cpu, soc_to_caliptra) = start_caliptra(&StartCaliptraArgs {
             rom: cli.caliptra_rom,
-            device_lifecycle: Some("production".into()),
+            device_lifecycle,
+            req_idevid_csr,
             active_mode,
             firmware: if active_mode {
                 None
@@ -593,7 +611,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
     });
 
     let otp = Otp::new(&clock.clone(), cli.otp, owner_pk_hash, vendor_pk_hash)?;
-    let mci = Mci::default();
+    let mci = Mci::new(&clock.clone());
     let mut auto_root_bus = AutoRootBus::new(
         delegates,
         Some(Box::new(i3c)),
@@ -697,15 +715,29 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         let pldm_socket = pldm_transport
             .create_socket(EndpointId(LOCAL_TEST_ENDPOINT_EID), EndpointId(1))
             .unwrap();
-        let _ = PldmDaemon::run(
-            pldm_socket,
-            pldm_ua::daemon::Options {
-                pldm_fw_pkg: Some(pldm_fw_pkg.unwrap()),
-                discovery_sm_actions: pldm_ua::discovery_sm::DefaultActions {},
-                update_sm_actions: pldm_ua::update_sm::DefaultActions {},
-                fd_tid: 0x01,
-            },
-        );
+        if cfg!(feature = "test-pldm-streaming-boot") {
+            // If we are running the PLDM daemon from an integration test,
+            // we need to set the update state machine to exit on error
+            let _ = PldmDaemon::run(
+                pldm_socket,
+                pldm_ua::daemon::Options {
+                    pldm_fw_pkg: Some(pldm_fw_pkg.unwrap()),
+                    discovery_sm_actions: pldm_ua::discovery_sm::DefaultActions {},
+                    update_sm_actions: pldm_ua::update_sm::DefaultActionsExitOnError {},
+                    fd_tid: 0x01,
+                },
+            );
+        } else {
+            let _ = PldmDaemon::run(
+                pldm_socket,
+                pldm_ua::daemon::Options {
+                    pldm_fw_pkg: Some(pldm_fw_pkg.unwrap()),
+                    discovery_sm_actions: pldm_ua::discovery_sm::DefaultActions {},
+                    update_sm_actions: pldm_ua::update_sm::DefaultActions {},
+                    fd_tid: 0x01,
+                },
+            );
+        };
     }
 
     // Check if Optional GDB Port is passed

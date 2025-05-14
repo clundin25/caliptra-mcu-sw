@@ -11,12 +11,12 @@ pub const APPS: &[App] = &[
         // Make sure this is the first app in the list
         name: "example-app",
         permissions: vec![],
-        minimum_ram: 24 * 1024,
+        minimum_ram: 44 * 1024,
     },
     App {
         name: "spdm-app",
         permissions: vec![],
-        minimum_ram: 52 * 1024,
+        minimum_ram: 36 * 1024,
     },
     App {
         name: "image-loader-app",
@@ -165,6 +165,8 @@ fn app_build(
 ) -> Result<()> {
     let app_ld_filename = format!("{}-layout.ld", app_name);
     let layout_ld = &PROJECT_ROOT
+        .join("platforms")
+        .join("emulator")
         .join("runtime")
         .join("userspace")
         .join("apps")
@@ -181,7 +183,7 @@ FLASH_START = 0x{:x};
 FLASH_LENGTH = 0x17000;
 RAM_START = 0x{:x};
 RAM_LENGTH = 0x{:x};
-INCLUDE runtime/userspace/apps/app_layout.ld",
+INCLUDE platforms/emulator/runtime/userspace/apps/app_layout.ld",
             tbf_header_size, offset, ram_start, ram_length,
         ),
     )?;
