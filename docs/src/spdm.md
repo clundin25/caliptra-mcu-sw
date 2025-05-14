@@ -96,20 +96,22 @@ The SPDM Responder supports the following messages:
 
 ### Responder Interface
 ```Rust
-pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> {
+pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore, M: SpdmMeasurements> {
     transport: &'a dyn T,
     transcript_manager: TranscriptManager,
     session_manager: &'a dyn V,
     cert_store: &'a dyn C,
+    measurements: &'a dyn M,
 }
 
-impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> SpdmResponder<T, V, C> {
-    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C) -> Self {
+impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore, M: SpdmMeasurements> SpdmResponder<T, V, C, M> {
+    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C. measurements: &'a dyn M) -> Self {
         SpdmResponder {
             transport,
             transcript_manager : TranscriptManager::new(),
             session_manager,
-            cert_store
+            cert_store,
+            measurements,
         }
     }
 
@@ -195,11 +197,17 @@ pub struct TranscriptManager {
         hash: &mut [u8; SHA384_HASH_SIZE],
     ) -> TranscriptResult<()>;
 
-    /// Reset a transcript context or all contexts.
+    /// Reset all transcript contexts.
     ///
     /// # Arguments
     /// * `context` - The context to reset. If `None`, all contexts are reset.
-    pub fn reset(&mut self, context: Option<TranscriptContext>);
+    pub fn reset(&mut self);
+
+    /// Reset a transcript context.
+    ///
+    /// # Arguments
+    /// * `context` - The context to reset. If `None`, all contexts are reset.
+    pub fn reset_context(&mut self, context: TranscriptContext);
 }
 ```
 
@@ -243,7 +251,7 @@ pub trait SpdmCertStore {
     ///
     /// # Arguments
     /// * `slot_id` - The slot ID of the certificate chain.
-    /// * `asym_algo` - The asymmetric algorithm to indicate the type of Certificate chain.
+    /// * `asym_algo` - The asymmetric algorithm to indicate the type of certificate chain.
     ///
     /// # Returns
     /// * `usize` - The length of the certificate chain in bytes or error.
@@ -311,28 +319,30 @@ pub trait SpdmCertStore {
     ///
     /// # Returns
     /// * u8 - The KeyPairID associated with the certificate chain or None if not supported or not found.
-    fn key_pair_id(&mut self, slot_id: u8) -> Option<u8>;
+    fn key_pair_id(&self, slot_id: u8) -> Option<u8>;
 
-    /// Get CertificateInfo associated with the certificate chain if SPDM responder supports
-    /// multiple assymmetric keys in connection.
+    /// Retrieve the `CertificateInfo` associated with the certificate chain for the given slot.
+    /// The `CertificateInfo` structure specifies the certificate model (such as DeviceID, Alias, or General),
+    /// and includes reserved bits for future extensions.
     ///
     /// # Arguments
     /// * `slot_id` - The slot ID of the certificate chain.
     ///
     /// # Returns
     /// * `CertificateInfo` - The CertificateInfo associated with the certificate chain or None if not supported or not found.
-    fn cert_info(&mut self, slot_id: u8) -> Option<CertificateInfo>;
+    fn cert_info(&self, slot_id: u8) -> Option<CertificateInfo>;
 
     /// Get the KeyUsageMask associated with the certificate chain if SPDM responder supports
-    /// multiple assymmetric keys in connection.
+    /// multiple asymmetric keys in connection.
     ///
     /// # Arguments
     /// * `slot_id` - The slot ID of the certificate chain.
     ///
     /// # Returns
     /// * `KeyUsageMask` - The KeyUsageMask associated with the certificate chain or None if not supported or not found.
-    fn key_usage_mask(&mut self, slot_id: u8) -> Option<KeyUsageMask>;
+    fn key_usage_mask(&self, slot_id: u8) -> Option<KeyUsageMask>;
 }
+
 
 // CertificateInfo fields associated with the certificate chain (for SPDM version >= 1.3)
 bitfield! {
@@ -363,6 +373,97 @@ pub vendor_key_usage, set_vendor_key_usage: 15,15;
 
 
 ```
+
+
+## SPDM Measurements
+Caliptra device measurements can be reported in `structured (TBD)` or `freeform measurement` manifest format. The trait `SpdmMeasurements` provides the interface to retrieve the measurements from the device in the DMTF measurement specification format. It is defined to be conducive to the SPDM large response message transfer mechanism (using `CHUNK_GET` and `CHUNK_RESPONSE` messages). 
+
+### Measurements Interface
+```Rust
+pub trait SpdmMeasurements {
+    /// Returns the total number of measurement blocks.
+    ///
+    /// # Returns
+    /// The total number of measurement blocks.
+    fn total_measurement_count(&self) -> usize;
+
+    /// Returns the measurement block size for the given index.
+    /// valid index is 1 to 0xFF.
+    /// when index is 0xFF, it returns the size of all measurement blocks.
+    ///
+    /// # Arguments
+    /// * `index` - The index of the measurement block.
+    /// * `raw_bit_stream` - If true, returns the raw bit stream.
+    ///
+    /// # Returns
+    /// The size of the measurement block.
+    async fn measurement_block_size(&mut self, index: u8, raw_bit_stream: bool) -> usize;
+
+    /// Returns all measurement blocks.
+    ///
+    /// # Arguments
+    /// * `raw_bit_stream` - If true, returns the raw bit stream.
+    /// * `offset` - The offset to start reading from.
+    async fn measurement_record(
+        &mut self,
+        raw_bit_stream: bool,
+        offset: usize,
+        measurement_chunk: &mut [u8],
+    ) -> MeasurementsResult<()>;
+
+    /// Returns the measurement block for the given index.
+    ///
+    /// # Arguments
+    /// * `index` - The index of the measurement block. Should be between 1 and 0xFE.
+    /// * `raw_bit_stream` - If true, returns the raw bit stream.
+    /// * `offset` - The offset to start reading from.
+    /// * `measurement_chunk` - The buffer to store the measurement block.
+    ///
+    /// # Returns
+    /// A result indicating success or failure.
+    async fn measurement_block(
+        &mut self,
+        index: u8,
+        raw_bit_stream: bool,
+        offset: usize,
+        measurement_chunk: &mut [u8],
+    ) -> MeasurementsResult<()>;
+
+    /// Returns the measurement summary hash.
+    /// This is a hash of all the measurement blocks
+    ///
+    /// # Arguments
+    /// * `hash` - The buffer to store the hash.
+    ///
+    /// # Returns
+    /// A result indicating success or failure.
+    async fn measurement_summary_hash(
+        &mut self,
+        hash: &mut [u8; SHA384_HASH_SIZE],
+    ) -> MeasurementsResult<()>;
+}
+```
+
+
+### Freeform Measurement Manifest
+The freeform measurement manifest is a device specific. In case of Caliptra, the measurement value of freeform measurement manifest contains the response of `QUOTE_PCR` command in raw-bit-stream format. The Freeform measurement manifest implements the `SpdmMeasurements` trait to provide the interface to retrieve the measurements from the device in the DMTF measurement specification format. The measurement block/record format is as shown below:
+
+**Table: Measurement block/record for Freeform Measurement Manifest**
+| Field                                 | Value / Description                                                      
+|---------------------------------------|---------------------------------------------------------------
+| **Index**                             | `SPDM_MEASUREMENT_MANIFEST_INDEX`                                  
+| **MeasurementSpecification**          | `01h` (DMTF)                                                       
+| **MeasurementSize**                   | 2 bytes (size of `Measurement` in bytes)                           
+| **Measurement**                       | `Measurement block` in DMTF measurement specification format       
+
+Where, `Measurement block` is defined as:
+| Field                                  | Value / Description                                               
+|----------------------------------------|---------------------------------------
+| **DMTFSpecMeasurementValueType[6:0]**  | `04h` (Freeform Manifest)                                         
+| **DMTFSpecMeasurementValueType[7]**    | `1b` (raw bit-stream)                                           
+| **DMTFSpecMeasurementValueSize**       | 2 bytes (Size of the PCR Quote)                             
+| **DMTFSpecMeasurementValue**           | PCR Quote in raw bit stream format    
+
 
 ## SPDM Secure Session Manager
 The SPDM Secure Session Manager is responsible for managing secure sessions within the SPDM protocol framework. It provides mechanisms to create, release, and retrieve secure sessions. The manager can set and query the state of a session, ensuring secure communication between devices. It generates necessary cryptographic keys, including shared secrets, handshake keys, and data keys, through asynchronous methods. Additionally, it verifies the integrity and optionally decrypts secure messages, and encodes messages with appropriate security measures. The manager also tracks session validity and can reset session states and identifiers as needed, ensuring robust and secure session management.
