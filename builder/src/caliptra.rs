@@ -9,7 +9,8 @@ use caliptra_auth_man_gen::{
     AuthManifestGenerator, AuthManifestGeneratorConfig, AuthManifestGeneratorKeyConfig,
 };
 use caliptra_auth_man_types::{
-    Addr64, AuthManifestFlags, AuthManifestImageMetadata, AuthManifestPrivKeysConfig, AuthManifestPubKeysConfig, AuthorizationManifest, ImageMetadataFlags
+    Addr64, AuthManifestFlags, AuthManifestImageMetadata, AuthManifestPrivKeysConfig,
+    AuthManifestPubKeysConfig, AuthorizationManifest, ImageMetadataFlags,
 };
 use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::*;
