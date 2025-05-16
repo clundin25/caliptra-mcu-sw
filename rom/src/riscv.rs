@@ -47,6 +47,7 @@ impl Soc {
         // secret fuses are populated by a hardware state machine, so we can skip those
 
         // TODO[cap2]: the OTP map doesn't have this value yet, so we hardcode it for now
+        //self.registers.fuse_pqc_key_type.set(1); // MLDSA
         self.registers.fuse_pqc_key_type.set(3); // LMS
 
         // TODO: vendor-specific fuses when those are supported
