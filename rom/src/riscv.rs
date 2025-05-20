@@ -15,10 +15,14 @@ Abstract:
 #![allow(unused)]
 
 use crate::fatal_error;
+use crate::flash_ctrl::{
+    flash_erase, flash_read, flash_write, EmulatedFlashCtrl, EmulatedFlashPage,
+};
 use crate::fuses::Otp;
 use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
 use core::{fmt::Write, hint::black_box, ptr::addr_of};
+use registers_generated::main_flash_ctrl::{self, regs::MainFlashCtrl};
 use registers_generated::{fuses::Fuses, i3c, mbox, mci, otp_ctrl, soc};
 use romtime::{HexWord, Mci, StaticRef};
 use tock_registers::interfaces::{Readable, Writeable};
@@ -128,6 +132,9 @@ impl Soc {
     }
 }
 
+pub const MAIN_FLASH_CTRL_BASE: StaticRef<MainFlashCtrl> =
+    unsafe { StaticRef::new(main_flash_ctrl::MAIN_FLASH_CTRL_ADDR as *const MainFlashCtrl) };
+
 pub fn rom_start() {
     romtime::println!("[mcu-rom] Hello from ROM");
 
@@ -172,6 +179,19 @@ pub fn rom_start() {
     }
 
     romtime::println!("[mcu-rom] Fuses written to Caliptra");
+
+    // ------- XS: flash workflow starts from here ----------------//
+
+    // Initialize flash controller
+    let flash_ctrl = EmulatedFlashCtrl::new(MAIN_FLASH_CTRL_BASE);
+    flash_ctrl.init();
+
+    romtime::println!("[mcu-rom][xs debug]Flash controller initialized");
+
+    test_flash_access(&flash_ctrl);
+    romtime::println!("[mcu-rom][xs debug]Flash controller test access done");
+
+    //------- XS: flash workflow end here ----------------//
 
     // De-assert caliptra reset
     let mut mci = Mci::new(mci_base);
@@ -253,4 +273,52 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
     let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0xfff0) as *const u32 };
     while unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {}
     romtime::println!("[mcu-rom] Firmware load detected");
+}
+
+fn test_flash_access(flash_ctrl: &EmulatedFlashCtrl) {
+    // Test flash access: erase, write, read, arbitrary length of data 1024 bytes.
+    // Execute the test multiple times with different start addresses.
+    const TEST_DATA_SIZE: usize = 1024;
+    const NUM_ITER: usize = 4;
+    const ADDR_STEP: usize = 0x1000;
+
+    for iter in 0..NUM_ITER {
+        let mut test_data = [0; TEST_DATA_SIZE];
+        for i in 0..test_data.len() {
+            test_data[i] = (i as u8).wrapping_add(iter as u8);
+        }
+
+        let start_addr = 0x50 + iter * ADDR_STEP;
+        let mut read_buf = [0; TEST_DATA_SIZE];
+
+        // Erase the flash
+        let ret = flash_erase(flash_ctrl, start_addr, test_data.len());
+        assert!(ret.is_ok(), "Flash erase failed at addr {:#x}", start_addr);
+
+        // Write the data to flash
+        let ret = flash_write(flash_ctrl, start_addr, &test_data);
+        assert!(ret.is_ok(), "Flash write failed at addr {:#x}", start_addr);
+
+        // Read the data back from flash
+        let ret = flash_read(flash_ctrl, start_addr, &mut read_buf);
+        assert!(ret.is_ok(), "Flash read failed at addr {:#x}", start_addr);
+
+        // Verify the data
+        for i in 0..test_data.len() {
+            if read_buf[i] != test_data[i] {
+                romtime::println!(
+                    "[mcu-rom][xs debug] Flash data mismatch at iter {}, index {}: expected {:02x}, got {:02x}",
+                    iter,
+                    i,
+                    test_data[i],
+                    read_buf[i]
+                );
+                fatal_error(1);
+            }
+        }
+        romtime::println!(
+            "[mcu-rom][xs debug] Flash data verified successfully at addr {:#x}",
+            start_addr
+        );
+    }
 }
