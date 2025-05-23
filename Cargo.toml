@@ -3,6 +3,7 @@
 [workspace]
 members = [
     "builder",
+    "common/config",
     "common/pldm",
     "emulator/app",
     "emulator/bmc/pldm-ua",
@@ -14,11 +15,13 @@ members = [
     "emulator/cpu",
     "emulator/derive",
     "emulator/periph",
+    "hw/model",
     "registers/generated-emulator",
     "registers/generated-firmware",
     "registers/generator",
     "registers/systemrdl",
     "registers/systemrdl-new",
+    "platforms/emulator/config",
     "platforms/emulator/rom",
     "platforms/emulator/runtime",
     "platforms/emulator/kernel/capsules",
@@ -73,6 +76,7 @@ clap = { version = "4.5.23", features = [
     "unicode",
     "wrap_help",
 ] }
+clap-num = "1.2.0"
 crc = "3.2.1"
 crc32fast = "1.4.2"
 critical-section = "1.1.2"
@@ -109,6 +113,7 @@ serde-hjson = "1.1.0"
 sha2 = { version = "0.10.8", default-features = false }
 simple_logger = "5.0.0"
 smlang = "0.8.0"
+subst = "0.3.8"
 sudo = "0.6.0"
 strum = "0.24"
 strum_macros = "0.24"
@@ -136,12 +141,12 @@ flash-driver = { path = "runtime/kernel/drivers/flash" }
 i3c-driver = { path = "runtime/kernel/drivers/i3c" }
 libtockasync = { path = "runtime/userspace/libtockasync" }
 mcu-builder = { path = "builder" }
+mcu-config = { path = "common/config" }
+mcu-config-emulator = { path = "platforms/emulator/config" }
 mcu-rom-common = { path = "rom" }
 pldm-common = { path = "common/pldm"}
 pldm-fw-pkg = { path = "emulator/bmc/pldm-fw-pkg" }
 pldm-ua = { path = "emulator/bmc/pldm-ua"}
-
-
 registers-generated = { path = "registers/generated-firmware" }
 registers-generator = { path = "registers/generator" }
 registers-systemrdl = { path = "registers/systemrdl" }
@@ -149,7 +154,7 @@ registers-systemrdl-new = { path = "registers/systemrdl-new" }
 romtime = { path = "romtime" }
 
 # App related dependencies
-pldm-lib = { path = "runtime/userspace/api/pldm-lib", features = ["pldm-lib-use-static-config"] }
+pldm-lib = { path = "runtime/userspace/api/pldm-lib" }
 spdm-lib = { path = "runtime/userspace/api/spdm-lib" }
 libsyscall-caliptra = { path = "runtime/userspace/syscall" }
 libapi-caliptra = { path = "runtime/userspace/api/caliptra-api" }
@@ -207,6 +212,7 @@ dpe = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2c0c6a81f56
 # caliptra-registers = { path = "../caliptra-sw/registers" }
 # caliptra-test = { path = "../caliptra-sw/test" }
 # ureg = { path = "../caliptra-sw/ureg" }
+# dpe = { path = "../caliptra-sw/dpe/dpe", default-features = false, features = ["dpe_profile_p384_sha384"] }
 
 # tock dependencies; keep git revs in sync
 capsules-core = { git = "https://github.com/tock/tock.git", rev = "b128ae817b86706c8c4e39d27fae5c54b98659f1" }
