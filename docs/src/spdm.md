@@ -96,22 +96,22 @@ The SPDM Responder supports the following messages:
 
 ### Responder Interface
 ```Rust
-pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore, M: SpdmMeasurements> {
+pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> {
     transport: &'a dyn T,
     transcript_manager: TranscriptManager,
     session_manager: &'a dyn V,
     cert_store: &'a dyn C,
-    measurements: &'a dyn M,
+    measurements: SpdmMeasurements,
 }
 
-impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore, M: SpdmMeasurements> SpdmResponder<T, V, C, M> {
-    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C. measurements: &'a dyn M) -> Self {
+impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> SpdmResponder<T, V, C, M> {
+    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C) -> Self {
         SpdmResponder {
             transport,
             transcript_manager : TranscriptManager::new(),
             session_manager,
             cert_store,
-            measurements,
+            measurements: SpdmMeasurements::default(),
         }
     }
 
@@ -376,16 +376,30 @@ pub vendor_key_usage, set_vendor_key_usage: 15,15;
 
 
 ## SPDM Measurements
-Caliptra device measurements can be reported in `structured (TBD)` or `freeform measurement` manifest format. The trait `SpdmMeasurements` provides the interface to retrieve the measurements from the device in the DMTF measurement specification format. It is defined to be conducive to the SPDM large response message transfer mechanism (using `CHUNK_GET` and `CHUNK_RESPONSE` messages). 
+Caliptra device measurements can be reported in either a `structured` format (TBD) or a `freeform measurement` manifest format. Currently the default implementation is set to  `freeform measurement` manifest format. 
+
+The `SpdmMeasurements` enum encapsulates these implementations and provides a generic interface for retrieving device measurements in the DMTF measurement specification format. The interface is defined to be conducive to the SPDM large response message transfer mechanism (using `CHUNK_GET` and `CHUNK_RESPONSE` messages). 
 
 ### Measurements Interface
+
 ```Rust
-pub trait SpdmMeasurements {
+pub(crate) enum SpdmMeasurements {
+    FreeformManifest(FreeformManifest),
+    StructuredManifest(StructuredManifest),
+}
+
+impl Default for SpdmMeasurements {
+    fn default() -> Self {
+        SpdmMeasurements::FreeformManifest(FreeformManifest::default())
+    }
+}
+
+impl SpdmMeasurements {
     /// Returns the total number of measurement blocks.
     ///
     /// # Returns
     /// The total number of measurement blocks.
-    fn total_measurement_count(&self) -> usize;
+    pub(crate) fn total_measurement_count(&self) -> usize;
 
     /// Returns the measurement block size for the given index.
     /// valid index is 1 to 0xFF.
@@ -397,14 +411,18 @@ pub trait SpdmMeasurements {
     ///
     /// # Returns
     /// The size of the measurement block.
-    async fn measurement_block_size(&mut self, index: u8, raw_bit_stream: bool) -> usize;
+    pub(crate) async fn measurement_block_size(
+        &mut self,
+        index: u8,
+        raw_bit_stream: bool,
+    ) -> usize;
 
     /// Returns all measurement blocks.
     ///
     /// # Arguments
     /// * `raw_bit_stream` - If true, returns the raw bit stream.
     /// * `offset` - The offset to start reading from.
-    async fn measurement_record(
+    pub(crate) async fn measurement_record(
         &mut self,
         raw_bit_stream: bool,
         offset: usize,
@@ -421,7 +439,7 @@ pub trait SpdmMeasurements {
     ///
     /// # Returns
     /// A result indicating success or failure.
-    async fn measurement_block(
+    pub(crate) async fn measurement_block(
         &mut self,
         index: u8,
         raw_bit_stream: bool,
@@ -434,11 +452,15 @@ pub trait SpdmMeasurements {
     ///
     /// # Arguments
     /// * `hash` - The buffer to store the hash.
+    /// * `measurement_summary_hash_type` - The type of the measurement summary hash to be calculated.
+    ///   1 - TCB measurements only
+    ///   0xFF - All measurements
     ///
     /// # Returns
     /// A result indicating success or failure.
-    async fn measurement_summary_hash(
+    pub(crate) async fn measurement_summary_hash(
         &mut self,
+        measurement_summary_hash_type: u8,
         hash: &mut [u8; SHA384_HASH_SIZE],
     ) -> MeasurementsResult<()>;
 }
@@ -451,7 +473,7 @@ The freeform measurement manifest is a device specific. In case of Caliptra, the
 **Table: Measurement block/record for Freeform Measurement Manifest**
 | Field                                 | Value / Description                                                      
 |---------------------------------------|---------------------------------------------------------------
-| **Index**                             | `SPDM_MEASUREMENT_MANIFEST_INDEX`                                  
+| **Index**                             | `0xFD` SPDM_MEASUREMENT_MANIFEST_INDEX                                 
 | **MeasurementSpecification**          | `01h` (DMTF)                                                       
 | **MeasurementSize**                   | 2 bytes (size of `Measurement` in bytes)                           
 | **Measurement**                       | `Measurement block` in DMTF measurement specification format       
@@ -461,8 +483,33 @@ Where, `Measurement block` is defined as:
 |----------------------------------------|---------------------------------------
 | **DMTFSpecMeasurementValueType[6:0]**  | `04h` (Freeform Manifest)                                         
 | **DMTFSpecMeasurementValueType[7]**    | `1b` (raw bit-stream)                                           
-| **DMTFSpecMeasurementValueSize**       | 2 bytes (Size of the PCR Quote)                             
-| **DMTFSpecMeasurementValue**           | PCR Quote in raw bit stream format    
+| **DMTFSpecMeasurementValueSize**       | 2 bytes (Size of the `QUOTE_PCR` Response in bytes)                             
+| **DMTFSpecMeasurementValue**           | Response of `QUOTE_PCR` in raw bit stream format 
+
+
+Freeform measurement manifest is a single measurement block with the following structure:
+```Rust
+
+const MAX_MEASUREMENT_RECORD_SIZE: usize =
+    PCR_QUOTE_SIZE + size_of::<DmtfMeasurementBlockMetadata>();
+
+/// Structure to hold the Freeform manifest data
+/// The measurement record consists of 1 measurement block whose value is the PCR quote from Caliptra.
+/// The strucuture of the measurement record is as follows:
+/// _________________________________________________________________________________________________
+/// | - index: SPDM_MEASUREMENT_MANIFEST_INDEX                                                      |
+/// | - MeasurementSpecification: 01h (DMTF)                                                        |
+/// |           - DMTFSpecMeasurementValueType[6:0]: 04h (Freeform Manifest)                        |
+/// |           - DMTFSpecMeasurementValueType[7]  : 1b  (raw bit-stream)                           |
+/// | - MeasurementSize: 2 bytes (size of the PCR Quote in DMTF measurement specification format)   |
+/// | - MeasurementBlock: measurement block (PCR Quote in DMTF measurement specification format)    |
+/// ________________________________________________________________________________________________|
+pub struct FreeformManifest {
+    measurement_record: [u8; MAX_MEASUREMENT_RECORD_SIZE],
+}
+```
+
+
 
 
 ## SPDM Secure Session Manager
