@@ -15,14 +15,15 @@ Abstract:
 #![allow(unused)]
 
 use crate::fatal_error;
+/*
 use crate::flash_ctrl::{
     flash_erase, flash_read, flash_write, EmulatedFlashCtrl, EmulatedFlashPage,
-};
+};*/
 use crate::fuses::Otp;
 use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
 use core::{fmt::Write, hint::black_box, ptr::addr_of};
-use registers_generated::main_flash_ctrl::{self, regs::MainFlashCtrl};
+// use registers_generated::main_flash_ctrl::{self, regs::MainFlashCtrl};
 use registers_generated::{fuses::Fuses, i3c, mbox, mci, otp_ctrl, soc};
 use romtime::{HexWord, Mci, StaticRef};
 use tock_registers::interfaces::{Readable, Writeable};
@@ -131,9 +132,10 @@ impl Soc {
         self.registers.cptra_fuse_wr_done.set(1);
     }
 }
-
+/*
 pub const MAIN_FLASH_CTRL_BASE: StaticRef<MainFlashCtrl> =
     unsafe { StaticRef::new(main_flash_ctrl::MAIN_FLASH_CTRL_ADDR as *const MainFlashCtrl) };
+    */
 
 pub fn rom_start() {
     romtime::println!("[mcu-rom] Hello from ROM");
@@ -180,18 +182,12 @@ pub fn rom_start() {
 
     romtime::println!("[mcu-rom] Fuses written to Caliptra");
 
-    // ------- XS: flash workflow starts from here ----------------//
-
-    // Initialize flash controller
-    let flash_ctrl = EmulatedFlashCtrl::new(MAIN_FLASH_CTRL_BASE);
-    flash_ctrl.init();
-
-    romtime::println!("[mcu-rom][xs debug]Flash controller initialized");
-
-    test_flash_access(&flash_ctrl);
-    romtime::println!("[mcu-rom][xs debug]Flash controller test access done");
-
-    //------- XS: flash workflow end here ----------------//
+    /*
+    #[cfg(feature = "test-mcu-rom-flash-access")]
+    {
+        romtime::println!("[mcu-rom] Running flash access test");
+        test_flash_access();
+    } */
 
     // De-assert caliptra reset
     let mut mci = Mci::new(mci_base);
@@ -275,7 +271,16 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
     romtime::println!("[mcu-rom] Firmware load detected");
 }
 
-fn test_flash_access(flash_ctrl: &EmulatedFlashCtrl) {
+/*
+#[cfg(feature = "test-mcu-rom-flash-access")]
+pub fn test_flash_access() {
+
+    // Initialize flash controller
+    let flash_ctrl = EmulatedFlashCtrl::new(MAIN_FLASH_CTRL_BASE);
+    flash_ctrl.init();
+
+    romtime::println!("[mcu-rom][xs debug]Flash controller initialized");
+
     // Test flash access: erase, write, read, arbitrary length of data 1024 bytes.
     // Execute the test multiple times with different start addresses.
     const TEST_DATA_SIZE: usize = 1024;
@@ -292,15 +297,15 @@ fn test_flash_access(flash_ctrl: &EmulatedFlashCtrl) {
         let mut read_buf = [0; TEST_DATA_SIZE];
 
         // Erase the flash
-        let ret = flash_erase(flash_ctrl, start_addr, test_data.len());
+        let ret = flash_erase(&flash_ctrl, start_addr, test_data.len());
         assert!(ret.is_ok(), "Flash erase failed at addr {:#x}", start_addr);
 
         // Write the data to flash
-        let ret = flash_write(flash_ctrl, start_addr, &test_data);
+        let ret = flash_write(&flash_ctrl, start_addr, &test_data);
         assert!(ret.is_ok(), "Flash write failed at addr {:#x}", start_addr);
 
         // Read the data back from flash
-        let ret = flash_read(flash_ctrl, start_addr, &mut read_buf);
+        let ret = flash_read(&flash_ctrl, start_addr, &mut read_buf);
         assert!(ret.is_ok(), "Flash read failed at addr {:#x}", start_addr);
 
         // Verify the data
@@ -321,4 +326,7 @@ fn test_flash_access(flash_ctrl: &EmulatedFlashCtrl) {
             start_addr
         );
     }
+
+    romtime::println!("[mcu-rom][xs debug]Flash controller test access done");
 }
+*/

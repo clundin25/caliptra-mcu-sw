@@ -14,12 +14,32 @@ Abstract:
 
 use crate::io::{EMULATOR_WRITER, FATAL_ERROR_HANDLER};
 use core::fmt::Write;
+// For flash ctrl driver testing
+use romtime::StaticRef;
+use tock_registers::interfaces::{Readable, Writeable};
+use crate::flash_ctrl::{
+    flash_erase, flash_read, flash_write, EmulatedFlashCtrl,
+};
+use registers_generated::main_flash_ctrl::{self, regs::MainFlashCtrl};
+pub const MAIN_FLASH_CTRL_BASE: StaticRef<MainFlashCtrl> =
+    unsafe { StaticRef::new(main_flash_ctrl::MAIN_FLASH_CTRL_ADDR as *const MainFlashCtrl) };
+/// flash ctrl driver testing ended
 
 #[cfg(target_arch = "riscv32")]
 core::arch::global_asm!(include_str!("start.s"));
 
 use mcu_config::McuMemoryMap;
 use romtime::HexWord;
+
+#[cfg(feature = "test-mcu-rom-flash-access")]
+#[no_mangle]
+pub fn test_flash_access_marker() {
+    // This function is only compiled if the feature is enabled
+    romtime::println!(
+        "[mcu-rom][xs debug] test_flash_access_marker called from MCU ROM"
+    );
+    test_flash_access();
+}
 
 // re-export this so the common ROM can use it
 #[no_mangle]
@@ -37,6 +57,9 @@ pub extern "C" fn rom_entry() -> ! {
     }
 
     mcu_rom_common::rom_start();
+
+    #[cfg(feature = "test-mcu-rom-flash-access")]
+    test_flash_access_marker();
 
     romtime::println!(
         "[mcu-rom] Jumping to firmware at {}",
@@ -73,4 +96,64 @@ fn exit_rom() -> ! {
                 options(noreturn),
         }
     }
+}
+
+
+#[cfg(feature = "test-mcu-rom-flash-access")]
+pub fn test_flash_access() {
+
+    // Initialize flash controller
+    let flash_ctrl = EmulatedFlashCtrl::new(MAIN_FLASH_CTRL_BASE);
+    flash_ctrl.init();
+
+    romtime::println!("[mcu-rom][xs debug]Flash controller initialized");
+
+    // Test flash access: erase, write, read, arbitrary length of data 1024 bytes.
+    // Execute the test multiple times with different start addresses.
+    const TEST_DATA_SIZE: usize = 1024;
+    const NUM_ITER: usize = 4;
+    const ADDR_STEP: usize = 0x1000;
+
+    for iter in 0..NUM_ITER {
+        let mut test_data = [0; TEST_DATA_SIZE];
+        for i in 0..test_data.len() {
+            test_data[i] = (i as u8).wrapping_add(iter as u8);
+        }
+
+        let start_addr = 0x50 + iter * ADDR_STEP;
+        let mut read_buf = [0; TEST_DATA_SIZE];
+
+        // Erase the flash
+        let ret = flash_erase(&flash_ctrl, start_addr, test_data.len());
+        assert!(ret.is_ok(), "Flash erase failed at addr {:#x}", start_addr);
+
+        // Write the data to flash
+        let ret = flash_write(&flash_ctrl, start_addr, &test_data);
+        assert!(ret.is_ok(), "Flash write failed at addr {:#x}", start_addr);
+
+        // Read the data back from flash
+        let ret = flash_read(&flash_ctrl, start_addr, &mut read_buf);
+        assert!(ret.is_ok(), "Flash read failed at addr {:#x}", start_addr);
+
+        // Verify the data
+        for i in 0..test_data.len() {
+            if read_buf[i] != test_data[i] {
+                assert_eq!(
+                    read_buf[i], test_data[i],
+                    "[mcu-rom][xs debug] Flash data mismatch at iter {}, index {}: expected {:02x}, got {:02x}",
+                    iter,
+                    i,
+                    test_data[i],
+                    read_buf[i]
+                );
+
+            }
+        }
+        romtime::println!(
+            "[mcu-rom][xs debug] Flash data verified successfully at addr {:#x}",
+            start_addr
+        );
+    }
+
+    romtime::println!("[mcu-rom][xs debug]Flash controller test access done");
 }

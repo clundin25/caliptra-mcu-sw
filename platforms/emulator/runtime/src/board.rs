@@ -583,6 +583,10 @@ pub unsafe fn main() {
     } else if cfg!(feature = "test-flash-storage-erase") {
         debug!("Executing test-flash-storage-erase");
         crate::tests::flash_storage_test::test_flash_storage_erase()
+    } else if cfg!(feature = "test-mcu-rom-flash-access") {
+        debug!("Executing test-mcu-rom-flash-access");
+        // crate::tests::flash_access_from_mcu_rom_test::test_flash_access_from_mcu_rom()
+        Some(0)
     } else {
         None
     };

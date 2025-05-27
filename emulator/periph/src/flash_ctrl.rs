@@ -38,6 +38,13 @@ pub enum FlashOperation {
     ErasePage = 3,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum DmaRamAccessType {
+    McuRt,
+    McuRom,
+    Invalid,
+}
+
 impl TryInto<FlashOperation> for u32 {
     type Error = ();
 
@@ -221,110 +228,93 @@ impl DummyFlashCtrl {
         }
     }
 
-    fn dma_ram_access_check(&self, addr: u32) -> bool {
-        addr >= RAM_OFFSET && addr + Self::PAGE_SIZE as u32 <= RAM_OFFSET + RAM_SIZE
-    }
-
-    fn dma_ram_for_rom_access_check(&self, addr: u32) -> bool {
-        addr >= SRAM_FOR_MCU_ROM_OFFSET
+    /// Checks the DMA RAM access type for the given address.
+    fn dma_ram_access_check(&self, addr: u32) -> DmaRamAccessType {
+        if addr >= RAM_OFFSET && addr + Self::PAGE_SIZE as u32 <= RAM_OFFSET + RAM_SIZE {
+            DmaRamAccessType::McuRt
+        } else if addr >= SRAM_FOR_MCU_ROM_OFFSET
             && addr + Self::PAGE_SIZE as u32 <= SRAM_FOR_MCU_ROM_OFFSET + SRAM_FOR_MCU_ROM_SIZE
+        {
+            DmaRamAccessType::McuRom
+        } else {
+            DmaRamAccessType::Invalid
+        }
     }
 
     fn read_page(&mut self) -> Result<(), FlashOpError> {
-        if self.dma_ram.is_none() || self.dma_ram_for_rom.is_none() {
-            panic!("DMA Ram must have been set before calling read_page")
-        }
-
-        // Get the page number from the register
         let page_num = self.page_num.reg.get();
-
-        // Get the address from the register
         let page_addr = self.page_addr.reg.get();
 
-        let mcu_rt_access_flash = self.dma_ram_access_check(page_addr);
-        let mcu_rom_access_flash = self.dma_ram_for_rom_access_check(page_addr);
-
-        // Sanity check for the page number, page size and file
         if page_num >= Self::MAX_PAGES
             || self.page_size.reg.get() < Self::PAGE_SIZE as u32
             || self.file.is_none()
-            || !(mcu_rom_access_flash || mcu_rt_access_flash)
         {
             return Err(FlashOpError::ReadError);
         }
 
-        // Read the entire page from the backend file and put into the internal buffer
-        if let Some(file) = &mut self.file {
-            let offset = (page_num * Self::PAGE_SIZE as u32) as u64;
-            // Error handling for seek and read operations
-            if file.seek(std::io::SeekFrom::Start(offset)).is_err()
-                || file.read_exact(&mut self.buffer).is_err()
-            {
-                return Err(FlashOpError::ReadError);
-            }
-        }
+        let file = self.file.as_mut().unwrap();
+        let offset = (page_num * Self::PAGE_SIZE as u32) as u64;
+        file.seek(std::io::SeekFrom::Start(offset))
+            .and_then(|_| file.read_exact(&mut self.buffer))
+            .map_err(|_| FlashOpError::ReadError)?;
 
-        // Write the entire page from the buffer to the DMA ram
-        let dma_start_addr = if mcu_rt_access_flash {
-            self.page_addr.reg.get() - RAM_OFFSET
-        } else {
-            self.page_addr.reg.get() - SRAM_FOR_MCU_ROM_OFFSET
+        let access_type = self.dma_ram_access_check(page_addr);
+        let (dma_ram, dma_start_addr) = match access_type {
+            DmaRamAccessType::McuRt => (
+                self.dma_ram.as_ref().expect("DMA ram must be set").clone(),
+                page_addr - RAM_OFFSET,
+            ),
+            DmaRamAccessType::McuRom => (
+                self.dma_ram_for_rom
+                    .as_ref()
+                    .expect("DMA ram for rom must be set")
+                    .clone(),
+                page_addr - SRAM_FOR_MCU_ROM_OFFSET,
+            ),
+            DmaRamAccessType::Invalid => return Err(FlashOpError::DmaRamAccessError),
         };
 
-        let dma_ram = if mcu_rt_access_flash {
-            self.dma_ram.clone().unwrap()
-        } else {
-            self.dma_ram_for_rom.clone().unwrap()
-        };
-
-        for i in 0..Self::PAGE_SIZE {
-            if let Err(err) = dma_ram.borrow_mut().write(
-                RvSize::Byte,
-                dma_start_addr + i as u32,
-                self.buffer[i] as u32,
-            ) {
-                println!("DMA ram write error: {:?}", err);
-                return Err(FlashOpError::DmaRamAccessError);
-            }
+        for (i, &byte) in self.buffer.iter().enumerate() {
+            dma_ram
+                .borrow_mut()
+                .write(RvSize::Byte, dma_start_addr + i as u32, byte as u32)
+                .map_err(|err| {
+                    println!("DMA ram write error: {:?}", err);
+                    FlashOpError::DmaRamAccessError
+                })?;
         }
 
         Ok(())
     }
 
     fn write_page(&mut self) -> Result<(), FlashOpError> {
-        if self.dma_ram.is_none() || self.dma_ram_for_rom.is_none() {
-            panic!("DMA ram must have been set before calling write_page")
-        }
         // Get the page number from the register
         let page_num = self.page_num.reg.get();
-
         // Get the address from the register
         let page_addr = self.page_addr.reg.get();
-
-        let mcu_rt_access_flash = self.dma_ram_access_check(page_addr);
-        let mcu_rom_access_flash = self.dma_ram_for_rom_access_check(page_addr);
-
-        println!("[xs debug]FlashCtrl in emulator: write_page: access_from_rom {:?}, access_from_rt {:?}, page_addr = {:02x}", mcu_rom_access_flash, mcu_rt_access_flash, page_addr);
 
         // Sanity check for the page number, page size and file
         if page_num >= Self::MAX_PAGES
             || self.page_size.reg.get() < Self::PAGE_SIZE as u32
             || self.file.is_none()
-            || !(mcu_rom_access_flash || mcu_rt_access_flash)
         {
             return Err(FlashOpError::WriteError);
         }
 
-        let dma_start_addr = if mcu_rt_access_flash {
-            self.page_addr.reg.get() - RAM_OFFSET
-        } else {
-            self.page_addr.reg.get() - SRAM_FOR_MCU_ROM_OFFSET
-        };
-
-        let dma_ram = if mcu_rt_access_flash {
-            self.dma_ram.clone().unwrap()
-        } else {
-            self.dma_ram_for_rom.clone().unwrap()
+        let access_type = self.dma_ram_access_check(page_addr);
+        let (dma_ram, dma_start_addr) = match access_type {
+            DmaRamAccessType::McuRt => (
+                self.dma_ram.as_ref().expect("DMA ram must be set").clone(),
+                page_addr - RAM_OFFSET,
+            ),
+            DmaRamAccessType::McuRom => (
+                self.dma_ram_for_rom
+                    .as_ref()
+                    .expect("DMA ram for rom must be set")
+                    .clone(),
+                page_addr - SRAM_FOR_MCU_ROM_OFFSET,
+            ),
+            DmaRamAccessType::Invalid => return Err(FlashOpError::DmaRamAccessError),
         };
 
         for i in 0..Self::PAGE_SIZE {
@@ -343,7 +333,6 @@ impl DummyFlashCtrl {
         // Write the entire page from the buffer to the backend file
         if let Some(file) = &mut self.file {
             let offset = (page_num * Self::PAGE_SIZE as u32) as u64;
-            // Error handling for seek and write operations
             if file.seek(std::io::SeekFrom::Start(offset)).is_err()
                 || file.write_all(&self.buffer).is_err()
             {

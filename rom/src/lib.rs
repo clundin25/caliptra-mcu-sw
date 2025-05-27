@@ -23,12 +23,12 @@ pub use fuses::*;
 mod riscv;
 #[cfg(target_arch = "riscv32")]
 pub use riscv::*;
-
+/*
 #[cfg(target_arch = "riscv32")]
 mod flash_ctrl;
 #[cfg(target_arch = "riscv32")]
 pub use flash_ctrl::*;
-
+*/
 pub trait FatalErrorHandler {
     fn fatal_error(&mut self, code: u32) -> !;
 }

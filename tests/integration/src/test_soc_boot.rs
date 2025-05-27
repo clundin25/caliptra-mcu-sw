@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod test {
-    use crate::test::{compile_runtime, run_runtime, ROM, TEST_LOCK};
+    use crate::test::{compile_runtime, run_runtime, get_rom, TEST_LOCK};
     use chrono::{TimeZone, Utc};
     use mcu_builder::SocImage;
     use pldm_fw_pkg::manifest::{
@@ -146,7 +146,7 @@ mod test {
     fn run_runtime_with_options(opts: TestOptions) -> ExitStatus {
         run_runtime(
             opts.feature,
-            ROM.to_path_buf(),
+            get_rom("").to_path_buf(),
             opts.runtime.clone(),
             opts.i3c_port.to_string(),
             true,

@@ -94,6 +94,9 @@ enum Commands {
         /// Platform to build for. Default: emulator
         #[arg(long)]
         platform: Option<String>,
+        /// Features to build ROM with
+        #[arg(long)]
+        features: Vec<String>,
     },
     /// Build and Run ROM image
     Rom {
@@ -229,7 +232,10 @@ fn main() {
             .map(|_| ())
         }
         Commands::Rom { trace } => rom::rom_run(*trace),
-        Commands::RomBuild { platform } => mcu_builder::rom_build(platform.as_deref()).map(|_| ()),
+        Commands::RomBuild { platform, features,} => {
+            let features: Vec<&str> = features.iter().map(|x| x.as_str()).collect();
+            mcu_builder::rom_build(platform.as_deref(), &features).map(|_| ())
+        }
         Commands::FlashImage { subcommand } => match subcommand {
             FlashImageCommands::Create {
                 caliptra_fw,

@@ -6,6 +6,7 @@ mod test {
     use std::process::ExitStatus;
     use std::sync::atomic::AtomicU32;
     use std::sync::Mutex;
+    use std::collections::HashMap;
     use std::{
         path::{Path, PathBuf},
         process::Command,
@@ -28,15 +29,40 @@ mod test {
             .join("release")
             .join(name)
     }
+    // Cache for ROMs compiled with different feature flags.
+    pub static ROMS: LazyLock<Mutex<HashMap<Vec<String>, PathBuf>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    // only build the ROM once
-    pub static ROM: LazyLock<PathBuf> = LazyLock::new(compile_rom);
+    /// Get or compile the ROM for a given set of feature flags.
+    pub fn get_rom_with_features(features: &[&str]) -> PathBuf {
+        let key: Vec<String> = features.iter().map(|s| s.to_string()).collect();
+        let mut roms = ROMS.lock().unwrap();
+        roms.entry(key.clone())
+            .or_insert_with(|| {
+                let feature_str = if features.is_empty() {
+                    ""
+                } else {
+                    &features.join(",")
+                };
+                compile_rom(feature_str)
+            })
+            .clone()
+    }
+
+    /// Get ROM with a single feature flag, or default ROM if feature is empty.
+    pub fn get_rom(feature: &str) -> PathBuf {
+        if feature.is_empty() {
+            get_rom_with_features(&[])
+        } else {
+            get_rom_with_features(&[feature])
+        }
+    }
 
     pub static TEST_LOCK: LazyLock<Mutex<AtomicU32>> =
         LazyLock::new(|| Mutex::new(AtomicU32::new(0)));
 
-    fn compile_rom() -> PathBuf {
-        let output: PathBuf = mcu_builder::rom_build(None)
+    fn compile_rom(feature: &str) -> PathBuf {
+        let output: PathBuf = mcu_builder::rom_build(None, &[feature])
             .expect("ROM build failed")
             .into();
         assert!(output.exists());
@@ -230,7 +256,7 @@ mod test {
                 let i3c_port = "65534".to_string();
                 let test = run_runtime(
                     &feature,
-                    ROM.to_path_buf(),
+                    get_rom("").to_path_buf(),
                     test_runtime,
                     i3c_port,
                     true,  // active mode is always true
@@ -294,7 +320,33 @@ mod test {
         let i3c_port = "65534".to_string();
         let test = run_runtime(
             &feature,
-            ROM.to_path_buf(),
+            get_rom("").to_path_buf(),
+            test_runtime,
+            i3c_port,
+            true,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(0, test.code().unwrap_or_default());
+
+        // force the compiler to keep the lock
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[test]
+    fn test_flash_access_from_mcu_rom() {
+        let lock = TEST_LOCK.lock().unwrap();
+        lock.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        println!("Compiling test firmware test_flash_access_from_mcu_rom");
+        let feature = "test-mcu-rom-flash-access".to_string();
+        let test_runtime = compile_runtime(&feature, false);
+        let i3c_port = "65534".to_string();
+        let test = run_runtime(
+            &feature,
+            get_rom(&feature).to_path_buf(),
             test_runtime,
             i3c_port,
             true,

@@ -6,10 +6,17 @@ use anyhow::{bail, Result};
 use mcu_config::McuMemoryMap;
 use std::process::Command;
 
-pub fn rom_build(platform: Option<&str>) -> Result<String> {
+pub fn rom_build(platform: Option<&str>, features: &[&str]) -> Result<String> {
     let platform = platform.unwrap_or("emulator");
     let platform_pkg = format!("mcu-rom-{}", platform);
     let platform_bin = format!("mcu-rom-{}.bin", platform);
+
+    let features_str = features.join(",");
+    let features = if features.is_empty() {
+        vec![]
+    } else {
+        vec!["--features", features_str.as_str()]
+    };
     let status = Command::new("cargo")
         .current_dir(&*PROJECT_ROOT)
         .args([
@@ -20,6 +27,7 @@ pub fn rom_build(platform: Option<&str>) -> Result<String> {
             "--target",
             TARGET,
         ])
+        .args(&features)
         .status()?;
     if !status.success() {
         bail!("build ROM binary failed");

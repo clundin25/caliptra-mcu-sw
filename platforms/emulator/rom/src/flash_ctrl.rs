@@ -8,7 +8,6 @@ use registers_generated::main_flash_ctrl::{
     bits::{CtrlRegwen, FlControl, FlInterruptEnable, FlInterruptState, OpStatus},
     regs::MainFlashCtrl,
 };
-
 use romtime::StaticRef;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
@@ -323,8 +322,6 @@ impl EmulatedFlashCtrl {
                 self.registers.op_status.modify(OpStatus::Done::CLEAR);
                 self.clear_event_interrupt();
                 self.disable_interrupts();
-
-                romtime::println!("[xs debug]poll_for_completion: Operation complete");
                 return Ok(());
             }
 

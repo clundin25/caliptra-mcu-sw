@@ -285,9 +285,6 @@ impl Bus for McuRootBus {
         self.ram
             .borrow_mut()
             .register_outgoing_events(sender.clone());
-        self.rom_sram
-            .borrow_mut()
-            .register_outgoing_events(sender.clone());
         self.pic_regs.register_outgoing_events(sender.clone());
         self.event_sender = Some(sender);
     }
@@ -298,7 +295,6 @@ impl Bus for McuRootBus {
         self.ctrl.incoming_event(event.clone());
         self.spi.incoming_event(event.clone());
         self.ram.borrow_mut().incoming_event(event.clone());
-        self.rom_sram.borrow_mut().incoming_event(event.clone());
         self.pic_regs.incoming_event(event.clone());
 
         if let (Device::MCU, EventData::MemoryRead { start_addr, len }) =
@@ -345,60 +341,6 @@ impl Bus for McuRootBus {
                 );
             } else {
                 let mut ram = self.ram.borrow_mut();
-                let ram_size = ram.len() as usize;
-                let len = data.len().min(ram_size - start);
-                ram.data_mut()[start..start + len].copy_from_slice(&data[..len]);
-            }
-        }
-
-        // Handle ROM_SRAM read
-        if let (Device::MCU, EventData::MemoryRead { start_addr, len }) =
-            (event.dest, event.event.clone())
-        {
-            let start = start_addr as usize;
-            let len = len as usize;
-            if start >= SRAM_FOR_MCU_ROM_SIZE as usize
-                || start + len >= SRAM_FOR_MCU_ROM_SIZE as usize
-            {
-                println!(
-                    "Ignoring invalid MCU ROM SRAM read from {}..{}",
-                    start,
-                    start + len
-                );
-            } else {
-                let ram = self.rom_sram.borrow();
-                let ram_size = ram.len() as usize;
-                let len = len.min(ram_size - start);
-
-                if let Some(event_sender) = self.event_sender.as_ref() {
-                    event_sender
-                        .send(Event {
-                            src: Device::MCU,
-                            dest: event.src,
-                            event: EventData::MemoryReadResponse {
-                                start_addr,
-                                data: ram.data()[start..start + len].to_vec(),
-                            },
-                        })
-                        .unwrap();
-                }
-            }
-        }
-
-        if let (Device::MCU, EventData::MemoryWrite { start_addr, data }) =
-            (event.dest, event.event.clone())
-        {
-            let start = start_addr as usize;
-            if start >= SRAM_FOR_MCU_ROM_SIZE as usize
-                || start + data.len() >= SRAM_FOR_MCU_ROM_SIZE as usize
-            {
-                println!(
-                    "Ignoring invalid MCU ROM SRAM write to {}..{}",
-                    start,
-                    start + data.len()
-                );
-            } else {
-                let mut ram = self.rom_sram.borrow_mut();
                 let ram_size = ram.len() as usize;
                 let len = data.len().min(ram_size - start);
                 ram.data_mut()[start..start + len].copy_from_slice(&data[..len]);
