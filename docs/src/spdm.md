@@ -621,9 +621,12 @@ impl LargeResponseCtx {
     /// A `ChunkResult` containing the chunk handle(u8) if successful
     pub fn init(&mut self, large_rsp: LargeMsgResponse, large_rsp_size: usize) -> ChunkResult<u8>;
 }
+```
 
 ### Large Request Transfer
-Large request messages, such as `SET_CERTIFICATE` requests, are also divided into smaller chunks. For these large requests, the requester transmits a `CHUNK_SEND` message containing the unique `Handle` associated with the request and the relevant information for chunk 0. The responder then initializes the `LargeRequestCtx` using the provided chunk data and provides the `CHUNK_SEND_ACK` response. This is followed by a series of `CHUNK_SEND` and `CHUNK_SEND_ACK` until the last chunk. Upon identifying the type of large request from the chunks, the appropriate request handler is invoked and is provided as response to the last `CHUNK_SEND` request from requester. 
+Large request messages, such as `SET_CERTIFICATE` requests, are also divided into smaller chunks. 
+
+For these large requests, the requester transmits a `CHUNK_SEND` message containing the unique `Handle` associated with the request and the relevant information for chunk 0. The responder then initializes the `LargeRequestCtx` using the provided chunk data and provides the `CHUNK_SEND_ACK` response. This is followed by a series of `CHUNK_SEND` and `CHUNK_SEND_ACK` until the last chunk. Upon identifying the type of large request from the chunks, the appropriate request handler is invoked and is provided as response to the last `CHUNK_SEND` request from requester. 
 TBD
 
 
