@@ -509,6 +509,122 @@ pub struct FreeformManifest {
 }
 ```
 
+## Large Message Transfer Handling
+
+The SPDM protocol enables the transfer of large messages by segmenting data into manageable chunks. For responses from the device, the protocol uses `CHUNK_GET` and `CHUNK_RESPONSE` messages, allowing the requester to retrieve large responses in sequential parts. For requests sent to the device, `CHUNK_SEND` and `CHUNK_SEND_ACK` messages are used, enabling the requester to transmit large requests in multiple segments.
+Serving multiple large transfers simultaneously is not an expected use case, and is not supported by the specification.
+
+The following code defines the core structures and enums used for handling large message chunking in SPDM:
+```Rust
+pub enum ChunkError {
+    LergeResponseInitError,
+    NoLargeResponseInProgress,
+    InvalidChunkHandle,
+    InvalidChunkSeqNum,
+}
+
+pub type ChunkResult<T> = Result<T, ChunkError>;
+
+/// Stores state and metadata for managing ongoing large message requests and responses.
+pub struct ChunkInfo {
+    chunk_in_use: bool,
+    chunk_handle: u8,
+    chunk_seq_num: u16,
+    bytes_transferred: usize,
+    large_msg_size: usize,
+}
+```
+
+### Large Response Transfer
+Large response messages, such as measurement records in raw bitstream format, are divided into smaller chunks for transmission. The command handler responsible for sending the large response initializes the `LargeResponseCtx` for transferring the response in chunks, incorporating all necessary context. Upon initialization, a new `handle` is provided to uniquely identify the large response message. The command handler then sends an `ERROR` response with `ErrorCode=LargeResponse` along with the `handle` to the requester. This process is followed by a sequence of `CHUNK_GET` and `CHUNK_RESPONSE` messages until the entire large response message is completely transferred.
+
+If a new large response is initiated before the requester completes the `CHUNK_GET` requests for a previous large response, any incomplete or pending chunk transfers for the earlier response will be discarded.
+
+The following sequence diagram illustrates the chunking process for the `MEASUREMENTS` large response message:
+```mermaid
+sequenceDiagram
+    participant Requester
+    participant Responder
+    Requester->>+Responder: GET_MEASUREMENTS <br/>Measurement type raw bits
+    Note right of Responder: MEASUREMENTS Response too large <br/> DataTransferSize = 1024 bytes<br/> Response size = 6629 bytes
+    Note right of Responder: Initializes `LargeResponseCtx` with <br/> `MeasurementsResponse` instance.
+    Note right of Responder: Gets handle = 17 from initialization 
+    Responder-->>-Requester: ERROR<br/> ErrorCode = LargeResponse<br/> Handle = 17
+
+    alt Chunk 0
+        Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 0
+        Note right of Responder: Checks if `chunk` is in use for handle 17 <br/> Computes chunk size = 1023 - 12 = 1011 bytes <br/> chunk0 size = 1023 - 16 = 1007 bytes
+        Note right of Responder: Invokes `chunk_get()` with offset = 0 <br/> and chunk size = 1007 bytes on the enum object
+        Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 0<br/>Chunk Size = 1007 bytes<br/> Chunk 0 Data
+    end
+
+    alt Chunk 1
+        Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 1
+        Note right of Responder: Invokes `chunk_get()` with offset = 1007 <br/> and chunk size = 1011 bytes on the enum object
+        Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 1<br/>Chunk Size = 1011 bytes<br/> Chunk 1 Data
+    end
+
+    Note over Requester,Responder: .... <br/> 
+    alt Last Chunk
+        Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 6
+        Note right of Responder: Invokes `chunk_get()` with offset = 6025 <br/> and chunk size = 567 bytes on the enum object
+        Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 6<br/>Chunk Size = 567 bytes<br/> Chunk 6 Data<br/> Last Chunk
+        Note right of Responder: Last chunk, reset the `chunk_get` context for handle 17,<br/> increment the next handle to 18
+    end
+```
+
+enum `LargeResponse` is used to represent the large response message being transferred. The `ChunkContext` is initialized with this enum object, which contains the necessary information for chunking the response.
+
+```Rust
+
+/// Enum that represents a large message response type that can be split into chunks
+pub(crate) enum LargeResponse{
+    Measurements(MeasurementsResponse),
+}
+
+impl LargeResponse {
+    /// Get the chunk of the large message response from the specified offset
+    /// 
+    /// # Arguments
+    /// * `ctx` - The context containing the SPDM responder state
+    /// * `offset` - The offset in the large message response to start reading from
+    /// * `chunk_buf` - The buffer to store the chunk data
+    /// 
+    /// # Returns
+    /// Returns `ChunkResult<()>` indicating success or error on failure
+    pub(crate) async fn get_chunk<'a>(&self, ctx: &mut SpdmContext<'a>, offset: usize, chunk_buf: &mut [u8]) -> ChunkResult<()>;
+}
+
+
+/// Manages the context for ongoing large message responses
+pub(crate) struct LargeResponseCtx {
+    chunk_info: ChunkInfo,
+    response: Option<LargeResponse>,
+}
+
+impl LargeResponseCtx {
+    /// Create a new instance of LargeResponseCtx
+    /// with default values
+    pub(crate) fn new() -> Self;
+    
+    /// Reset the context to its initial state
+    /// This action increments the chunk handle
+    pub(crate) fn reset(&mut self);
+
+    /// Initialize the context for a large response
+    ///
+    /// # Arguments
+    /// * `large_rsp` - The large message response to be sent
+    /// * `large_rsp_size` - The size of the response message
+    /// 
+    /// # Returns
+    /// A `ChunkResult` containing the chunk handle(u8) if successful
+    pub fn init(&mut self, large_rsp: LargeMsgResponse, large_rsp_size: usize) -> ChunkResult<u8>;
+}
+
+### Large Request Transfer
+Large request messages, such as `SET_CERTIFICATE` requests, are also divided into smaller chunks. For these large requests, the requester transmits a `CHUNK_SEND` message containing the unique `Handle` associated with the request and the relevant information for chunk 0. The responder then initializes the `LargeRequestCtx` using the provided chunk data and provides the `CHUNK_SEND_ACK` response. This is followed by a series of `CHUNK_SEND` and `CHUNK_SEND_ACK` until the last chunk. Upon identifying the type of large request from the chunks, the appropriate request handler is invoked and is provided as response to the last `CHUNK_SEND` request from requester. 
+TBD
 
 
 
