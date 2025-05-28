@@ -3,9 +3,11 @@
 use crate::InitParams;
 use crate::McuHwModel;
 use crate::Output;
+use crate::SecurityState;
 use anyhow::{anyhow, Error, Result};
 use bitfield::bitfield;
 use caliptra_emu_bus::Event;
+use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use std::sync::mpsc;
 use uio::{UioDevice, UioError};
 
@@ -15,11 +17,14 @@ const CALIPTRA_MAPPING: (usize, usize) = (0, 1);
 const CALIPTRA_ROM_MAPPING: (usize, usize) = (0, 2);
 const I3C_CONTROLLER_MAPPING: (usize, usize) = (0, 3);
 const MCU_SRAM_MAPPING: (usize, usize) = (0, 4);
-const _SS_MAPPING: (usize, usize) = (1, 0);
+const LC_MAPPING: (usize, usize) = (1, 0);
 const MCU_ROM_MAPPING: (usize, usize) = (1, 1);
 const I3C_TARGET_MAPPING: (usize, usize) = (1, 2);
 const MCI_MAPPING: (usize, usize) = (1, 3);
+const OTP_MAPPING: (usize, usize) = (1, 4);
 
+// Set to core_clk cycles per ITRNG sample.
+const ITRNG_DIVISOR: u32 = 400;
 const DEFAULT_AXI_PAUSER: u32 = 0x1;
 
 fn fmt_uio_error(err: UioError) -> Error {
@@ -36,8 +41,11 @@ const _FPGA_WRAPPER_ITRNG_DIV_OFFSET: isize = 0x0014 / 4;
 const FPGA_WRAPPER_CYCLE_COUNT_OFFSET: isize = 0x0018 / 4;
 const _FPGA_WRAPPER_GENERIC_INPUT_OFFSET: isize = 0x0030 / 4;
 const _FPGA_WRAPPER_GENERIC_OUTPUT_OFFSET: isize = 0x0038 / 4;
-const _FPGA_WRAPPER_DEOBF_KEY_OFFSET: isize = 0x0040 / 4;
-const _FPGA_WRAPPER_CSR_HMAC_KEY_OFFSET: isize = 0x0060 / 4;
+// Secrets
+const FPGA_WRAPPER_DEOBF_KEY_OFFSET: isize = 0x0040 / 4;
+const FPGA_WRAPPER_CSR_HMAC_KEY_OFFSET: isize = 0x0060 / 4;
+const FPGA_WRAPPER_OBF_UDS_SEED_OFFSET: isize = 0x00A0 / 4;
+const FPGA_WRAPPER_OBF_FIELD_ENTROPY_OFFSET: isize = 0x00E0 / 4;
 
 const _FPGA_WRAPPER_LSU_USER_OFFSET: isize = 0x0100 / 4;
 const _FPGA_WRAPPER_IFU_USER_OFFSET: isize = 0x0104 / 4;
@@ -150,9 +158,24 @@ impl ModelFpgaRealtime {
     }
 
     fn set_subsystem_reset(&mut self, reset: bool) {
-        let value = if reset { 0 } else { 3 };
+        let value = if reset { 0 | (1 << 7) } else { 3 | (1 << 7) };
         unsafe {
             core::ptr::write_volatile(self.wrapper.offset(FPGA_WRAPPER_CONTROL_OFFSET), value);
+        }
+    }
+
+    fn set_secrets_valid(&mut self, value: bool) {
+        unsafe {
+            let mut val = WrapperControl(
+                self.wrapper
+                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                    .read_volatile(),
+            );
+            val.set_cptra_obf_uds_seed_vld(value as u32);
+            val.set_cptra_obf_field_entropy_vld(value as u32);
+            self.wrapper
+                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                .write_volatile(val.0);
         }
     }
 
@@ -264,6 +287,12 @@ impl McuHwModel for ModelFpgaRealtime {
         let i3c_controller_mmio = devs[I3C_CONTROLLER_MAPPING.0]
             .map_mapping(I3C_CONTROLLER_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
+        let lc_mmio = devs[LC_MAPPING.0]
+            .map_mapping(LC_MAPPING.1)
+            .map_err(fmt_uio_error)? as *mut u32;
+        let otp_mmio = devs[OTP_MAPPING.0]
+            .map_mapping(OTP_MAPPING.1)
+            .map_err(fmt_uio_error)? as *mut u32;
 
         // TODO: initialize this after the I3C target is configured.
         // let i3c_controller = xi3c::Controller::new(i3c_controller_mmio);
@@ -281,6 +310,58 @@ impl McuHwModel for ModelFpgaRealtime {
 
             output,
         };
+
+        // Set generic input wires.
+        let input_wires = [(!params.uds_granularity_64 as u32) << 31, 0];
+        m.set_generic_input_wires(&input_wires);
+
+        // Set Security State signal wires
+        m.set_security_state(params.security_state);
+
+        // Set initial PAUSER
+        m.set_axi_user(DEFAULT_AXI_PAUSER);
+
+        // Set divisor for ITRNG throttling
+        m.set_itrng_divider(ITRNG_DIVISOR);
+
+        // Set deobfuscation key
+        for i in 0..8 {
+            unsafe {
+                m.wrapper
+                    .offset(FPGA_WRAPPER_DEOBF_KEY_OFFSET + i)
+                    .write_volatile(params.cptra_obf_key[i as usize])
+            };
+        }
+
+        // Set the CSR HMAC key
+        for i in 0..16 {
+            unsafe {
+                m.wrapper
+                    .offset(FPGA_WRAPPER_CSR_HMAC_KEY_OFFSET + i)
+                    .write_volatile(params.csr_hmac_key[i as usize])
+            };
+        }
+
+        // Set the UDS Seed
+        for i in 0..16 {
+            unsafe {
+                m.wrapper
+                    .offset(FPGA_WRAPPER_OBF_UDS_SEED_OFFSET + i)
+                    .write_volatile(DEFAULT_UDS_SEED[i as usize])
+            };
+        }
+
+        // Set the FE Seed
+        for i in 0..8 {
+            unsafe {
+                m.wrapper
+                    .offset(FPGA_WRAPPER_OBF_FIELD_ENTROPY_OFFSET + i)
+                    .write_volatile(DEFAULT_FIELD_ENTROPY[i as usize])
+            };
+        }
+
+        // Currently not using strap UDS and FE
+        m.set_secrets_valid(false);
 
         println!("Clearing fifo");
         // Sometimes there's garbage in here; clean it out
@@ -345,6 +426,43 @@ impl McuHwModel for ModelFpgaRealtime {
         sram_slice.copy_from_slice(&fw_data);
 
         println!("Done starting MCU");
+        let boot_status = unsafe { m.caliptra_mmio.offset(0x3_0038 / 4).read_volatile() };
+        let flow_status = unsafe { m.caliptra_mmio.offset(0x3_003c / 4).read_volatile() };
+
+        println!("Boot status: 0x{:x}", boot_status);
+        println!("Flow status: 0x{:x}", flow_status);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let boot_status = unsafe { m.caliptra_mmio.offset(0x3_0038 / 4).read_volatile() };
+        let flow_status = unsafe { m.caliptra_mmio.offset(0x3_003c / 4).read_volatile() };
+
+        println!("Boot status: 0x{:x}", boot_status);
+        println!("Flow status: 0x{:x}", flow_status);
+
+        println!("Setting fuse done");
+        unsafe { m.caliptra_mmio.offset(0x3_00b0 / 4).write_volatile(0x1) };
+
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // MCU ROM does this but we do it here just in case
+        println!("Setting caliptra boot go");
+        m.set_caliptra_boot_go(true);
+        println!("Done setting caliptra boot go");
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+
+        println!("Boot status: 0x{:x}", boot_status);
+        println!("Flow status: 0x{:x}", flow_status);
+        println!("mbox addr: {:x}", unsafe {
+            m.caliptra_mmio.offset(0x2001c / 4) as u32
+        });
+
+        let otp_status = unsafe { otp_mmio.offset(4 / 4).read_volatile() };
+        let lc_status = unsafe { lc_mmio.offset(4 / 4).read_volatile() };
+
+        println!("OTP status: 0x{:x}", otp_status);
+        println!("LC status: 0x{:x}", lc_status);
+        // let mbox_status = unsafe { m.caliptra_mmio.offset(0x2_001c / 4).read_volatile() };
+        // println!("mbox status: 0x{:x}", mbox_status);
 
         Ok(m)
     }
@@ -376,6 +494,47 @@ impl McuHwModel for ModelFpgaRealtime {
             self.wrapper
                 .offset(FPGA_WRAPPER_PAUSER_OFFSET)
                 .write_volatile(pauser);
+        }
+    }
+
+    fn set_caliptra_boot_go(&mut self, go: bool) {
+        unsafe {
+            self.mci
+                .offset(0x108 / 4)
+                .write_volatile(if go { 1 } else { 0 })
+        };
+    }
+
+    fn set_itrng_divider(&mut self, divider: u32) {
+        unsafe {
+            self.wrapper
+                .offset(_FPGA_WRAPPER_ITRNG_DIV_OFFSET)
+                .write_volatile(divider - 1);
+        }
+    }
+
+    fn set_security_state(&mut self, value: SecurityState) {
+        unsafe {
+            let mut val = WrapperControl(
+                self.wrapper
+                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                    .read_volatile(),
+            );
+            val.set_debug_locked(u32::from(value.debug_locked()));
+            val.set_device_lifecycle(u32::from(value.device_lifecycle()));
+            self.wrapper
+                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                .write_volatile(val.0);
+        }
+    }
+
+    fn set_generic_input_wires(&mut self, value: &[u32; 2]) {
+        unsafe {
+            for i in 0..2 {
+                self.wrapper
+                    .offset(_FPGA_WRAPPER_GENERIC_INPUT_OFFSET + i)
+                    .write_volatile(value[i as usize]);
+            }
         }
     }
 
@@ -439,6 +598,7 @@ mod test {
             caliptra_firmware: &caliptra_fw,
             mcu_rom: &mcu_rom,
             mcu_firmware: &mcu_runtime,
+            active_mode: true,
             ..Default::default()
         })
         .unwrap();

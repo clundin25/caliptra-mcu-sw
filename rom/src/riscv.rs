@@ -143,35 +143,68 @@ pub fn rom_start() {
     let soc = Soc::new(soc_base);
 
     // only do these on the emulator for now
-    if unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
-        let otp = Otp::new(otp_base);
-        if let Err(err) = otp.init() {
-            romtime::println!("Error initializing OTP: {}", HexWord(err as u32));
-            fatal_error(1);
-        }
-        let fuses = match otp.read_fuses() {
-            Ok(fuses) => fuses,
-            Err(e) => {
-                romtime::println!("Error reading fuses: {}", HexWord(e as u32));
-                fatal_error(1);
-            }
-        };
-        let flow_status = soc.flow_status();
-        romtime::println!("[mcu-rom] Caliptra flow status {}", HexWord(flow_status));
-        if flow_status == 0 {
-            romtime::println!("Caliptra not detected; skipping common Caliptra boot flow");
-            return;
-        }
+    let otp = Otp::new(otp_base);
+    let otp_status = otp.status();
+    romtime::println!("[mcu-rom] OTP status: {}", HexWord(otp_status));
 
-        romtime::println!("[mcu-rom] Waiting for Caliptra to be ready for fuses");
-        while !soc.ready_for_fuses() {}
-        romtime::println!("[mcu-rom] Writing fuses to Caliptra");
-        soc.populate_fuses(&fuses);
-        soc.fuse_write_done();
-        while soc.ready_for_fuses() {}
-    }
+    let lc_status =
+        unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.lc_offset + 0x4) as *const u32) };
+    romtime::println!("[mcu-rom] LC status: {}", HexWord(lc_status));
 
-    romtime::println!("[mcu-rom] Fuses written to Caliptra");
+    let fuses = if unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
+        // let otp = Otp::new(otp_base);
+        // if let Err(err) = otp.init() {
+        //     romtime::println!("Error initializing OTP: {}", HexWord(err as u32));
+        //     fatal_error(1);
+        // }
+        // match otp.read_fuses() {
+        //     Ok(fuses) => fuses,
+        //     Err(e) => {
+        //         romtime::println!("Error reading fuses: {}", HexWord(e as u32));
+        //         fatal_error(1);
+        //     }
+        // }
+        Fuses::default()
+    } else {
+        Fuses::default()
+    };
+
+    //let flow_status = soc.flow_status();
+    // romtime::println!("[mcu-rom] Caliptra flow status {}", HexWord(flow_status));
+    // if flow_status == 0 {
+    //     romtime::println!("Caliptra not detected; skipping common Caliptra boot flow");
+    //     return;
+    // }
+
+    // romtime::println!(
+    //     "[mcu-rom] Waiting for Caliptra to be ready for fuses: {}",
+    //     soc.ready_for_fuses()
+    // );
+    //while !soc.ready_for_fuses() {}
+    // romtime::println!("[mcu-rom] Writing fuses to Caliptra");
+    //soc.populate_fuses(&fuses);
+    //soc.fuse_write_done();
+    //while soc.ready_for_fuses() {}
+
+    romtime::println!(
+        "[mcu-rom] Fuses written to Caliptra address: {}",
+        HexWord(MCU_MEMORY_MAP.soc_offset)
+    );
+
+    // romtime::println!(
+    //     "[mcu-rom] Fuses written to Caliptra: {}",
+    //     HexWord(unsafe { core::ptr::read_volatile(0xA413_003c as *const u32) })
+    // );
+
+    romtime::println!(
+        "[mcu-rom] MBOX status addr: {}",
+        HexWord(MCU_MEMORY_MAP.mbox_offset)
+    );
+
+    // romtime::println!(
+    //     "[mcu-rom] MBOX status: {}",
+    //     HexWord(unsafe { core::ptr::read_volatile(0xA412_001c as *const u32) })
+    // );
 
     // De-assert caliptra reset
     let mut mci = Mci::new(mci_base);
