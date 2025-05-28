@@ -177,6 +177,14 @@ pub fn rom_start() {
     let mut mci = Mci::new(mci_base);
     romtime::println!("[mcu-rom] Setting Caliptra boot go");
     mci.caliptra_boot_go();
+    romtime::println!(
+        "[mcu-rom] MCI FW flow status: {}",
+        HexWord(mci.flow_status())
+    );
+    romtime::println!(
+        "[mcu-rom] MCI HW flow status: {}",
+        HexWord(mci.hw_flow_status())
+    );
 
     // tell Caliptra to download firmware from the recovery interface
     // only on emulator for now

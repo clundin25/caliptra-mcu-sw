@@ -51,8 +51,8 @@ const _FPGA_WRAPPER_MCI_GENERIC_INPUT_WIRES_0_OFFSET: isize = 0x0120 / 4;
 const _FPGA_WRAPPER_MCI_GENERIC_INPUT_WIRES_1_OFFSET: isize = 0x0124 / 4;
 const _FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET: isize = 0x0128 / 4;
 const _FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET: isize = 0x012C / 4;
-const _FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET: isize = 0x1000 / 4;
-const _FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET: isize = 0x1004 / 4;
+const FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET: isize = 0x1000 / 4;
+const FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET: isize = 0x1004 / 4;
 const _FPGA_WRAPPER_ITRNG_FIFO_DATA_OFFSET: isize = 0x1008 / 4;
 const _FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET: isize = 0x100C / 4;
 const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
@@ -61,11 +61,13 @@ const FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET: isize = 0x1018 / 4;
 bitfield! {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     /// Wrapper wires -> Caliptra
-    pub struct GpioOutput(u32);
+    pub struct WrapperControl(u32);
     cptra_pwrgood, set_cptra_pwrgood: 0, 0;
     cptra_rst_b, set_cptra_rst_b: 1, 1;
-    debug_locked, set_debug_locked: 2, 2;
-    device_lifecycle, set_device_lifecycle: 4, 3;
+    cptra_obf_uds_seed_vld, set_cptra_obf_uds_seed_vld: 2, 2;
+    cptra_obf_field_entropy_vld, set_cptra_obf_field_entropy_vld: 3, 3;
+    debug_locked, set_debug_locked: 4, 4;
+    device_lifecycle, set_device_lifecycle: 6, 5;
 }
 
 bitfield! {
@@ -120,6 +122,33 @@ pub struct ModelFpgaRealtime {
 }
 
 impl ModelFpgaRealtime {
+    fn set_cptra_pwrgood(&mut self, value: bool) {
+        unsafe {
+            let mut val = WrapperControl(
+                self.wrapper
+                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                    .read_volatile(),
+            );
+            val.set_cptra_pwrgood(value as u32);
+            self.wrapper
+                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                .write_volatile(val.0);
+        }
+    }
+    fn set_cptra_rst_b(&mut self, value: bool) {
+        unsafe {
+            let mut val = WrapperControl(
+                self.wrapper
+                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                    .read_volatile(),
+            );
+            val.set_cptra_rst_b(value as u32);
+            self.wrapper
+                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
+                .write_volatile(val.0);
+        }
+    }
+
     fn set_subsystem_reset(&mut self, reset: bool) {
         let value = if reset { 0 } else { 3 };
         unsafe {
@@ -127,97 +156,44 @@ impl ModelFpgaRealtime {
         }
     }
 
-    fn clear_log_fifo(&mut self) {
+    fn clear_logs(&mut self) {
+        println!("Clearing Caliptra logs");
+        self.clear_log_fifo(
+            FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET,
+            FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET,
+        );
+        println!("Clearing MCU logs");
+        self.clear_log_fifo(
+            FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET,
+            FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET,
+        );
+    }
+
+    fn clear_log_fifo(&mut self, data: isize, status: isize) {
         // clear Caliptra log FIFO
-        // loop {
-        //     let fifodata = unsafe {
-        //         FifoData(
-        //             self.wrapper
-        //                 .offset(FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET)
-        //                 .read_volatile(),
-        //         )
-        //     };
-        //     if fifodata.log_fifo_valid() == 0 {
-        //         break;
-        //     }
-        // }
-        // clear MCU log FIFO
         loop {
-            let fifosts = unsafe {
-                FifoStatus(
-                    self.wrapper
-                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
-                        .read_volatile(),
-                )
-            };
+            let fifosts = unsafe { FifoStatus(self.wrapper.offset(status).read_volatile()) };
             if fifosts.log_fifo_empty() == 1 {
                 break;
             }
-            let fifodata = unsafe {
-                FifoData(
-                    self.wrapper
-                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET)
-                        .read_volatile(),
-                )
-            };
+            let fifodata = unsafe { FifoData(self.wrapper.offset(data).read_volatile()) };
             if fifodata.log_fifo_valid() == 0 {
-                return;
+                break;
             }
         }
     }
 
-    fn handle_log(&mut self) {
-        // Check if the FIFO is full (which probably means there was an overrun)
-        // let fifosts = unsafe {
-        //     FifoStatus(
-        //         self.wrapper
-        //             .offset(FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET)
-        //             .read_volatile(),
-        //     )
-        // };
-        // if fifosts.log_fifo_full() != 0 {
-        //     panic!("FPGA log Caliptra FIFO overran");
-        // }
-        // // Check and empty log Caliptra FIFO
-        // loop {
-        //     let fifodata = unsafe {
-        //         FifoData(
-        //             self.wrapper
-        //                 .offset(FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET)
-        //                 .read_volatile(),
-        //         )
-        //     };
-        //     // Add byte to log if it is valid
-        //     if fifodata.log_fifo_valid() != 0 {
-        //         self.output()
-        //             .sink()
-        //             .push_uart_char(fifodata.log_fifo_char().try_into().unwrap());
-        //     } else {
-        //         break;
-        //     }
-        // }
+    fn print_log(&mut self, data: isize, status: isize) {
         // Check if the FIFO is full (which probably means there was an overrun)
         loop {
-            let fifosts = unsafe {
-                FifoStatus(
-                    self.wrapper
-                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET)
-                        .read_volatile(),
-                )
-            };
+            let fifosts = unsafe { FifoStatus(self.wrapper.offset(status).read_volatile()) };
             if fifosts.log_fifo_full() != 0 {
-                panic!("FPGA log MCU FIFO overran");
+                panic!("FPGA log FIFO overran");
             }
             if fifosts.log_fifo_empty() == 1 {
                 break;
             }
-            let fifodata = unsafe {
-                FifoData(
-                    self.wrapper
-                        .offset(FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET)
-                        .read_volatile(),
-                )
-            };
+            let fifodata = unsafe { FifoData(self.wrapper.offset(data).read_volatile()) };
             // Add byte to log if it is valid
             if fifodata.log_fifo_valid() != 0 {
                 self.output()
@@ -227,6 +203,17 @@ impl ModelFpgaRealtime {
                 break;
             }
         }
+    }
+
+    fn handle_log(&mut self) {
+        self.print_log(
+            FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET,
+            FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET,
+        );
+        self.print_log(
+            FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET,
+            FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET,
+        );
     }
 
     // UIO crate doesn't provide a way to unmap memory.
@@ -297,7 +284,7 @@ impl McuHwModel for ModelFpgaRealtime {
 
         println!("Clearing fifo");
         // Sometimes there's garbage in here; clean it out
-        m.clear_log_fifo();
+        m.clear_logs();
 
         println!("Putting subsystem into reset");
         m.set_subsystem_reset(true);
@@ -311,22 +298,22 @@ impl McuHwModel for ModelFpgaRealtime {
 
         // Write ROM images over backdoors
         // ensure that they are 8-byte aligned to write to AXI
-        // let mut caliptra_rom_data = params.caliptra_rom.to_vec();
-        // while caliptra_rom_data.len() % 8 != 0 {
-        //     caliptra_rom_data.push(0);
-        // }
+        let mut caliptra_rom_data = params.caliptra_rom.to_vec();
+        while caliptra_rom_data.len() % 8 != 0 {
+            caliptra_rom_data.push(0);
+        }
         let mut mcu_rom_data = params.mcu_rom.to_vec();
         while mcu_rom_data.len() % 8 != 0 {
             mcu_rom_data.push(0);
         }
 
         // copy the ROM data
-        // let caliptra_rom_slice = unsafe {
-        //     core::slice::from_raw_parts_mut(m.caliptra_rom_backdoor, caliptra_rom_data.len())
-        // };
-        // println!("Writing Caliptra ROM");
+        let caliptra_rom_slice = unsafe {
+            core::slice::from_raw_parts_mut(m.caliptra_rom_backdoor, caliptra_rom_data.len())
+        };
+        println!("Writing Caliptra ROM ({} bytes)", caliptra_rom_data.len());
         // TODO: this crashes the FPGA
-        // caliptra_rom_slice.copy_from_slice(&caliptra_rom_data);
+        caliptra_rom_slice.copy_from_slice(&caliptra_rom_data);
         println!("Writing MCU ROM");
         let mcu_rom_slice =
             unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
