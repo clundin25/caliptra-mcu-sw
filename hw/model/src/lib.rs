@@ -3,7 +3,7 @@
 use anyhow::{bail, Result};
 pub use api::mailbox::mbox_write_fifo;
 pub use api_types::{DbgManufServiceRegReq, DeviceLifecycle, Fuses, SecurityState, U4};
-use caliptra_api as api;
+use caliptra_api::{self as api, SocManager};
 use caliptra_api_types as api_types;
 use caliptra_emu_bus::Event;
 pub use caliptra_emu_cpu::{CodeRange, ImageInfo, StackInfo, StackRange};
@@ -89,6 +89,10 @@ pub struct InitParams<'a> {
     // The silicon obfuscation key passed to caliptra_top.
     pub cptra_obf_key: [u32; 8],
 
+    pub csr_hmac_key: [u32; 16],
+
+    pub uds_granularity_64: bool,
+
     // 4-bit nibbles of raw entropy to feed into the internal TRNG (ENTROPY_SRC
     // peripheral).
     pub itrng_nibbles: Box<dyn Iterator<Item = u8> + Send>,
@@ -137,6 +141,7 @@ impl<'a> Default for InitParams<'a> {
             security_state: *SecurityState::default()
                 .set_device_lifecycle(DeviceLifecycle::Unprovisioned),
             dbg_manuf_service: Default::default(),
+            uds_granularity_64: true,
             active_mode: false,
             prod_dbg_unlock_keypairs: Default::default(),
             debug_intent: false,
@@ -146,6 +151,7 @@ impl<'a> Default for InitParams<'a> {
             random_sram_puf: true,
             trace_path: None,
             stack_info: None,
+            csr_hmac_key: [1; 16],
         }
     }
 }
@@ -312,6 +318,14 @@ pub trait McuHwModel {
     fn ecc_error_injection(&mut self, _mode: ErrorInjectionMode) {}
 
     fn set_axi_user(&mut self, axi_user: u32);
+
+    fn set_itrng_divider(&mut self, divider: u32) {}
+
+    fn set_security_state(&mut self, value: SecurityState) {}
+
+    fn set_generic_input_wires(&mut self, value: &[u32; 2]) {}
+
+    fn set_caliptra_boot_go(&mut self, value: bool) {}
 
     fn events_from_caliptra(&mut self) -> Vec<Event>;
 
