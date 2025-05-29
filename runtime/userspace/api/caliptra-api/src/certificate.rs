@@ -80,7 +80,7 @@ impl CertContext {
         if cert.len() > PopulateIdevEcc384CertReq::MAX_CERT_SIZE {
             return Err(CaliptraApiError::InvalidArgument("Invalid cert size"));
         }
-        let cmd = CommandId::POPULATE_IDEV_CERT.into();
+        let cmd = CommandId::POPULATE_IDEV_ECC384_CERT.into();
         let mut req = PopulateIdevEcc384CertReq {
             cert_size: cert.len() as u32,
             ..Default::default()
