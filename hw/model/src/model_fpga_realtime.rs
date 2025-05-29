@@ -8,7 +8,13 @@ use anyhow::{anyhow, Error, Result};
 use bitfield::bitfield;
 use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+use std::time::Instant;
 use uio::{UioDevice, UioError};
 
 // UIO mapping indices
@@ -26,6 +32,9 @@ const OTP_MAPPING: (usize, usize) = (1, 4);
 // Set to core_clk cycles per ITRNG sample.
 const ITRNG_DIVISOR: u32 = 400;
 const DEFAULT_AXI_PAUSER: u32 = 0x1;
+
+// ITRNG FIFO stores 1024 DW and outputs 4 bits at a time to Caliptra.
+const FPGA_ITRNG_FIFO_SIZE: usize = 1024;
 
 fn fmt_uio_error(err: UioError) -> Error {
     anyhow!("{err:?}")
@@ -65,6 +74,10 @@ const _FPGA_WRAPPER_ITRNG_FIFO_DATA_OFFSET: isize = 0x1008 / 4;
 const _FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET: isize = 0x100C / 4;
 const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
 const FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET: isize = 0x1018 / 4;
+
+// Hack to pass *mut u32 between threads
+struct SendPtr(*mut u32);
+unsafe impl Send for SendPtr {}
 
 bitfield! {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -125,6 +138,9 @@ pub struct ModelFpgaRealtime {
     mci: *mut u32,
     i3c_mmio: *mut u32,
     i3c_controller_mmio: *mut u32,
+
+    realtime_thread: Option<thread::JoinHandle<()>>,
+    realtime_thread_exit_flag: Arc<AtomicBool>,
 
     output: Output,
 }
@@ -247,6 +263,62 @@ impl ModelFpgaRealtime {
             nix::sys::mman::munmap(addr as *mut libc::c_void, map_size).unwrap();
         }
     }
+
+    fn realtime_thread_itrng_fn(
+        wrapper: *mut u32,
+        exit: Arc<AtomicBool>,
+        mut itrng_nibbles: Box<dyn Iterator<Item = u8> + Send>,
+    ) {
+        // Reset ITRNG FIFO to clear out old data
+        unsafe {
+            let mut trngfifosts = TrngFifoStatus(0);
+            trngfifosts.set_trng_fifo_reset(1);
+            wrapper
+                .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
+                .write_volatile(trngfifosts.0);
+            trngfifosts.set_trng_fifo_reset(0);
+            wrapper
+                .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
+                .write_volatile(trngfifosts.0);
+        };
+        // Small delay to allow reset to complete
+        thread::sleep(Duration::from_millis(1));
+
+        while !exit.load(Ordering::Relaxed) {
+            // Once TRNG data is requested the FIFO will continously empty. Load at max one FIFO load at a time.
+            // FPGA ITRNG FIFO is 1024 DW deep.
+            for _i in 0..FPGA_ITRNG_FIFO_SIZE {
+                let trngfifosts = unsafe {
+                    TrngFifoStatus(
+                        wrapper
+                            .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
+                            .read_volatile(),
+                    )
+                };
+                if trngfifosts.trng_fifo_full() == 0 {
+                    let mut itrng_dw = 0;
+                    for i in 0..8 {
+                        match itrng_nibbles.next() {
+                            Some(nibble) => itrng_dw += u32::from(nibble) << (4 * i),
+                            None => return,
+                        }
+                    }
+                    unsafe {
+                        wrapper
+                            .offset(_FPGA_WRAPPER_ITRNG_FIFO_DATA_OFFSET)
+                            .write_volatile(itrng_dw);
+                    }
+                } else {
+                    break;
+                }
+            }
+            // 1 second * (20 MHz / (2^13 throttling counter)) / 8 nibbles per DW: 305 DW of data consumed in 1 second.
+            let end_time = Instant::now() + Duration::from_millis(1000);
+            while !exit.load(Ordering::Relaxed) && Instant::now() < end_time {
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
 }
 
 impl McuHwModel for ModelFpgaRealtime {
@@ -294,6 +366,19 @@ impl McuHwModel for ModelFpgaRealtime {
             .map_mapping(OTP_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
 
+        let realtime_thread_exit_flag = Arc::new(AtomicBool::new(false));
+        let realtime_thread_exit_flag2 = realtime_thread_exit_flag.clone();
+
+        let realtime_thread_wrapper = SendPtr(wrapper);
+        let realtime_thread = Some(std::thread::spawn(move || {
+            let wrapper = realtime_thread_wrapper;
+            Self::realtime_thread_itrng_fn(
+                wrapper.0,
+                realtime_thread_exit_flag2,
+                params.itrng_nibbles,
+            )
+        }));
+
         // TODO: initialize this after the I3C target is configured.
         // let i3c_controller = xi3c::Controller::new(i3c_controller_mmio);
 
@@ -307,6 +392,9 @@ impl McuHwModel for ModelFpgaRealtime {
             mci,
             i3c_mmio,
             i3c_controller_mmio,
+
+            realtime_thread,
+            realtime_thread_exit_flag,
 
             output,
         };
@@ -411,6 +499,18 @@ impl McuHwModel for ModelFpgaRealtime {
 
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
+
+        // dbg_manuf_service_reg
+        unsafe {
+            m.caliptra_mmio.offset(0x3_00bc / 4).write_volatile(0);
+        }
+        // wdt cycles
+        println!("Setting WDT cycles");
+        unsafe {
+            m.caliptra_mmio
+                .offset(0x3_0110 / 4)
+                .write_volatile(100_000_000);
+        }
 
         // TODO: finish testing active mode
         println!("Writing MCU firmware to SRAM");
@@ -549,6 +649,10 @@ impl McuHwModel for ModelFpgaRealtime {
 
 impl Drop for ModelFpgaRealtime {
     fn drop(&mut self) {
+        self.realtime_thread_exit_flag
+            .store(true, Ordering::Relaxed);
+        self.realtime_thread.take().unwrap().join().unwrap();
+
         // Unmap UIO memory space so that the file lock is released
         self.unmap_mapping(self.wrapper, FPGA_WRAPPER_MAPPING);
         self.unmap_mapping(self.caliptra_mmio, CALIPTRA_MAPPING);

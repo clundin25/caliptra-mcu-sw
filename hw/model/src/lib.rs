@@ -3,7 +3,7 @@
 use anyhow::{bail, Result};
 pub use api::mailbox::mbox_write_fifo;
 pub use api_types::{DbgManufServiceRegReq, DeviceLifecycle, Fuses, SecurityState, U4};
-use caliptra_api::{self as api, SocManager};
+use caliptra_api::{self as api};
 use caliptra_api_types as api_types;
 use caliptra_emu_bus::Event;
 pub use caliptra_emu_cpu::{CodeRange, ImageInfo, StackInfo, StackRange};
