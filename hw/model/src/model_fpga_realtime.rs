@@ -404,14 +404,14 @@ impl McuHwModel for ModelFpgaRealtime {
         m.set_generic_input_wires(&input_wires);
 
         // Set Security State signal wires
+        println!("Set security state");
         m.set_security_state(params.security_state);
 
-        // Set initial PAUSER
-        m.set_axi_user(DEFAULT_AXI_PAUSER);
-
+        println!("Set itrng divider");
         // Set divisor for ITRNG throttling
         m.set_itrng_divider(ITRNG_DIVISOR);
 
+        println!("Set deobf key");
         // Set deobfuscation key
         for i in 0..8 {
             unsafe {
@@ -500,6 +500,25 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
+        println!("Setting mbox user");
+        // mbox user
+        unsafe {
+            m.caliptra_mmio
+                .offset(0x3_0048 / 4)
+                .write_volatile(DEFAULT_AXI_PAUSER);
+            println!("Locking mbox user");
+            // mbox user lock
+            m.caliptra_mmio.offset(0x3_005c / 4).write_volatile(1);
+        }
+        // trng
+        // self.caliptra_mmio
+        //     .offset(0x3_0070 / 4)
+        //     .write_volatile(pauser);
+        // // dma
+        // self.caliptra_mmio
+        //     .offset(0x3_0534 / 4)
+        //     .write_volatile(pauser);
+
         // dbg_manuf_service_reg
         unsafe {
             m.caliptra_mmio.offset(0x3_00bc / 4).write_volatile(0);
@@ -561,8 +580,19 @@ impl McuHwModel for ModelFpgaRealtime {
 
         println!("OTP status: 0x{:x}", otp_status);
         println!("LC status: 0x{:x}", lc_status);
-        // let mbox_status = unsafe { m.caliptra_mmio.offset(0x2_001c / 4).read_volatile() };
-        // println!("mbox status: 0x{:x}", mbox_status);
+        let mbox_status = unsafe { m.caliptra_mmio.offset(0x2_001c / 4).read_volatile() };
+        println!("mbox status: 0x{:x}", mbox_status);
+
+        let hw_config = unsafe { m.caliptra_mmio.offset(0x3_00e0 / 4).read_volatile() };
+        let subsystem_mode = (hw_config >> 5) & 1 == 1;
+        println!(
+            "mode {}",
+            if subsystem_mode {
+                "subsystem"
+            } else {
+                "passive"
+            }
+        );
 
         Ok(m)
     }
