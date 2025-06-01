@@ -7,13 +7,10 @@ use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use registers_generated::mci::bits::Go::Go;
 use registers_generated::soc::bits::CptraHwConfig;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use uio::{UioDevice, UioError};
 
@@ -41,15 +38,15 @@ fn fmt_uio_error(err: UioError) -> Error {
 }
 
 struct Wrapper {
-    regs: *mut u32,
+    ptr: *mut u32,
 }
 
 impl Wrapper {
     fn regs(&self) -> &mut WrapperRegs {
-        unsafe { &mut *(self.regs as *mut WrapperRegs) }
+        unsafe { &mut *(self.ptr as *mut WrapperRegs) }
     }
     fn fifo_regs(&self) -> &mut FifoRegs {
-        unsafe { &mut *(self.regs.offset(0x1000 / 4) as *mut FifoRegs) }
+        unsafe { &mut *(self.ptr.offset(0x1000 / 4) as *mut FifoRegs) }
     }
 }
 unsafe impl Send for Wrapper {}
@@ -70,8 +67,11 @@ struct CaliptraMmio {
 }
 
 impl CaliptraMmio {
-    fn mbox(&sef) -> &mut registers_generated::mbox::regs::Mbox {
-        unsafe { &mut *(self.ptr.offset(0x2_0000 / 4) as *mut registers_generated::mbox::regs::Mbox) }
+    #[allow(unused)]
+    fn mbox(&self) -> &mut registers_generated::mbox::regs::Mbox {
+        unsafe {
+            &mut *(self.ptr.offset(0x2_0000 / 4) as *mut registers_generated::mbox::regs::Mbox)
+        }
     }
     fn soc(&self) -> &mut registers_generated::soc::regs::Soc {
         unsafe { &mut *(self.ptr.offset(0x3_0000 / 4) as *mut registers_generated::soc::regs::Soc) }
@@ -82,7 +82,7 @@ pub struct ModelFpgaRealtime {
     devs: [UioDevice; 2],
     // mmio uio pointers
     wrapper: Arc<Wrapper>,
-    caliptra_mmio: Arc<CaliptraMmio>,
+    caliptra_mmio: CaliptraMmio,
     caliptra_rom_backdoor: *mut u8,
     mcu_rom_backdoor: *mut u8,
     mcu_sram_backdoor: *mut u8,
@@ -282,7 +282,7 @@ impl McuHwModel for ModelFpgaRealtime {
         let devs = [dev0, dev1];
 
         let wrapper = Arc::new(Wrapper {
-            regs: devs[FPGA_WRAPPER_MAPPING.0]
+            ptr: devs[FPGA_WRAPPER_MAPPING.0]
                 .map_mapping(FPGA_WRAPPER_MAPPING.1)
                 .map_err(fmt_uio_error)? as *mut u32,
         });
@@ -332,9 +332,7 @@ impl McuHwModel for ModelFpgaRealtime {
         let mut m = Self {
             devs,
             wrapper,
-            caliptra_mmio: CaliptraMmio {
-                ptr: caliptra_mmio,
-            },
+            caliptra_mmio: CaliptraMmio { ptr: caliptra_mmio },
             caliptra_rom_backdoor,
             mcu_rom_backdoor,
             mcu_sram_backdoor,
@@ -437,7 +435,6 @@ impl McuHwModel for ModelFpgaRealtime {
         m.caliptra_mmio.soc().cptra_wdt_cfg[0].set(100_000_000);
         m.caliptra_mmio.soc().cptra_wdt_cfg[1].set(100_000_000);
 
-
         // TODO: remove this when we can finish subsystem/active mode
         println!("Writing MCU firmware to SRAM");
         // For now, we copy the runtime directly into the SRAM
@@ -454,10 +451,13 @@ impl McuHwModel for ModelFpgaRealtime {
 
         println!("Done starting MCU");
 
-        let mode = m.caliptra_mmio.soc().cptra_hw_config.read(CptraHwConfig::SubsystemModeEn) as bool;
-        let hw_config = unsafe { m.caliptra_mmio.offset(0x3_00e0 / 4).read_volatile() };
+        let mode = m
+            .caliptra_mmio
+            .soc()
+            .cptra_hw_config
+            .read(CptraHwConfig::SubsystemModeEn)
+            != 0;
         println!("mode {}", if mode { "subsystem" } else { "passive" });
-
         Ok(m)
     }
 
@@ -520,8 +520,8 @@ impl Drop for ModelFpgaRealtime {
         self.realtime_thread.take().unwrap().join().unwrap();
 
         // Unmap UIO memory space so that the file lock is released
-        self.unmap_mapping(self.wrapper.regs, FPGA_WRAPPER_MAPPING);
-        self.unmap_mapping(self.caliptra_mmio, CALIPTRA_MAPPING);
+        self.unmap_mapping(self.wrapper.ptr, FPGA_WRAPPER_MAPPING);
+        self.unmap_mapping(self.caliptra_mmio.ptr, CALIPTRA_MAPPING);
         self.unmap_mapping(self.caliptra_rom_backdoor as *mut u32, CALIPTRA_ROM_MAPPING);
         self.unmap_mapping(self.mcu_rom_backdoor as *mut u32, MCU_ROM_MAPPING);
         self.unmap_mapping(self.mcu_sram_backdoor as *mut u32, MCU_SRAM_MAPPING);
