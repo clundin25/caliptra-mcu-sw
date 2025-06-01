@@ -18,6 +18,7 @@ use crate::fatal_error;
 use crate::fuses::Otp;
 use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
+use caliptra_api::SocManager;
 use core::{fmt::Write, hint::black_box, ptr::addr_of};
 use registers_generated::{fuses::Fuses, i3c, mbox, mci, otp_ctrl, soc};
 use romtime::{HexWord, Mci, StaticRef};
@@ -38,6 +39,12 @@ impl Soc {
 
     pub fn flow_status(&self) -> u32 {
         self.registers.cptra_flow_status.get()
+    }
+
+    pub fn ready_for_mbox(&self) -> bool {
+        self.registers
+            .cptra_flow_status
+            .is_set(soc::bits::CptraFlowStatus::ReadyForMbProcessing)
     }
 
     pub fn ready_for_fuses(&self) -> bool {
@@ -76,13 +83,28 @@ impl Soc {
         }
         romtime::println!("");
 
+        // romtime::println!("Write vendor pk hash 0 with value 0xffffffff");
+        // self.registers.fuse_vendor_pk_hash[0].set(0xaaaaaaaa);
+        // self.registers.fuse_vendor_pk_hash[1].set(0xbbbbbbbb);
+        // romtime::println!(
+        //     "Before: {} {}",
+        //     self.registers.fuse_vendor_pk_hash[0].get(),
+        //     self.registers.fuse_vendor_pk_hash[1].get()
+        // );
+        // self.registers.fuse_vendor_pk_hash[0].set(0xffffffff);
+        // romtime::println!(
+        //     "After: {} {}",
+        //     self.registers.fuse_vendor_pk_hash[0].get(),
+        //     self.registers.fuse_vendor_pk_hash[1].get()
+        // );
+
         // TODO: this seems to not exist any more
         // self.registers.fuse_key_manifest_pk_hash_mask[0].set(fuses.key_manifest_pk_hash_mask());
         // if fuses.owner_pk_hash().len() != self.registers.cptra_owner_pk_hash.len() {
         //     romtime::println!("[mcu-fuse-write] Owner PK hash length mismatch");
         //     fatal_error();
         // }
-        romtime::println!("");
+        //romtime::println!("");
         if fuses.cptra_core_runtime_svn().len() != self.registers.fuse_runtime_svn.len() * 4 {
             romtime::println!("[mcu-fuse-write] Runtime SVN length mismatch");
             fatal_error(1);
@@ -140,16 +162,41 @@ pub fn rom_start() {
     let mci_base: StaticRef<mci::regs::Mci> =
         unsafe { StaticRef::new(MCU_MEMORY_MAP.mci_offset as *const mci::regs::Mci) };
 
+    // mci_base.mci_reg_agg_error_non_fatal.set(1);
+    // mci_base.mci_reg_hw_error_non_fatal.set(3);
+    // romtime::println!(
+    //     "MCI agg err non fatal after setting to 1 and setting hw error non fatal to 3: {}",
+    //     HexWord(mci_base.mci_reg_agg_error_non_fatal.get())
+    // );
+    // mci_base.mci_reg_agg_error_non_fatal.set(0);
+    // mci_base.mci_reg_hw_error_non_fatal.set(0);
+    // mci_base.mci_reg_hw_error_non_fatal.set(3);
+    // mci_base.mci_reg_agg_error_non_fatal.set(1);
+    // romtime::println!(
+    //     "MCI agg err non fatal after setting hw error non fatal to 3 and setting agg err non fatal to 1: {}",
+    //     HexWord(mci_base.mci_reg_agg_error_non_fatal.get())
+    // );
+
+    let mut soc_manager = romtime::CaliptraSoC::new(
+        Some(unsafe { MCU_MEMORY_MAP.soc_offset }),
+        Some(unsafe { MCU_MEMORY_MAP.soc_offset }),
+        Some(unsafe { MCU_MEMORY_MAP.mbox_offset }),
+    );
     let soc = Soc::new(soc_base);
 
-    // only do these on the emulator for now
-    let otp = Otp::new(otp_base);
-    let otp_status = otp.status();
-    romtime::println!("[mcu-rom] OTP status: {}", HexWord(otp_status));
+    // De-assert caliptra reset
+    let mut mci = Mci::new(mci_base);
+    romtime::println!("[mcu-rom] Setting Caliptra boot go");
+    mci.caliptra_boot_go();
 
-    let lc_status =
-        unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.lc_offset + 0x4) as *const u32) };
-    romtime::println!("[mcu-rom] LC status: {}", HexWord(lc_status));
+    // only do these on the emulator for now
+    // let otp = Otp::new(otp_base);
+    // let otp_status = otp.status();
+    // romtime::println!("[mcu-rom] OTP status: {}", HexWord(otp_status));
+
+    // let lc_status =
+    //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.lc_offset + 0x4) as *const u32) };
+    // romtime::println!("[mcu-rom] LC status: {}", HexWord(lc_status));
 
     let fuses = if unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
         // let otp = Otp::new(otp_base);
@@ -169,47 +216,38 @@ pub fn rom_start() {
         Fuses::default()
     };
 
-    //let flow_status = soc.flow_status();
-    // romtime::println!("[mcu-rom] Caliptra flow status {}", HexWord(flow_status));
+    let flow_status = soc.flow_status();
+    romtime::println!("[mcu-rom] Caliptra flow status {}", HexWord(flow_status));
     // if flow_status == 0 {
     //     romtime::println!("Caliptra not detected; skipping common Caliptra boot flow");
     //     return;
     // }
 
-    // romtime::println!(
-    //     "[mcu-rom] Waiting for Caliptra to be ready for fuses: {}",
-    //     soc.ready_for_fuses()
-    // );
-    //while !soc.ready_for_fuses() {}
-    // romtime::println!("[mcu-rom] Writing fuses to Caliptra");
-    //soc.populate_fuses(&fuses);
-    //soc.fuse_write_done();
-    //while soc.ready_for_fuses() {}
+    romtime::println!(
+        "[mcu-rom] Waiting for Caliptra to be ready for fuses: {}",
+        soc.ready_for_fuses()
+    );
+    while !soc.ready_for_fuses() {}
+    romtime::println!("[mcu-rom] Writing fuses to Caliptra");
+    soc.populate_fuses(&fuses);
+    soc.fuse_write_done();
+    while soc.ready_for_fuses() {}
 
     romtime::println!(
         "[mcu-rom] Fuses written to Caliptra address: {}",
         HexWord(MCU_MEMORY_MAP.soc_offset)
     );
 
-    // romtime::println!(
-    //     "[mcu-rom] Fuses written to Caliptra: {}",
-    //     HexWord(unsafe { core::ptr::read_volatile(0xA413_003c as *const u32) })
-    // );
-
     romtime::println!(
         "[mcu-rom] MBOX status addr: {}",
         HexWord(MCU_MEMORY_MAP.mbox_offset)
     );
 
-    // romtime::println!(
-    //     "[mcu-rom] MBOX status: {}",
-    //     HexWord(unsafe { core::ptr::read_volatile(0xA412_001c as *const u32) })
-    // );
+    romtime::println!(
+        "[mcu-rom] MBOX status: {}",
+        HexWord(unsafe { core::ptr::read_volatile(0xA412_001c as *const u32) })
+    );
 
-    // De-assert caliptra reset
-    let mut mci = Mci::new(mci_base);
-    romtime::println!("[mcu-rom] Setting Caliptra boot go");
-    mci.caliptra_boot_go();
     romtime::println!(
         "[mcu-rom] MCI FW flow status: {}",
         HexWord(mci.flow_status())
@@ -219,57 +257,105 @@ pub fn rom_start() {
         HexWord(mci.hw_flow_status())
     );
 
+    romtime::println!(
+        "[mcu-rom] Waiting for Caliptra to be ready for mbox: {}",
+        soc.ready_for_mbox()
+    );
+    while !soc.ready_for_mbox() {}
+    romtime::println!(
+        "[mcu-rom] Caliptra ready for mbox: {}",
+        HexWord(soc.flow_status())
+    );
+
     // tell Caliptra to download firmware from the recovery interface
     // only on emulator for now
-    if unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
-        let mut soc = romtime::CaliptraSoC::new();
-        romtime::println!("[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command");
-        if let Err(err) =
-            soc.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
-        {
-            match err {
-                CaliptraApiError::MailboxCmdFailed(code) => {
-                    romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
-                }
-                _ => {
-                    romtime::println!("[mcu-rom] Error sending mailbox command");
-                }
-            }
-            fatal_error(4);
-        }
-        romtime::println!("[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command");
-        {
-            // drop this to release the lock
-            if let Err(err) = soc.finish_mailbox_resp(8, 8) {
-                match err {
-                    CaliptraApiError::MailboxCmdFailed(code) => {
-                        romtime::println!(
-                            "[mcu-rom] Error finishing mailbox command: {}",
-                            HexWord(code)
-                        );
-                    }
-                    _ => {
-                        romtime::println!("[mcu-rom] Error finishing mailbox command");
-                    }
-                }
-                fatal_error(5);
-            }
-        };
-    }
+    // romtime::println!(
+    //     "[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command: status {}",
+    //     HexWord(u32::from(
+    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+    //     ))
+    // );
+    // if let Err(err) =
+    //     soc_manager.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
+    // {
+    //     match err {
+    //         CaliptraApiError::MailboxCmdFailed(code) => {
+    //             romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
+    //         }
+    //         _ => {
+    //             romtime::println!("[mcu-rom] Error sending mailbox command");
+    //         }
+    //     }
+    //     fatal_error(4);
+    // }
+    // romtime::println!(
+    //     "[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command: status {}",
+    //     HexWord(u32::from(
+    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+    //     ))
+    // );
+    // {
+    //     // drop this to release the lock
+    //     if let Err(err) = soc_manager.finish_mailbox_resp(8, 8) {
+    //         match err {
+    //             CaliptraApiError::MailboxCmdFailed(code) => {
+    //                 romtime::println!(
+    //                     "[mcu-rom] Error finishing mailbox command: {}",
+    //                     HexWord(code)
+    //                 );
+    //             }
+    //             _ => {
+    //                 romtime::println!("[mcu-rom] Error finishing mailbox command");
+    //             }
+    //         }
+    //         fatal_error(5);
+    //     }
+    // };
 
-    romtime::println!("[mcu-rom] Starting recovery flow");
-    let mut i3c = I3c::new(i3c_base);
-    recovery_flow(&mut mci, &mut i3c);
-    romtime::println!("[mcu-rom] Recovery flow complete");
+    // romtime::println!(
+    //     "mbox status: {}",
+    //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    // );
+    // romtime::println!("grabbing mbox lock");
+    let lock = u32::from(soc_manager.soc_mbox().lock().read()); // read to lock the mbox
+                                                                // romtime::println!("mbox lock: {}", HexWord(lock));
+                                                                // romtime::println!(
+                                                                //     "mbox status: {}",
+                                                                //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+                                                                // );
+                                                                // romtime::println!("Write command");
+    soc_manager.soc_mbox().cmd().write(|_| 0x5249_4644);
+    // romtime::println!(
+    //     "mbox status: {}",
+    //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    // );
+    // romtime::println!("Write dlen");
+    //soc_manager.soc_mbox().dlen().write(|_| 0u32.into());
+    unsafe { core::ptr::write_volatile(0xa412_000c as *mut u32, 3) };
+    // romtime::println!(
+    //     "mbox status: {}",
+    //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    // );
+    // romtime::println!("Write execute");
+    soc_manager.soc_mbox().execute().write(|_| 1u32.into());
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
 
-    // Check that the firmware was actually loaded before jumping to it
-    let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0x80) as *const u32 };
-    // Safety: this address is valid
-    if unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {
-        romtime::println!("Invalid firmware detected; halting");
-        fatal_error(1);
-    }
-    romtime::println!("[mcu-rom] Finished common initialization");
+    // romtime::println!("[mcu-rom] Starting recovery flow");
+    // let mut i3c = I3c::new(i3c_base);
+    // recovery_flow(&mut mci, &mut i3c);
+    // romtime::println!("[mcu-rom] Recovery flow complete");
+
+    // // Check that the firmware was actually loaded before jumping to it
+    // let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0x80) as *const u32 };
+    // // Safety: this address is valid
+    // if unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {
+    //     romtime::println!("Invalid firmware detected; halting");
+    //     fatal_error(1);
+    // }
+    // romtime::println!("[mcu-rom] Finished common initialization");
 }
 
 pub struct I3c {

@@ -6,20 +6,21 @@ use caliptra_api::{mailbox::MailboxRespHeader, CaliptraApiError, SocManager};
 use registers_generated::{mbox, soc};
 use ureg::RealMmioMut;
 
+use crate::HexWord;
+
 pub struct CaliptraSoC {
     _private: (), // ensure that this struct cannot be instantiated directly except through new
     counter: u64,
+    soc_ifc_addr: *mut u32,
+    soc_ifc_trng_addr: *mut u32,
+    soc_mbox_addr: *mut u32,
 }
 
 impl SocManager for CaliptraSoC {
-    /// Address of the mailbox
-    const SOC_MBOX_ADDR: u32 = mbox::MBOX_CSR_ADDR;
-
-    /// Address of the SoC interface
-    const SOC_IFC_ADDR: u32 = soc::SOC_IFC_REG_ADDR;
-
-    /// Address of the SoC TRNG interface
-    const SOC_IFC_TRNG_ADDR: u32 = soc::SOC_IFC_REG_ADDR;
+    // we override the methods that use these
+    const SOC_MBOX_ADDR: u32 = 0;
+    const SOC_IFC_ADDR: u32 = 0;
+    const SOC_IFC_TRNG_ADDR: u32 = 0;
 
     /// Maximum number of wait cycles.
     const MAX_WAIT_CYCLES: u32 = 400_000;
@@ -36,14 +37,53 @@ impl SocManager for CaliptraSoC {
     fn delay(&mut self) {
         self.counter = core::hint::black_box(self.counter) + 1;
     }
+
+    /// A register block that can be used to manipulate the soc_ifc peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_ifc(&mut self) -> caliptra_registers::soc_ifc::RegisterBlock<Self::TMmio<'_>> {
+        unsafe {
+            caliptra_registers::soc_ifc::RegisterBlock::new_with_mmio(
+                self.soc_ifc_addr,
+                self.mmio_mut(),
+            )
+        }
+    }
+
+    /// A register block that can be used to manipulate the soc_ifc peripheral TRNG registers
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_ifc_trng(&mut self) -> caliptra_registers::soc_ifc_trng::RegisterBlock<Self::TMmio<'_>> {
+        unsafe {
+            caliptra_registers::soc_ifc_trng::RegisterBlock::new_with_mmio(
+                self.soc_ifc_trng_addr,
+                self.mmio_mut(),
+            )
+        }
+    }
+
+    /// A register block that can be used to manipulate the mbox peripheral
+    /// over the simulated SoC->Caliptra APB bus.
+    fn soc_mbox(&mut self) -> caliptra_registers::mbox::RegisterBlock<Self::TMmio<'_>> {
+        unsafe {
+            caliptra_registers::mbox::RegisterBlock::new_with_mmio(
+                self.soc_mbox_addr,
+                self.mmio_mut(),
+            )
+        }
+    }
 }
 
 impl CaliptraSoC {
-    #[allow(clippy::new_without_default)] // we don't want people to create new ones with Default
-    pub const fn new() -> Self {
+    pub fn new(
+        soc_ifc_addr: Option<u32>,
+        soc_ifc_trng_addr: Option<u32>,
+        soc_mbox_addr: Option<u32>,
+    ) -> Self {
         CaliptraSoC {
             _private: (),
             counter: 0,
+            soc_ifc_addr: soc_ifc_addr.unwrap_or(soc::SOC_IFC_REG_ADDR) as *mut u32,
+            soc_ifc_trng_addr: soc_ifc_trng_addr.unwrap_or(soc::SOC_IFC_REG_ADDR) as *mut u32,
+            soc_mbox_addr: soc_mbox_addr.unwrap_or(mbox::MBOX_CSR_ADDR) as *mut u32,
         }
     }
 
@@ -63,20 +103,40 @@ impl CaliptraSoC {
             return Err(CaliptraApiError::BufferTooLargeForMailbox);
         }
 
+        crate::println!(
+            "before lock status: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
         // Read a 0 to get the lock
         if self.soc_mbox().lock().read().lock() {
             return Err(CaliptraApiError::UnableToLockMailbox);
         }
+        crate::println!(
+            "after lock status: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
 
         // Mailbox lock value should read 1 now
         // If not, the reads are likely being blocked by the PAUSER check or some other issue
         if !(self.soc_mbox().lock().read().lock()) {
             return Err(CaliptraApiError::UnableToReadMailbox);
         }
+        crate::println!(
+            "after lock status 2: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
 
         self.soc_mbox().cmd().write(|_| cmd);
+        crate::println!(
+            "after write cmd: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
 
         self.soc_mbox().dlen().write(|_| len_bytes as u32);
+        crate::println!(
+            "after dlen: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
 
         for word in buf {
             self.soc_mbox().datain().write(|_| word);
@@ -84,6 +144,10 @@ impl CaliptraSoC {
 
         // Ask Caliptra to execute this command
         self.soc_mbox().execute().write(|w| w.execute(true));
+        crate::println!(
+            "after execute: {}",
+            HexWord(u32::from(self.soc_mbox().status().read()))
+        );
 
         Ok(())
     }

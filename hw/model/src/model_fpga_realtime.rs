@@ -500,6 +500,19 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
+        unsafe { mci.offset(0x58 / 4).write_volatile(3) };
+        unsafe { mci.offset(0x5c / 4).write_volatile(1) };
+        println!("MCI agg err non fatal: {}", unsafe {
+            mci.offset(0x5c / 4).read_volatile()
+        });
+        unsafe { mci.offset(0x58 / 4).write_volatile(0) };
+        unsafe { mci.offset(0x5c / 4).write_volatile(0) };
+        unsafe { mci.offset(0x5c / 4).write_volatile(1) };
+        unsafe { mci.offset(0x58 / 4).write_volatile(3) };
+        println!("MCI agg err non fatal: {}", unsafe {
+            mci.offset(0x5c / 4).read_volatile()
+        });
+
         println!("Setting mbox user");
         // mbox user
         unsafe {
@@ -526,9 +539,30 @@ impl McuHwModel for ModelFpgaRealtime {
         // wdt cycles
         println!("Setting WDT cycles");
         unsafe {
+            println!(
+                "Current {:08x} {:08x}",
+                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
+                m.caliptra_mmio.offset(0x3_0114 / 4).read()
+            );
             m.caliptra_mmio
                 .offset(0x3_0110 / 4)
                 .write_volatile(100_000_000);
+            m.caliptra_mmio
+                .offset(0x3_0114 / 4)
+                .write_volatile(100_000_000);
+            println!(
+                "After writing 100000000 to each {:08x} {:08x}",
+                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
+                m.caliptra_mmio.offset(0x3_0114 / 4).read()
+            );
+            m.caliptra_mmio
+                .offset(0x3_0110 / 4)
+                .write_volatile(50_000_000);
+            println!(
+                "After writing 50000000 to first only {:08x} {:08x}",
+                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
+                m.caliptra_mmio.offset(0x3_0114 / 4).read()
+            );
         }
 
         // TODO: finish testing active mode
@@ -559,18 +593,18 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Boot status: 0x{:x}", boot_status);
         println!("Flow status: 0x{:x}", flow_status);
 
-        println!("Setting fuse done");
-        unsafe { m.caliptra_mmio.offset(0x3_00b0 / 4).write_volatile(0x1) };
+        //println!("Setting fuse done");
+        //unsafe { m.caliptra_mmio.offset(0x3_00b0 / 4).write_volatile(0x1) };
 
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // std::thread::sleep(std::time::Duration::from_millis(1000));
         // MCU ROM does this but we do it here just in case
-        println!("Setting caliptra boot go");
-        m.set_caliptra_boot_go(true);
-        println!("Done setting caliptra boot go");
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // println!("Setting caliptra boot go");
+        // m.set_caliptra_boot_go(true);
+        // println!("Done setting caliptra boot go");
+        // std::thread::sleep(std::time::Duration::from_millis(1000));
 
-        println!("Boot status: 0x{:x}", boot_status);
-        println!("Flow status: 0x{:x}", flow_status);
+        // println!("Boot status: 0x{:x}", boot_status);
+        // println!("Flow status: 0x{:x}", flow_status);
         println!("mbox addr: {:x}", unsafe {
             m.caliptra_mmio.offset(0x2001c / 4) as u32
         });
@@ -593,6 +627,36 @@ impl McuHwModel for ModelFpgaRealtime {
                 "passive"
             }
         );
+
+        //        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // println!("mbox status: {:x}", unsafe {
+        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
+        // });
+        // println!("grabbing mbox lock");
+        // let lock = unsafe { m.caliptra_mmio.offset(0x2_0000 / 4).read_volatile() }; // read to lock the mbox
+        // println!("mbox lock: 0x{:x}", lock);
+        // println!("mbox status: {:x}", unsafe {
+        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
+        // });
+        // println!("Write command");
+        // unsafe {
+        //     m.caliptra_mmio
+        //         .offset(0x2_0008 / 4)
+        //         .write_volatile(0x5249_4644)
+        // };
+        // println!("mbox status: {:x}", unsafe {
+        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
+        // });
+        // println!("Write dlen");
+        // unsafe { m.caliptra_mmio.offset(0x2_000c / 4).write_volatile(0) };
+        // println!("mbox status: {:x}", unsafe {
+        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
+        // });
+        // println!("Write execute");
+        // unsafe { m.caliptra_mmio.offset(0x2_0018 / 4).write_volatile(1) };
+        // println!("mbox status: {:x}", unsafe {
+        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
+        // });
 
         Ok(m)
     }
@@ -736,7 +800,7 @@ mod test {
             ..Default::default()
         })
         .unwrap();
-        for _ in 0..1_000_000 {
+        for _ in 0..5_000_000 {
             model.step();
         }
     }
