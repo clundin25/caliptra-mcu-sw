@@ -148,9 +148,6 @@ impl McuHwModel for ModelEmulated {
         std::hash::Hash::hash_slice(params.caliptra_rom, &mut hasher);
         let image_tag = hasher.finish();
 
-        // this just immediately exits
-        let _mcu_firmware = [0xb7, 0xf6, 0x00, 0x20, 0x94, 0xc2];
-
         let clock = Rc::new(McuClock::new());
         let pic = Rc::new(emulator_cpu::Pic::new());
         let bus_args = McuRootBusArgs {

@@ -1,13 +1,11 @@
 // Licensed under the Apache-2.0 license
 
-use crate::InitParams;
-use crate::McuHwModel;
-use crate::Output;
-use crate::SecurityState;
+use crate::fpga_regs::{Control, FifoData, FifoRegs, FifoStatus, ItrngFifoStatus, WrapperRegs};
+use crate::{InitParams, McuHwModel, Output, SecurityState};
 use anyhow::{anyhow, Error, Result};
-use bitfield::bitfield;
 use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
+use registers_generated::mci::bits::Go::Go;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -15,6 +13,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use uio::{UioDevice, UioError};
 
 // UIO mapping indices
@@ -40,102 +39,40 @@ fn fmt_uio_error(err: UioError) -> Error {
     anyhow!("{err:?}")
 }
 
-// FPGA wrapper register offsets
-const _FPGA_WRAPPER_MAGIC_OFFSET: isize = 0x0000 / 4;
-const _FPGA_WRAPPER_VERSION_OFFSET: isize = 0x0004 / 4;
-const FPGA_WRAPPER_CONTROL_OFFSET: isize = 0x0008 / 4;
-const _FPGA_WRAPPER_STATUS_OFFSET: isize = 0x000C / 4;
-const FPGA_WRAPPER_PAUSER_OFFSET: isize = 0x0010 / 4;
-const _FPGA_WRAPPER_ITRNG_DIV_OFFSET: isize = 0x0014 / 4;
-const FPGA_WRAPPER_CYCLE_COUNT_OFFSET: isize = 0x0018 / 4;
-const _FPGA_WRAPPER_GENERIC_INPUT_OFFSET: isize = 0x0030 / 4;
-const _FPGA_WRAPPER_GENERIC_OUTPUT_OFFSET: isize = 0x0038 / 4;
-// Secrets
-const FPGA_WRAPPER_DEOBF_KEY_OFFSET: isize = 0x0040 / 4;
-const FPGA_WRAPPER_CSR_HMAC_KEY_OFFSET: isize = 0x0060 / 4;
-const FPGA_WRAPPER_OBF_UDS_SEED_OFFSET: isize = 0x00A0 / 4;
-const FPGA_WRAPPER_OBF_FIELD_ENTROPY_OFFSET: isize = 0x00E0 / 4;
-
-const _FPGA_WRAPPER_LSU_USER_OFFSET: isize = 0x0100 / 4;
-const _FPGA_WRAPPER_IFU_USER_OFFSET: isize = 0x0104 / 4;
-const _FPGA_WRAPPER_CLP_USER_OFFSET: isize = 0x0108 / 4;
-const _FPGA_WRAPPER_SOC_CFG_USER_OFFSET: isize = 0x010C / 4;
-const _FPGA_WRAPPER_SRAM_CFG_USER_OFFSET: isize = 0x0110 / 4;
-const FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET: isize = 0x0114 / 4;
-const _FPGA_WRAPPER_MCI_ERROR: isize = 0x0118 / 4;
-const _FPGA_WRAPPER_MCU_CONFIG: isize = 0x011C / 4;
-const _FPGA_WRAPPER_MCI_GENERIC_INPUT_WIRES_0_OFFSET: isize = 0x0120 / 4;
-const _FPGA_WRAPPER_MCI_GENERIC_INPUT_WIRES_1_OFFSET: isize = 0x0124 / 4;
-const _FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_0_OFFSET: isize = 0x0128 / 4;
-const _FPGA_WRAPPER_MCI_GENERIC_OUTPUT_WIRES_1_OFFSET: isize = 0x012C / 4;
-const FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET: isize = 0x1000 / 4;
-const FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET: isize = 0x1004 / 4;
-const _FPGA_WRAPPER_ITRNG_FIFO_DATA_OFFSET: isize = 0x1008 / 4;
-const _FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET: isize = 0x100C / 4;
-const FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET: isize = 0x1010 / 4;
-const FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET: isize = 0x1018 / 4;
-
-// Hack to pass *mut u32 between threads
-struct SendPtr(*mut u32);
-unsafe impl Send for SendPtr {}
-
-bitfield! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    /// Wrapper wires -> Caliptra
-    pub struct WrapperControl(u32);
-    cptra_pwrgood, set_cptra_pwrgood: 0, 0;
-    cptra_rst_b, set_cptra_rst_b: 1, 1;
-    cptra_obf_uds_seed_vld, set_cptra_obf_uds_seed_vld: 2, 2;
-    cptra_obf_field_entropy_vld, set_cptra_obf_field_entropy_vld: 3, 3;
-    debug_locked, set_debug_locked: 4, 4;
-    device_lifecycle, set_device_lifecycle: 6, 5;
+struct Wrapper {
+    regs: *mut u32,
 }
 
-bitfield! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    /// Wrapper wires <- Caliptra
-    pub struct GpioInput(u32);
-    cptra_error_fatal, _: 0, 0;
-    cptra_error_non_fatal, _: 1, 1;
-    ready_for_fuses, _: 2, 2;
-    ready_for_fw, _: 3, 3;
-    ready_for_runtime, _: 4, 4;
+impl Wrapper {
+    fn regs(&self) -> &mut WrapperRegs {
+        unsafe { &mut *(self.regs as *mut WrapperRegs) }
+    }
+    fn fifo_regs(&self) -> &mut FifoRegs {
+        unsafe { &mut *(self.regs.offset(0x1000 / 4) as *mut FifoRegs) }
+    }
+}
+unsafe impl Send for Wrapper {}
+unsafe impl Sync for Wrapper {}
+
+struct Mci {
+    ptr: *mut u32,
 }
 
-bitfield! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    /// Log FIFO data
-    pub struct FifoData(u32);
-    log_fifo_char, _: 7, 0;
-    log_fifo_valid, _: 8, 8;
-}
-
-bitfield! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    /// Log FIFO status
-    pub struct FifoStatus(u32);
-    log_fifo_empty, _: 0, 0;
-    log_fifo_full, _: 1, 1;
-}
-
-bitfield! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    /// ITRNG FIFO status
-    pub struct TrngFifoStatus(u32);
-    trng_fifo_empty, _: 0, 0;
-    trng_fifo_full, _: 1, 1;
-    trng_fifo_reset, set_trng_fifo_reset: 2, 2;
+impl Mci {
+    fn regs(&self) -> &mut registers_generated::mci::regs::Mci {
+        unsafe { &mut *(self.ptr as *mut registers_generated::mci::regs::Mci) }
+    }
 }
 
 pub struct ModelFpgaRealtime {
     devs: [UioDevice; 2],
     // mmio uio pointers
-    wrapper: *mut u32,
+    wrapper: Arc<Wrapper>,
     caliptra_mmio: *mut u32,
     caliptra_rom_backdoor: *mut u8,
     mcu_rom_backdoor: *mut u8,
     mcu_sram_backdoor: *mut u8,
-    mci: *mut u32,
+    mci: Mci,
     i3c_mmio: *mut u32,
     i3c_controller_mmio: *mut u32,
 
@@ -146,113 +83,116 @@ pub struct ModelFpgaRealtime {
 }
 
 impl ModelFpgaRealtime {
-    fn set_cptra_pwrgood(&mut self, value: bool) {
-        unsafe {
-            let mut val = WrapperControl(
-                self.wrapper
-                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                    .read_volatile(),
-            );
-            val.set_cptra_pwrgood(value as u32);
-            self.wrapper
-                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                .write_volatile(val.0);
-        }
-    }
-    fn set_cptra_rst_b(&mut self, value: bool) {
-        unsafe {
-            let mut val = WrapperControl(
-                self.wrapper
-                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                    .read_volatile(),
-            );
-            val.set_cptra_rst_b(value as u32);
-            self.wrapper
-                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                .write_volatile(val.0);
-        }
-    }
-
     fn set_subsystem_reset(&mut self, reset: bool) {
-        let value = if reset { 0 | (1 << 7) } else { 3 | (1 << 7) };
-        unsafe {
-            core::ptr::write_volatile(self.wrapper.offset(FPGA_WRAPPER_CONTROL_OFFSET), value);
-        }
+        self.wrapper
+            .regs()
+            .control
+            .modify(Control::CptraSsRstB.val(reset as u32) + Control::SsDebugIntent::SET);
     }
 
     fn set_secrets_valid(&mut self, value: bool) {
-        unsafe {
-            let mut val = WrapperControl(
-                self.wrapper
-                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                    .read_volatile(),
-            );
-            val.set_cptra_obf_uds_seed_vld(value as u32);
-            val.set_cptra_obf_field_entropy_vld(value as u32);
-            self.wrapper
-                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                .write_volatile(val.0);
-        }
+        self.wrapper.regs().control.modify(
+            Control::CptraObfUdsSeedVld.val(value as u32)
+                + Control::CptraObfFieldEntropyVld.val(value as u32),
+        )
     }
 
     fn clear_logs(&mut self) {
         println!("Clearing Caliptra logs");
-        self.clear_log_fifo(
-            FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET,
-            FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET,
-        );
-        println!("Clearing MCU logs");
-        self.clear_log_fifo(
-            FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET,
-            FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET,
-        );
-    }
-
-    fn clear_log_fifo(&mut self, data: isize, status: isize) {
-        // clear Caliptra log FIFO
         loop {
-            let fifosts = unsafe { FifoStatus(self.wrapper.offset(status).read_volatile()) };
-            if fifosts.log_fifo_empty() == 1 {
+            if self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_status
+                .is_set(FifoStatus::Empty)
+            {
                 break;
             }
-            let fifodata = unsafe { FifoData(self.wrapper.offset(data).read_volatile()) };
-            if fifodata.log_fifo_valid() == 0 {
+            if !self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_data
+                .is_set(FifoData::CharValid)
+            {
                 break;
             }
         }
-    }
 
-    fn print_log(&mut self, data: isize, status: isize) {
-        // Check if the FIFO is full (which probably means there was an overrun)
+        println!("Clearing MCU logs");
         loop {
-            let fifosts = unsafe { FifoStatus(self.wrapper.offset(status).read_volatile()) };
-            if fifosts.log_fifo_full() != 0 {
-                panic!("FPGA log FIFO overran");
-            }
-            if fifosts.log_fifo_empty() == 1 {
+            if self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_status
+                .is_set(FifoStatus::Empty)
+            {
                 break;
             }
-            let fifodata = unsafe { FifoData(self.wrapper.offset(data).read_volatile()) };
-            // Add byte to log if it is valid
-            if fifodata.log_fifo_valid() != 0 {
-                self.output()
-                    .sink()
-                    .push_uart_char(fifodata.log_fifo_char().try_into().unwrap());
-            } else {
+            if !self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_data
+                .is_set(FifoData::CharValid)
+            {
                 break;
             }
         }
     }
 
     fn handle_log(&mut self) {
-        self.print_log(
-            FPGA_WRAPPER_LOG_FIFO_DATA_OFFSET,
-            FPGA_WRAPPER_LOG_FIFO_STATUS_OFFSET,
-        );
-        self.print_log(
-            FPGA_WRAPPER_MCU_LOG_FIFO_DATA_OFFSET,
-            FPGA_WRAPPER_MCU_LOG_FIFO_STATUS_OFFSET,
-        );
+        loop {
+            // Check if the FIFO is full (which probably means there was an overrun)
+            if self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_status
+                .is_set(FifoStatus::Full)
+            {
+                panic!("FPGA log FIFO overran");
+            }
+            if self
+                .wrapper
+                .fifo_regs()
+                .log_fifo_status
+                .is_set(FifoStatus::Empty)
+            {
+                break;
+            }
+            let data = self.wrapper.fifo_regs().log_fifo_data.extract();
+            // Add byte to log if it is valid
+            if data.is_set(FifoData::CharValid) {
+                self.output()
+                    .sink()
+                    .push_uart_char(data.read(FifoData::NextChar) as u8);
+            }
+        }
+
+        loop {
+            // Check if the FIFO is full (which probably means there was an overrun)
+            if self
+                .wrapper
+                .fifo_regs()
+                .dbg_fifo_status
+                .is_set(FifoStatus::Full)
+            {
+                panic!("FPGA log FIFO overran");
+            }
+            if self
+                .wrapper
+                .fifo_regs()
+                .dbg_fifo_status
+                .is_set(FifoStatus::Empty)
+            {
+                break;
+            }
+            let data = self.wrapper.fifo_regs().dbg_fifo_data.extract();
+            // Add byte to log if it is valid
+            if data.is_set(FifoData::CharValid) {
+                self.output()
+                    .sink()
+                    .push_uart_char(data.read(FifoData::NextChar) as u8);
+            }
+        }
     }
 
     // UIO crate doesn't provide a way to unmap memory.
@@ -265,37 +205,33 @@ impl ModelFpgaRealtime {
     }
 
     fn realtime_thread_itrng_fn(
-        wrapper: *mut u32,
+        wrapper: Arc<Wrapper>,
         exit: Arc<AtomicBool>,
         mut itrng_nibbles: Box<dyn Iterator<Item = u8> + Send>,
     ) {
         // Reset ITRNG FIFO to clear out old data
-        unsafe {
-            let mut trngfifosts = TrngFifoStatus(0);
-            trngfifosts.set_trng_fifo_reset(1);
-            wrapper
-                .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
-                .write_volatile(trngfifosts.0);
-            trngfifosts.set_trng_fifo_reset(0);
-            wrapper
-                .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
-                .write_volatile(trngfifosts.0);
-        };
+
+        wrapper
+            .fifo_regs()
+            .itrng_fifo_status
+            .write(ItrngFifoStatus::Reset::SET);
+        wrapper
+            .fifo_regs()
+            .itrng_fifo_status
+            .write(ItrngFifoStatus::Reset::CLEAR);
+
         // Small delay to allow reset to complete
         thread::sleep(Duration::from_millis(1));
 
         while !exit.load(Ordering::Relaxed) {
             // Once TRNG data is requested the FIFO will continously empty. Load at max one FIFO load at a time.
             // FPGA ITRNG FIFO is 1024 DW deep.
-            for _i in 0..FPGA_ITRNG_FIFO_SIZE {
-                let trngfifosts = unsafe {
-                    TrngFifoStatus(
-                        wrapper
-                            .offset(_FPGA_WRAPPER_ITRNG_FIFO_STATUS_OFFSET)
-                            .read_volatile(),
-                    )
-                };
-                if trngfifosts.trng_fifo_full() == 0 {
+            for _ in 0..FPGA_ITRNG_FIFO_SIZE {
+                if !wrapper
+                    .fifo_regs()
+                    .itrng_fifo_status
+                    .is_set(ItrngFifoStatus::Full)
+                {
                     let mut itrng_dw = 0;
                     for i in 0..8 {
                         match itrng_nibbles.next() {
@@ -303,11 +239,7 @@ impl ModelFpgaRealtime {
                             None => return,
                         }
                     }
-                    unsafe {
-                        wrapper
-                            .offset(_FPGA_WRAPPER_ITRNG_FIFO_DATA_OFFSET)
-                            .write_volatile(itrng_dw);
-                    }
+                    wrapper.fifo_regs().itrng_fifo_data.set(itrng_dw);
                 } else {
                     break;
                 }
@@ -335,9 +267,11 @@ impl McuHwModel for ModelFpgaRealtime {
         let dev1 = UioDevice::blocking_new(1)?;
         let devs = [dev0, dev1];
 
-        let wrapper = devs[FPGA_WRAPPER_MAPPING.0]
-            .map_mapping(FPGA_WRAPPER_MAPPING.1)
-            .map_err(fmt_uio_error)? as *mut u32;
+        let wrapper = Arc::new(Wrapper {
+            regs: devs[FPGA_WRAPPER_MAPPING.0]
+                .map_mapping(FPGA_WRAPPER_MAPPING.1)
+                .map_err(fmt_uio_error)? as *mut u32,
+        });
         let caliptra_rom_backdoor = devs[CALIPTRA_ROM_MAPPING.0]
             .map_mapping(CALIPTRA_ROM_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u8;
@@ -347,7 +281,7 @@ impl McuHwModel for ModelFpgaRealtime {
         let mcu_rom_backdoor = devs[MCU_ROM_MAPPING.0]
             .map_mapping(MCU_ROM_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u8;
-        let mci = devs[MCI_MAPPING.0]
+        let mci_ptr = devs[MCI_MAPPING.0]
             .map_mapping(MCI_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
         let caliptra_mmio = devs[CALIPTRA_MAPPING.0]
@@ -359,21 +293,20 @@ impl McuHwModel for ModelFpgaRealtime {
         let i3c_controller_mmio = devs[I3C_CONTROLLER_MAPPING.0]
             .map_mapping(I3C_CONTROLLER_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
-        let lc_mmio = devs[LC_MAPPING.0]
+        let _lc_mmio = devs[LC_MAPPING.0]
             .map_mapping(LC_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
-        let otp_mmio = devs[OTP_MAPPING.0]
+        let _otp_mmio = devs[OTP_MAPPING.0]
             .map_mapping(OTP_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
 
         let realtime_thread_exit_flag = Arc::new(AtomicBool::new(false));
         let realtime_thread_exit_flag2 = realtime_thread_exit_flag.clone();
+        let realtime_wrapper = wrapper.clone();
 
-        let realtime_thread_wrapper = SendPtr(wrapper);
         let realtime_thread = Some(std::thread::spawn(move || {
-            let wrapper = realtime_thread_wrapper;
             Self::realtime_thread_itrng_fn(
-                wrapper.0,
+                realtime_wrapper,
                 realtime_thread_exit_flag2,
                 params.itrng_nibbles,
             )
@@ -389,7 +322,7 @@ impl McuHwModel for ModelFpgaRealtime {
             caliptra_rom_backdoor,
             mcu_rom_backdoor,
             mcu_sram_backdoor,
-            mci,
+            mci: Mci { ptr: mci_ptr },
             i3c_mmio,
             i3c_controller_mmio,
 
@@ -414,38 +347,22 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Set deobf key");
         // Set deobfuscation key
         for i in 0..8 {
-            unsafe {
-                m.wrapper
-                    .offset(FPGA_WRAPPER_DEOBF_KEY_OFFSET + i)
-                    .write_volatile(params.cptra_obf_key[i as usize])
-            };
+            m.wrapper.regs().cptra_obf_key[i].set(params.cptra_obf_key[i]);
         }
 
         // Set the CSR HMAC key
         for i in 0..16 {
-            unsafe {
-                m.wrapper
-                    .offset(FPGA_WRAPPER_CSR_HMAC_KEY_OFFSET + i)
-                    .write_volatile(params.csr_hmac_key[i as usize])
-            };
+            m.wrapper.regs().cptra_csr_hmac_key[i].set(params.csr_hmac_key[i]);
         }
 
         // Set the UDS Seed
         for i in 0..16 {
-            unsafe {
-                m.wrapper
-                    .offset(FPGA_WRAPPER_OBF_UDS_SEED_OFFSET + i)
-                    .write_volatile(DEFAULT_UDS_SEED[i as usize])
-            };
+            m.wrapper.regs().cptra_obf_uds_seed[i].set(DEFAULT_UDS_SEED[i]);
         }
 
         // Set the FE Seed
         for i in 0..8 {
-            unsafe {
-                m.wrapper
-                    .offset(FPGA_WRAPPER_OBF_FIELD_ENTROPY_OFFSET + i)
-                    .write_volatile(DEFAULT_FIELD_ENTROPY[i as usize])
-            };
+            m.wrapper.regs().cptra_obf_field_entropy[i].set(DEFAULT_FIELD_ENTROPY[i]);
         }
 
         // Currently not using strap UDS and FE
@@ -490,47 +407,13 @@ impl McuHwModel for ModelFpgaRealtime {
 
         // set the reset vector to point to the ROM backdoor
         println!("Writing MCU reset vector");
-        unsafe {
-            core::ptr::write_volatile(
-                m.wrapper.offset(FPGA_WRAPPER_MCU_RESET_VECTOR_OFFSET),
-                mcu_config_fpga::FPGA_MEMORY_MAP.rom_offset,
-            )
-        };
+        m.wrapper
+            .regs()
+            .mcu_reset_vector
+            .set(mcu_config_fpga::FPGA_MEMORY_MAP.rom_offset);
 
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
-
-        unsafe { mci.offset(0x58 / 4).write_volatile(3) };
-        unsafe { mci.offset(0x5c / 4).write_volatile(1) };
-        println!("MCI agg err non fatal: {}", unsafe {
-            mci.offset(0x5c / 4).read_volatile()
-        });
-        unsafe { mci.offset(0x58 / 4).write_volatile(0) };
-        unsafe { mci.offset(0x5c / 4).write_volatile(0) };
-        unsafe { mci.offset(0x5c / 4).write_volatile(1) };
-        unsafe { mci.offset(0x58 / 4).write_volatile(3) };
-        println!("MCI agg err non fatal: {}", unsafe {
-            mci.offset(0x5c / 4).read_volatile()
-        });
-
-        println!("Setting mbox user");
-        // mbox user
-        unsafe {
-            m.caliptra_mmio
-                .offset(0x3_0048 / 4)
-                .write_volatile(DEFAULT_AXI_PAUSER);
-            println!("Locking mbox user");
-            // mbox user lock
-            m.caliptra_mmio.offset(0x3_005c / 4).write_volatile(1);
-        }
-        // trng
-        // self.caliptra_mmio
-        //     .offset(0x3_0070 / 4)
-        //     .write_volatile(pauser);
-        // // dma
-        // self.caliptra_mmio
-        //     .offset(0x3_0534 / 4)
-        //     .write_volatile(pauser);
 
         // dbg_manuf_service_reg
         unsafe {
@@ -593,30 +476,6 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Boot status: 0x{:x}", boot_status);
         println!("Flow status: 0x{:x}", flow_status);
 
-        //println!("Setting fuse done");
-        //unsafe { m.caliptra_mmio.offset(0x3_00b0 / 4).write_volatile(0x1) };
-
-        // std::thread::sleep(std::time::Duration::from_millis(1000));
-        // MCU ROM does this but we do it here just in case
-        // println!("Setting caliptra boot go");
-        // m.set_caliptra_boot_go(true);
-        // println!("Done setting caliptra boot go");
-        // std::thread::sleep(std::time::Duration::from_millis(1000));
-
-        // println!("Boot status: 0x{:x}", boot_status);
-        // println!("Flow status: 0x{:x}", flow_status);
-        println!("mbox addr: {:x}", unsafe {
-            m.caliptra_mmio.offset(0x2001c / 4) as u32
-        });
-
-        let otp_status = unsafe { otp_mmio.offset(4 / 4).read_volatile() };
-        let lc_status = unsafe { lc_mmio.offset(4 / 4).read_volatile() };
-
-        println!("OTP status: 0x{:x}", otp_status);
-        println!("LC status: 0x{:x}", lc_status);
-        let mbox_status = unsafe { m.caliptra_mmio.offset(0x2_001c / 4).read_volatile() };
-        println!("mbox status: 0x{:x}", mbox_status);
-
         let hw_config = unsafe { m.caliptra_mmio.offset(0x3_00e0 / 4).read_volatile() };
         let subsystem_mode = (hw_config >> 5) & 1 == 1;
         println!(
@@ -628,36 +487,6 @@ impl McuHwModel for ModelFpgaRealtime {
             }
         );
 
-        //        std::thread::sleep(std::time::Duration::from_millis(1000));
-        // println!("mbox status: {:x}", unsafe {
-        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
-        // });
-        // println!("grabbing mbox lock");
-        // let lock = unsafe { m.caliptra_mmio.offset(0x2_0000 / 4).read_volatile() }; // read to lock the mbox
-        // println!("mbox lock: 0x{:x}", lock);
-        // println!("mbox status: {:x}", unsafe {
-        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
-        // });
-        // println!("Write command");
-        // unsafe {
-        //     m.caliptra_mmio
-        //         .offset(0x2_0008 / 4)
-        //         .write_volatile(0x5249_4644)
-        // };
-        // println!("mbox status: {:x}", unsafe {
-        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
-        // });
-        // println!("Write dlen");
-        // unsafe { m.caliptra_mmio.offset(0x2_000c / 4).write_volatile(0) };
-        // println!("mbox status: {:x}", unsafe {
-        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
-        // });
-        // println!("Write execute");
-        // unsafe { m.caliptra_mmio.offset(0x2_0018 / 4).write_volatile(1) };
-        // println!("mbox status: {:x}", unsafe {
-        //     m.caliptra_mmio.offset(0x2_001c / 4).read_volatile()
-        // });
-
         Ok(m)
     }
 
@@ -666,11 +495,7 @@ impl McuHwModel for ModelFpgaRealtime {
     }
 
     fn output(&mut self) -> &mut crate::Output {
-        let cycle = unsafe {
-            self.wrapper
-                .offset(FPGA_WRAPPER_CYCLE_COUNT_OFFSET)
-                .read_volatile()
-        };
+        let cycle = self.wrapper.regs().cycle_count.get();
         self.output.sink().set_now(u64::from(cycle));
         &mut self.output
     }
@@ -684,51 +509,27 @@ impl McuHwModel for ModelFpgaRealtime {
     }
 
     fn set_axi_user(&mut self, pauser: u32) {
-        unsafe {
-            self.wrapper
-                .offset(FPGA_WRAPPER_PAUSER_OFFSET)
-                .write_volatile(pauser);
-        }
+        self.wrapper.regs().pauser.set(pauser);
     }
 
     fn set_caliptra_boot_go(&mut self, go: bool) {
-        unsafe {
-            self.mci
-                .offset(0x108 / 4)
-                .write_volatile(if go { 1 } else { 0 })
-        };
+        self.mci
+            .regs()
+            .mci_reg_cptra_boot_go
+            .write(Go.val(go as u32));
     }
 
     fn set_itrng_divider(&mut self, divider: u32) {
-        unsafe {
-            self.wrapper
-                .offset(_FPGA_WRAPPER_ITRNG_DIV_OFFSET)
-                .write_volatile(divider - 1);
-        }
+        self.wrapper.regs().itrng_divisor.set(divider - 1);
     }
 
-    fn set_security_state(&mut self, value: SecurityState) {
-        unsafe {
-            let mut val = WrapperControl(
-                self.wrapper
-                    .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                    .read_volatile(),
-            );
-            val.set_debug_locked(u32::from(value.debug_locked()));
-            val.set_device_lifecycle(u32::from(value.device_lifecycle()));
-            self.wrapper
-                .offset(FPGA_WRAPPER_CONTROL_OFFSET)
-                .write_volatile(val.0);
-        }
+    fn set_security_state(&mut self, _value: SecurityState) {
+        todo!() // this is no yet supported in FPGA
     }
 
     fn set_generic_input_wires(&mut self, value: &[u32; 2]) {
-        unsafe {
-            for i in 0..2 {
-                self.wrapper
-                    .offset(_FPGA_WRAPPER_GENERIC_INPUT_OFFSET + i)
-                    .write_volatile(value[i as usize]);
-            }
+        for i in 0..2 {
+            self.wrapper.regs().generic_input_wires[i].set(value[i]);
         }
     }
 
@@ -748,12 +549,12 @@ impl Drop for ModelFpgaRealtime {
         self.realtime_thread.take().unwrap().join().unwrap();
 
         // Unmap UIO memory space so that the file lock is released
-        self.unmap_mapping(self.wrapper, FPGA_WRAPPER_MAPPING);
+        self.unmap_mapping(self.wrapper.regs, FPGA_WRAPPER_MAPPING);
         self.unmap_mapping(self.caliptra_mmio, CALIPTRA_MAPPING);
         self.unmap_mapping(self.caliptra_rom_backdoor as *mut u32, CALIPTRA_ROM_MAPPING);
         self.unmap_mapping(self.mcu_rom_backdoor as *mut u32, MCU_ROM_MAPPING);
         self.unmap_mapping(self.mcu_sram_backdoor as *mut u32, MCU_SRAM_MAPPING);
-        self.unmap_mapping(self.mci, MCI_MAPPING);
+        self.unmap_mapping(self.mci.ptr, MCI_MAPPING);
         self.unmap_mapping(self.i3c_mmio, I3C_TARGET_MAPPING);
         self.unmap_mapping(self.i3c_controller_mmio, I3C_CONTROLLER_MAPPING);
     }
