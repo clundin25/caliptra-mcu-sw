@@ -19,7 +19,7 @@ const MAX_SPDM_EXT_ALG_COUNT_V10: u8 = 8;
 const MAX_SPDM_EXT_ALG_COUNT_V11: u8 = 20;
 
 #[derive(IntoBytes, FromBytes, Immutable, Default, Debug)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct NegotiateAlgorithmsReq {
     num_alg_struct_tables: u8,
     param2: u8,
@@ -74,7 +74,7 @@ impl CommonCodec for NegotiateAlgorithmsReq {
 }
 
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 struct NegotiateAlgorithmsResp {
     num_alg_struct_tables: u8,

@@ -37,11 +37,11 @@ impl CommonCodec for GetDigestsRespCommon {
     const DATA_KIND: DataKind = DataKind::Payload;
 }
 
-async fn encode_cert_chain_digest<'a>(
+async fn encode_cert_chain_digest(
     slot_id: u8,
     cert_store: &mut dyn SpdmCertStore,
     asym_algo: AsymAlgo,
-    rsp: &mut MessageBuf<'a>,
+    rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
     let crt_chain_len = cert_store
         .cert_chain_len(asym_algo, slot_id)

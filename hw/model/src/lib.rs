@@ -114,7 +114,7 @@ pub struct InitParams<'a> {
     // overflows.
     pub stack_info: Option<StackInfo>,
 }
-impl<'a> Default for InitParams<'a> {
+impl Default for InitParams<'_> {
     fn default() -> Self {
         let seed = std::env::var("CPTRA_TRNG_SEED")
             .ok()
@@ -192,7 +192,7 @@ pub struct BootParams<'a> {
     pub mcu_fw_image: Option<&'a [u8]>,
 }
 
-impl<'a> Default for BootParams<'a> {
+impl Default for BootParams<'_> {
     fn default() -> Self {
         Self {
             fuses: Default::default(),
@@ -319,13 +319,13 @@ pub trait McuHwModel {
 
     fn set_axi_user(&mut self, axi_user: u32);
 
-    fn set_itrng_divider(&mut self, divider: u32) {}
+    fn set_itrng_divider(&mut self, _divider: u32) {}
 
-    fn set_security_state(&mut self, value: SecurityState) {}
+    fn set_security_state(&mut self, _value: SecurityState) {}
 
-    fn set_generic_input_wires(&mut self, value: &[u32; 2]) {}
+    fn set_generic_input_wires(&mut self, _value: &[u32; 2]) {}
 
-    fn set_caliptra_boot_go(&mut self, value: bool) {}
+    fn set_caliptra_boot_go(&mut self, _value: bool) {}
 
     fn events_from_caliptra(&mut self) -> Vec<Event>;
 

@@ -49,7 +49,7 @@ impl CommonCodec for GetCertificateReq {
 }
 
 #[derive(IntoBytes, FromBytes, Immutable)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct CertificateRespCommon {
     pub slot_id: SlotId,
     pub param2: CertificateRespAttributes,
@@ -161,14 +161,14 @@ pub(crate) async fn handle_certificates<'a>(
     Ok(())
 }
 
-async fn encode_certchain_metadata<'a>(
+async fn encode_certchain_metadata(
     cert_store: &mut dyn SpdmCertStore,
     total_certchain_len: u16,
     slot_id: u8,
     asym_algo: AsymAlgo,
     offset: usize,
     length: usize,
-    rsp: &mut MessageBuf<'a>,
+    rsp: &mut MessageBuf<'_>,
 ) -> CommandResult<usize> {
     let mut certchain_metadata = [0u8; SPDM_CERT_CHAIN_METADATA_LEN as usize];
 

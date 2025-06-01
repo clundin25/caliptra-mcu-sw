@@ -21,7 +21,7 @@ impl CommonCodec for GetCapabilitiesBase {
 }
 
 #[derive(IntoBytes, FromBytes, Immutable, Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[allow(dead_code)]
 pub(crate) struct GetCapabilitiesV11 {
     reserved: u8,
@@ -48,7 +48,7 @@ impl CommonCodec for GetCapabilitiesV11 {
 }
 
 #[derive(IntoBytes, FromBytes, Immutable)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub(crate) struct GetCapabilitiesV12 {
     data_transfer_size: u32,
     max_spdm_msg_size: u32,
