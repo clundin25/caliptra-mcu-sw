@@ -6,6 +6,7 @@ use anyhow::{anyhow, Error, Result};
 use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use registers_generated::mci::bits::Go::Go;
+use registers_generated::soc::bits::CptraHwConfig;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -64,11 +65,24 @@ impl Mci {
     }
 }
 
+struct CaliptraMmio {
+    ptr: *mut u32,
+}
+
+impl CaliptraMmio {
+    fn mbox(&sef) -> &mut registers_generated::mbox::regs::Mbox {
+        unsafe { &mut *(self.ptr.offset(0x2_0000 / 4) as *mut registers_generated::mbox::regs::Mbox) }
+    }
+    fn soc(&self) -> &mut registers_generated::soc::regs::Soc {
+        unsafe { &mut *(self.ptr.offset(0x3_0000 / 4) as *mut registers_generated::soc::regs::Soc) }
+    }
+}
+
 pub struct ModelFpgaRealtime {
     devs: [UioDevice; 2],
     // mmio uio pointers
     wrapper: Arc<Wrapper>,
-    caliptra_mmio: *mut u32,
+    caliptra_mmio: Arc<CaliptraMmio>,
     caliptra_rom_backdoor: *mut u8,
     mcu_rom_backdoor: *mut u8,
     mcu_sram_backdoor: *mut u8,
@@ -318,7 +332,9 @@ impl McuHwModel for ModelFpgaRealtime {
         let mut m = Self {
             devs,
             wrapper,
-            caliptra_mmio,
+            caliptra_mmio: CaliptraMmio {
+                ptr: caliptra_mmio,
+            },
             caliptra_rom_backdoor,
             mcu_rom_backdoor,
             mcu_sram_backdoor,
@@ -398,7 +414,6 @@ impl McuHwModel for ModelFpgaRealtime {
             core::slice::from_raw_parts_mut(m.caliptra_rom_backdoor, caliptra_rom_data.len())
         };
         println!("Writing Caliptra ROM ({} bytes)", caliptra_rom_data.len());
-        // TODO: this crashes the FPGA
         caliptra_rom_slice.copy_from_slice(&caliptra_rom_data);
         println!("Writing MCU ROM");
         let mcu_rom_slice =
@@ -415,40 +430,15 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
-        // dbg_manuf_service_reg
-        unsafe {
-            m.caliptra_mmio.offset(0x3_00bc / 4).write_volatile(0);
-        }
+        println!("Setting dbg_manuf_service_reg to 0");
+        m.caliptra_mmio.soc().cptra_dbg_manuf_service_reg.set(0);
         // wdt cycles
         println!("Setting WDT cycles");
-        unsafe {
-            println!(
-                "Current {:08x} {:08x}",
-                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
-                m.caliptra_mmio.offset(0x3_0114 / 4).read()
-            );
-            m.caliptra_mmio
-                .offset(0x3_0110 / 4)
-                .write_volatile(100_000_000);
-            m.caliptra_mmio
-                .offset(0x3_0114 / 4)
-                .write_volatile(100_000_000);
-            println!(
-                "After writing 100000000 to each {:08x} {:08x}",
-                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
-                m.caliptra_mmio.offset(0x3_0114 / 4).read()
-            );
-            m.caliptra_mmio
-                .offset(0x3_0110 / 4)
-                .write_volatile(50_000_000);
-            println!(
-                "After writing 50000000 to first only {:08x} {:08x}",
-                m.caliptra_mmio.offset(0x3_0110 / 4).read(),
-                m.caliptra_mmio.offset(0x3_0114 / 4).read()
-            );
-        }
+        m.caliptra_mmio.soc().cptra_wdt_cfg[0].set(100_000_000);
+        m.caliptra_mmio.soc().cptra_wdt_cfg[1].set(100_000_000);
 
-        // TODO: finish testing active mode
+
+        // TODO: remove this when we can finish subsystem/active mode
         println!("Writing MCU firmware to SRAM");
         // For now, we copy the runtime directly into the SRAM
         let mut fw_data = params.mcu_firmware.to_vec();
@@ -456,36 +446,17 @@ impl McuHwModel for ModelFpgaRealtime {
             fw_data.push(0);
         }
         // TODO: remove this offset 0x80 and add 128 bytes of padding to the beginning of the firmware
+        // as this is going to fail when we use the DMA controller
         let sram_slice = unsafe {
             core::slice::from_raw_parts_mut(m.mcu_sram_backdoor.offset(0x80), fw_data.len())
         };
         sram_slice.copy_from_slice(&fw_data);
 
         println!("Done starting MCU");
-        let boot_status = unsafe { m.caliptra_mmio.offset(0x3_0038 / 4).read_volatile() };
-        let flow_status = unsafe { m.caliptra_mmio.offset(0x3_003c / 4).read_volatile() };
 
-        println!("Boot status: 0x{:x}", boot_status);
-        println!("Flow status: 0x{:x}", flow_status);
-
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        let boot_status = unsafe { m.caliptra_mmio.offset(0x3_0038 / 4).read_volatile() };
-        let flow_status = unsafe { m.caliptra_mmio.offset(0x3_003c / 4).read_volatile() };
-
-        println!("Boot status: 0x{:x}", boot_status);
-        println!("Flow status: 0x{:x}", flow_status);
-
+        let mode = m.caliptra_mmio.soc().cptra_hw_config.read(CptraHwConfig::SubsystemModeEn) as bool;
         let hw_config = unsafe { m.caliptra_mmio.offset(0x3_00e0 / 4).read_volatile() };
-        let subsystem_mode = (hw_config >> 5) & 1 == 1;
-        println!(
-            "mode {}",
-            if subsystem_mode {
-                "subsystem"
-            } else {
-                "passive"
-            }
-        );
+        println!("mode {}", if mode { "subsystem" } else { "passive" });
 
         Ok(m)
     }
