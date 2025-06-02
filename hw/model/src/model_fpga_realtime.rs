@@ -443,14 +443,6 @@ impl McuHwModel for ModelFpgaRealtime {
         sram_slice.copy_from_slice(&fw_data);
 
         println!("Done starting MCU");
-
-        let mode = m
-            .caliptra_mmio
-            .soc()
-            .cptra_hw_config
-            .read(CptraHwConfig::SubsystemModeEn)
-            != 0;
-        println!("mode {}", if mode { "subsystem" } else { "passive" });
         Ok(m)
     }
 

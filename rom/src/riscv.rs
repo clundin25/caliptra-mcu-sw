@@ -83,21 +83,6 @@ impl Soc {
         }
         romtime::println!("");
 
-        // romtime::println!("Write vendor pk hash 0 with value 0xffffffff");
-        // self.registers.fuse_vendor_pk_hash[0].set(0xaaaaaaaa);
-        // self.registers.fuse_vendor_pk_hash[1].set(0xbbbbbbbb);
-        // romtime::println!(
-        //     "Before: {} {}",
-        //     self.registers.fuse_vendor_pk_hash[0].get(),
-        //     self.registers.fuse_vendor_pk_hash[1].get()
-        // );
-        // self.registers.fuse_vendor_pk_hash[0].set(0xffffffff);
-        // romtime::println!(
-        //     "After: {} {}",
-        //     self.registers.fuse_vendor_pk_hash[0].get(),
-        //     self.registers.fuse_vendor_pk_hash[1].get()
-        // );
-
         // TODO: this seems to not exist any more
         // self.registers.fuse_key_manifest_pk_hash_mask[0].set(fuses.key_manifest_pk_hash_mask());
         // if fuses.owner_pk_hash().len() != self.registers.cptra_owner_pk_hash.len() {
@@ -161,21 +146,6 @@ pub fn rom_start() {
         unsafe { StaticRef::new(MCU_MEMORY_MAP.soc_offset as *const soc::regs::Soc) };
     let mci_base: StaticRef<mci::regs::Mci> =
         unsafe { StaticRef::new(MCU_MEMORY_MAP.mci_offset as *const mci::regs::Mci) };
-
-    // mci_base.mci_reg_agg_error_non_fatal.set(1);
-    // mci_base.mci_reg_hw_error_non_fatal.set(3);
-    // romtime::println!(
-    //     "MCI agg err non fatal after setting to 1 and setting hw error non fatal to 3: {}",
-    //     HexWord(mci_base.mci_reg_agg_error_non_fatal.get())
-    // );
-    // mci_base.mci_reg_agg_error_non_fatal.set(0);
-    // mci_base.mci_reg_hw_error_non_fatal.set(0);
-    // mci_base.mci_reg_hw_error_non_fatal.set(3);
-    // mci_base.mci_reg_agg_error_non_fatal.set(1);
-    // romtime::println!(
-    //     "MCI agg err non fatal after setting hw error non fatal to 3 and setting agg err non fatal to 1: {}",
-    //     HexWord(mci_base.mci_reg_agg_error_non_fatal.get())
-    // );
 
     let mut soc_manager = romtime::CaliptraSoC::new(
         Some(unsafe { MCU_MEMORY_MAP.soc_offset }),
