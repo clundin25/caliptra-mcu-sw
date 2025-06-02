@@ -6,7 +6,6 @@ use anyhow::{anyhow, Error, Result};
 use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use registers_generated::mci::bits::Go::Go;
-use registers_generated::soc::bits::CptraHwConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -73,6 +72,7 @@ impl CaliptraMmio {
             &mut *(self.ptr.offset(0x2_0000 / 4) as *mut registers_generated::mbox::regs::Mbox)
         }
     }
+    #[allow(unused)]
     fn soc(&self) -> &mut registers_generated::soc::regs::Soc {
         unsafe { &mut *(self.ptr.offset(0x3_0000 / 4) as *mut registers_generated::soc::regs::Soc) }
     }
@@ -137,7 +137,7 @@ impl ModelFpgaRealtime {
             if self
                 .wrapper
                 .fifo_regs()
-                .log_fifo_status
+                .dbg_fifo_status
                 .is_set(FifoStatus::Empty)
             {
                 break;
@@ -145,7 +145,7 @@ impl ModelFpgaRealtime {
             if !self
                 .wrapper
                 .fifo_regs()
-                .log_fifo_data
+                .dbg_fifo_data_pop
                 .is_set(FifoData::CharValid)
             {
                 break;
@@ -199,7 +199,7 @@ impl ModelFpgaRealtime {
             {
                 break;
             }
-            let data = self.wrapper.fifo_regs().dbg_fifo_data.extract();
+            let data = self.wrapper.fifo_regs().dbg_fifo_data_pop.extract();
             // Add byte to log if it is valid
             if data.is_set(FifoData::CharValid) {
                 self.output()

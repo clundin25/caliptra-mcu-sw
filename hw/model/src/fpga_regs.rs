@@ -2,9 +2,8 @@
 
 #![allow(dead_code)]
 
-use tock_registers::register_bitfields;
-use tock_registers::register_structs;
-use tock_registers::registers::{ReadOnly, ReadWrite};
+use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
+use tock_registers::{register_bitfields, register_structs};
 
 register_bitfields! {
     u32,
@@ -61,9 +60,10 @@ register_structs! {
         (0x4 => pub log_fifo_status: ReadOnly<u32, FifoStatus::Register>),
         (0x8 => pub itrng_fifo_data: ReadWrite<u32>),
         (0xc => pub itrng_fifo_status: ReadWrite<u32, ItrngFifoStatus::Register>),
-        (0x10 => pub dbg_fifo_data: ReadWrite<u32, FifoData::Register>),
-        (0x14 => pub dbg_fifo_status: ReadOnly<u32, FifoStatus::Register>),
-        (0x18 => @END),
+        (0x10 => pub dbg_fifo_data_pop: ReadOnly<u32, FifoData::Register>),
+        (0x14 => pub dbg_fifo_data_push: WriteOnly<u32, FifoData::Register>),
+        (0x18 => pub dbg_fifo_status: ReadOnly<u32, FifoStatus::Register>),
+        (0x1c => @END),
     },
     pub WrapperRegs {
         (0x0 => pub fpga_magic: ReadOnly<u32>),
