@@ -222,6 +222,10 @@ pub fn rom_start() {
     //     return;
     // }
 
+    // TODO: pass these in as parameters
+    soc.registers.cptra_wdt_cfg[0].set(100_000_000);
+    soc.registers.cptra_wdt_cfg[1].set(100_000_000);
+
     romtime::println!(
         "[mcu-rom] Waiting for Caliptra to be ready for fuses: {}",
         soc.ready_for_fuses()

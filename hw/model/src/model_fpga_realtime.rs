@@ -428,13 +428,6 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
-        println!("Setting dbg_manuf_service_reg to 0");
-        m.caliptra_mmio.soc().cptra_dbg_manuf_service_reg.set(0);
-        // wdt cycles
-        println!("Setting WDT cycles");
-        m.caliptra_mmio.soc().cptra_wdt_cfg[0].set(100_000_000);
-        m.caliptra_mmio.soc().cptra_wdt_cfg[1].set(100_000_000);
-
         // TODO: remove this when we can finish subsystem/active mode
         println!("Writing MCU firmware to SRAM");
         // For now, we copy the runtime directly into the SRAM
@@ -495,7 +488,7 @@ impl McuHwModel for ModelFpgaRealtime {
     }
 
     fn set_security_state(&mut self, _value: SecurityState) {
-        todo!() // this is no yet supported in FPGA
+        // todo!() // this is no yet supported in FPGA
     }
 
     fn set_generic_input_wires(&mut self, value: &[u32; 2]) {
