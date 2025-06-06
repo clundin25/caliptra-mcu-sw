@@ -428,18 +428,18 @@ impl McuHwModel for ModelFpgaRealtime {
         m.set_subsystem_reset(false);
 
         // TODO: remove this when we can finish subsystem/active mode
-        println!("Writing MCU firmware to SRAM");
-        // For now, we copy the runtime directly into the SRAM
-        let mut fw_data = params.mcu_firmware.to_vec();
-        while fw_data.len() % 8 != 0 {
-            fw_data.push(0);
-        }
-        // TODO: remove this offset 0x80 and add 128 bytes of padding to the beginning of the firmware
-        // as this is going to fail when we use the DMA controller
-        let sram_slice = unsafe {
-            core::slice::from_raw_parts_mut(m.mcu_sram_backdoor.offset(0x80), fw_data.len())
-        };
-        sram_slice.copy_from_slice(&fw_data);
+        // println!("Writing MCU firmware to SRAM");
+        // // For now, we copy the runtime directly into the SRAM
+        // let mut fw_data = params.mcu_firmware.to_vec();
+        // while fw_data.len() % 8 != 0 {
+        //     fw_data.push(0);
+        // }
+        // // TODO: remove this offset 0x80 and add 128 bytes of padding to the beginning of the firmware
+        // // as this is going to fail when we use the DMA controller
+        // let sram_slice = unsafe {
+        //     core::slice::from_raw_parts_mut(m.mcu_sram_backdoor.offset(0x80), fw_data.len())
+        // };
+        // sram_slice.copy_from_slice(&fw_data);
 
         println!("Done starting MCU");
         Ok(m)

@@ -6,8 +6,6 @@ use caliptra_api::{mailbox::MailboxRespHeader, CaliptraApiError, SocManager};
 use registers_generated::{mbox, soc};
 use ureg::RealMmioMut;
 
-use crate::HexWord;
-
 pub struct CaliptraSoC {
     _private: (), // ensure that this struct cannot be instantiated directly except through new
     counter: u64,
@@ -103,40 +101,20 @@ impl CaliptraSoC {
             return Err(CaliptraApiError::BufferTooLargeForMailbox);
         }
 
-        crate::println!(
-            "before lock status: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
         // Read a 0 to get the lock
         if self.soc_mbox().lock().read().lock() {
             return Err(CaliptraApiError::UnableToLockMailbox);
         }
-        crate::println!(
-            "after lock status: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
 
         // Mailbox lock value should read 1 now
         // If not, the reads are likely being blocked by the PAUSER check or some other issue
         if !(self.soc_mbox().lock().read().lock()) {
             return Err(CaliptraApiError::UnableToReadMailbox);
         }
-        crate::println!(
-            "after lock status 2: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
 
         self.soc_mbox().cmd().write(|_| cmd);
-        crate::println!(
-            "after write cmd: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
 
         self.soc_mbox().dlen().write(|_| len_bytes as u32);
-        crate::println!(
-            "after dlen: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
 
         for word in buf {
             self.soc_mbox().datain().write(|_| word);
@@ -144,10 +122,6 @@ impl CaliptraSoC {
 
         // Ask Caliptra to execute this command
         self.soc_mbox().execute().write(|w| w.execute(true));
-        crate::println!(
-            "after execute: {}",
-            HexWord(u32::from(self.soc_mbox().status().read()))
-        );
 
         Ok(())
     }

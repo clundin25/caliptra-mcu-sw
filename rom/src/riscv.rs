@@ -214,7 +214,22 @@ pub fn rom_start() {
         soc.ready_for_fuses()
     );
     while !soc.ready_for_fuses() {}
+
     romtime::println!("[mcu-rom] Writing fuses to Caliptra");
+    romtime::println!("[mcu-rom] Setting Caliptra mailbox user 0 to 1");
+
+    // TODO: read this value from somewhere
+    soc.registers.cptra_mbox_valid_axi_user[0].set(1);
+    romtime::println!("[mcu-rom] Locking Caliptra mailbox user 0");
+    soc.registers.cptra_mbox_axi_user_lock[0].set(1);
+
+    romtime::println!("[mcu-rom] Setting TRNG user");
+    soc.registers.cptra_trng_valid_axi_user.set(1);
+    romtime::println!("[mcu-rom] Locking TRNG user");
+    soc.registers.cptra_trng_axi_user_lock.set(1);
+    romtime::println!("[mcu-rom] Setting DMA user");
+    soc.registers.ss_caliptra_dma_axi_user.set(1);
+
     soc.populate_fuses(&fuses);
     soc.fuse_write_done();
     while soc.ready_for_fuses() {}
@@ -229,90 +244,57 @@ pub fn rom_start() {
         HexWord(unsafe { MCU_MEMORY_MAP.mbox_offset + 0x18 })
     );
 
-    romtime::println!("[mcu-rom] Getting status");
+    let status =
+        unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x08) as *mut u32) };
 
-    // let status =
-    //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x08) as *mut u32) };
+    let status =
+        unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x18) as *mut u32) };
 
-    // let status =
-    //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x18) as *mut u32) };
+    romtime::println!("Direct Status {}", HexWord(status));
 
-    // romtime::println!("Direct Status {}", HexWord(status));
-
-    // // tell Caliptra to download firmware from the recovery interface
-    // romtime::println!(
-    //     "[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command: status {}",
-    //     HexWord(u32::from(
-    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
-    //     ))
-    // );
-    // if let Err(err) =
-    //     soc_manager.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
-    // {
-    //     match err {
-    //         CaliptraApiError::MailboxCmdFailed(code) => {
-    //             romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
-    //         }
-    //         _ => {
-    //             romtime::println!("[mcu-rom] Error sending mailbox command");
-    //         }
-    //     }
-    //     fatal_error(4);
-    // }
-    // romtime::println!(
-    //     "[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command: status {}",
-    //     HexWord(u32::from(
-    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
-    //     ))
-    // );
-    // {
-    //     // drop this to release the lock
-    //     if let Err(err) = soc_manager.finish_mailbox_resp(8, 8) {
-    //         match err {
-    //             CaliptraApiError::MailboxCmdFailed(code) => {
-    //                 romtime::println!(
-    //                     "[mcu-rom] Error finishing mailbox command: {}",
-    //                     HexWord(code)
-    //                 );
-    //             }
-    //             _ => {
-    //                 romtime::println!("[mcu-rom] Error finishing mailbox command");
-    //             }
-    //         }
-    //         fatal_error(5);
-    //     }
-    // };
-
+    // tell Caliptra to download firmware from the recovery interface
     romtime::println!(
-        "mbox status: {}",
-        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+        "[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command: status {}",
+        HexWord(u32::from(
+            soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+        ))
     );
-    romtime::println!("grabbing mbox lock");
-    let lock = u32::from(soc_manager.soc_mbox().lock().read()); // read to lock the mbox
-    romtime::println!("mbox lock: {}", HexWord(lock));
+    if let Err(err) =
+        soc_manager.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
+    {
+        match err {
+            CaliptraApiError::MailboxCmdFailed(code) => {
+                romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
+            }
+            _ => {
+                romtime::println!("[mcu-rom] Error sending mailbox command");
+            }
+        }
+        fatal_error(4);
+    }
     romtime::println!(
-        "mbox status: {}",
-        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+        "[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command: status {}",
+        HexWord(u32::from(
+            soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+        ))
     );
-    romtime::println!("Write command");
-    soc_manager.soc_mbox().cmd().write(|_| 0x5249_4644);
-    romtime::println!(
-        "mbox status: {}",
-        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    );
-    romtime::println!("Write dlen");
-    soc_manager.soc_mbox().dlen().write(|_| 0u32.into());
-    // unsafe { core::ptr::write_volatile(0xa412_000c as *mut u32, 3) };
-    romtime::println!(
-        "mbox status: {}",
-        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    );
-    romtime::println!("Write execute");
-    soc_manager.soc_mbox().execute().write(|_| 1u32.into());
-    romtime::println!(
-        "mbox status: {}",
-        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    );
+    {
+        // drop this to release the lock
+        if let Err(err) = soc_manager.finish_mailbox_resp(8, 8) {
+            match err {
+                CaliptraApiError::MailboxCmdFailed(code) => {
+                    romtime::println!(
+                        "[mcu-rom] Error finishing mailbox command: {}",
+                        HexWord(code)
+                    );
+                }
+                _ => {
+                    romtime::println!("[mcu-rom] Error finishing mailbox command");
+                }
+            }
+            fatal_error(5);
+        }
+    };
 
     romtime::println!("[mcu-rom] Starting recovery flow");
     let mut i3c = I3c::new(i3c_base);

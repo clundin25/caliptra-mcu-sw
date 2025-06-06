@@ -26,6 +26,25 @@ _start:
     # Initialize the stack pointer
     la sp, STACK_TOP
 
+
+    # the FPGA does not clear RAM on reset, so we do it here
+    li a0, 0x50000000
+    li a1, 16384
+    add a1, a1, a0
+clear_dccm:
+    sw zero, 0(a0)
+    addi a0, a0, 4
+    bltu a0, a1, clear_dccm
+
+    li a0, 0xb0080000
+    li a1, 393216
+    add a1, a1, a0
+clear_sram:
+    sw zero, 0(a0)
+    addi a0, a0, 4
+    bltu a0, a1, clear_sram
+
+
     # Copy BSS
     la t0, BSS_START
     la t1, BSS_END
