@@ -20,10 +20,30 @@ use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
 use caliptra_api::SocManager;
 use core::{fmt::Write, hint::black_box, ptr::addr_of};
+use registers_generated::i3c::bits::DeviceStatus0;
+use registers_generated::i3c::bits::HcControl::BusEnable;
+use registers_generated::i3c::bits::HcControl::ModeSelector;
+use registers_generated::i3c::bits::ProtCap2;
+use registers_generated::i3c::bits::ProtCap3;
+use registers_generated::i3c::bits::QueueThldCtrl;
+use registers_generated::i3c::bits::RingHeadersSectionOffset;
+use registers_generated::i3c::bits::StbyCrCapabilities;
+use registers_generated::i3c::bits::StbyCrCapabilities::TargetXactSupport;
+use registers_generated::i3c::bits::StbyCrControl;
+use registers_generated::i3c::bits::StbyCrControl::AcrFsmOpSelect;
+use registers_generated::i3c::bits::StbyCrControl::DaaEntdaaEnable;
+use registers_generated::i3c::bits::StbyCrControl::DaaSetdasaEnable;
+use registers_generated::i3c::bits::StbyCrControl::PrimeAcceptGetacccr;
+use registers_generated::i3c::bits::StbyCrControl::TargetXactEnable;
+use registers_generated::i3c::bits::StbyCrDeviceAddr;
+use registers_generated::i3c::bits::StbyCrDeviceAddr::StaticAddrValid;
+use registers_generated::i3c::bits::StbyCrVirtDeviceAddr;
+use registers_generated::i3c::bits::StbyCrVirtDeviceAddr::VirtStaticAddrValid;
+use registers_generated::i3c::bits::TtiQueueThldCtrl;
 use registers_generated::{fuses::Fuses, i3c, mbox, mci, otp_ctrl, soc};
 use riscv_csr::csr::ReadWriteRiscvCsr;
 use romtime::{HexWord, Mci, StaticRef};
-use tock_registers::interfaces::{Readable, Writeable};
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 extern "C" {
     pub static MCU_MEMORY_MAP: mcu_config::McuMemoryMap;
@@ -326,8 +346,9 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
 
     // TODO: read this value from the fuses (according to the spec)?
     romtime::println!("[mcu-rom] Initialize I3C");
-    i3c.registers.sec_fw_recovery_if_device_id_0.set(0x3a); // placeholder address for now
-    i3c.registers.stdby_ctrl_mode_stby_cr_device_addr.set(0x3a);
+    configure_i3c(i3c, 0x3a, true);
+    // i3c.registers.sec_fw_recovery_if_device_id_0.set(0x3a); // placeholder address for now
+    // i3c.registers.stdby_ctrl_mode_stby_cr_device_addr.set(0x3a);
 
     romtime::println!("[mcu-rom] MCI flow status: {}", HexWord(mci.flow_status()));
 
@@ -336,4 +357,182 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
     let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0xfff0) as *const u32 };
     while unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {}
     romtime::println!("[mcu-rom] Firmware load detected");
+}
+
+fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
+    let regs = i3c.registers;
+    romtime::println!("I3C HCI version: {:x}", regs.i3c_base_hci_version.get());
+
+    romtime::println!("Set TTI RESET_CONTROL");
+    regs.tti_tti_reset_control.set(0x3f);
+    romtime::println!("TTI RESET_CONTROL: {:x}", regs.tti_tti_reset_control.get());
+
+    // Evaluate RING_HEADERS_SECTION_OFFSET, the SECTION_OFFSET should read 0x0 as this controller doesn’t support the DMA mode
+    romtime::println!("Check ring headers section offset");
+    let rhso = regs
+        .i3c_base_ring_headers_section_offset
+        .read(RingHeadersSectionOffset::SectionOffset);
+    if rhso != 0 {
+        panic!("RING_HEADERS_SECTION_OFFSET is not 0");
+    }
+
+    romtime::println!("TTI QUEUE_SIZE: {:x}", regs.tti_tti_queue_size.get());
+
+    // initialize timing registers
+    romtime::println!("Initialize timing registers");
+
+    // AXI clock is ~200 MHz, I3C clock is 12.5 MHz
+    // values of all of these set to 0-5 seem to work for receiving data correctly
+    // 6-7 gets corrupted data but will ACK
+    // 8+ will fail to ACK
+    regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
+    regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
+
+    // if this is set to 6+ then ACKs start failing
+    regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
+    regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
+
+    regs.soc_mgmt_if_t_high_reg.set(0); // High period of the SCL in clock units
+    regs.soc_mgmt_if_t_low_reg.set(0); // Low period of the SCL in clock units
+    regs.soc_mgmt_if_t_hd_sta_reg.set(0); // Hold time for (repeated) START in clock units
+    regs.soc_mgmt_if_t_su_sta_reg.set(0); // Setup time for repeated START in clock units
+    regs.soc_mgmt_if_t_su_sto_reg.set(0); // Setup time for STOP in clock units
+
+    // set this to 1 microsecond
+    regs.soc_mgmt_if_t_free_reg.set(200); // Bus free time in clock units before doing IBI
+
+    romtime::println!(
+            "Timing register t_r: {}, t_f: {}, t_hd_dat: {}, t_su_dat: {}, t_high: {}, t_low: {}, t_hd_sta: {}, t_su_sta: {}, t_su_sto: {}, t_free: {}",
+            regs.soc_mgmt_if_t_r_reg.get(),
+            regs.soc_mgmt_if_t_f_reg.get(),
+            regs.soc_mgmt_if_t_hd_dat_reg.get(),
+            regs.soc_mgmt_if_t_su_dat_reg.get(),
+            regs.soc_mgmt_if_t_high_reg.get(),
+            regs.soc_mgmt_if_t_low_reg.get(),
+            regs.soc_mgmt_if_t_hd_sta_reg.get(),
+            regs.soc_mgmt_if_t_su_sta_reg.get(),
+            regs.soc_mgmt_if_t_su_sto_reg.get(),
+            regs.soc_mgmt_if_t_free_reg.get(),
+        );
+
+    // Setup the threshold for the HCI queues (in the internal/private software data structures):
+    romtime::println!("Setup HCI queue thresholds");
+    regs.piocontrol_queue_thld_ctrl.modify(
+        QueueThldCtrl::CmdEmptyBufThld.val(0)
+            + QueueThldCtrl::RespBufThld.val(1)
+            + QueueThldCtrl::IbiStatusThld.val(1),
+    );
+
+    romtime::println!("Enable the target transaction interface");
+    regs.stdby_ctrl_mode_stby_cr_control.modify(
+        StbyCrControl::StbyCrEnableInit.val(2) // enable the standby controller
+                + StbyCrControl::TargetXactEnable::SET // enable Target Transaction Interface
+                + StbyCrControl::DaaEntdaaEnable::SET // enable ENTDAA dynamic address assignment
+                + StbyCrControl::DaaSetdasaEnable::SET // enable SETDASA dynamic address assignment
+                + StbyCrControl::BastCccIbiRing.val(0) // Set the IBI to use ring buffer 0
+                + StbyCrControl::PrimeAcceptGetacccr::CLEAR // // don't auto-accept primary controller role
+                + StbyCrControl::AcrFsmOpSelect::CLEAR, // don't become the active controller and set us as not the bus owner
+    );
+
+    romtime::println!(
+        "STBY_CR_CONTROL: {:x}",
+        regs.stdby_ctrl_mode_stby_cr_control.get()
+    );
+
+    regs.stdby_ctrl_mode_stby_cr_capabilities
+        .write(StbyCrCapabilities::TargetXactSupport::SET);
+    romtime::println!(
+        "STBY_CR_CAPABILITIES: {:x}",
+        regs.stdby_ctrl_mode_stby_cr_capabilities.get()
+    );
+    if !regs
+        .stdby_ctrl_mode_stby_cr_capabilities
+        .is_set(StbyCrCapabilities::TargetXactSupport)
+    {
+        panic!("I3C target transaction support is not enabled");
+    }
+
+    // program a static address
+    romtime::println!("Setting static address to {:x}", addr);
+    regs.stdby_ctrl_mode_stby_cr_device_addr.write(
+        StbyCrDeviceAddr::StaticAddrValid::SET + StbyCrDeviceAddr::StaticAddr.val(addr as u32),
+    );
+    if recovery_enabled {
+        romtime::println!("Setting virtual device static address to {:x}", addr + 1);
+        regs.stdby_ctrl_mode_stby_cr_virt_device_addr.write(
+            StbyCrVirtDeviceAddr::VirtStaticAddrValid::SET
+                + StbyCrVirtDeviceAddr::VirtStaticAddr.val((addr + 1) as u32),
+        );
+    }
+
+    romtime::println!("Set TTI queue thresholds");
+    // set TTI queue thresholds
+    regs.tti_tti_queue_thld_ctrl.modify(
+        TtiQueueThldCtrl::IbiThld.val(1)
+            + TtiQueueThldCtrl::RxDescThld.val(1)
+            + TtiQueueThldCtrl::TxDescThld.val(1),
+    );
+    romtime::println!(
+        "TTI queue thresholds: {:x}",
+        regs.tti_tti_queue_thld_ctrl.get()
+    );
+
+    romtime::println!(
+        "TTI data buffer thresholds ctrl: {:x}",
+        regs.tti_tti_data_buffer_thld_ctrl.get()
+    );
+
+    romtime::println!("Enable PHY to the bus");
+    // enable the PHY connection to the bus
+    regs.i3c_base_hc_control
+        .modify(ModeSelector::SET + BusEnable::CLEAR); // clear is enabled, set is suspended
+
+    romtime::println!("Enabling interrupts");
+    // regs.tti_interrupt_enable.modify(
+    //     InterruptEnable::IbiThldStatEn::SET
+    //         + InterruptEnable::RxDescThldStatEn::SET
+    //         + InterruptEnable::TxDescThldStatEn::SET
+    //         + InterruptEnable::RxDataThldStatEn::SET
+    //         + InterruptEnable::TxDataThldStatEn::SET,
+    // );
+    regs.tti_interrupt_enable.set(0xffff_ffff);
+    romtime::println!(
+        "I3C target interrupt enable {:x}",
+        regs.tti_interrupt_enable.get()
+    );
+
+    romtime::println!(
+        "I3C target status {:x}, interrupt status {:x}",
+        regs.tti_status.get(),
+        regs.tti_interrupt_status.get()
+    );
+
+    if recovery_enabled {
+        romtime::println!("Enabling recovery interface");
+        regs.sec_fw_recovery_if_prot_cap_2.write(
+            ProtCap2::RecProtVersion.val(0x101)
+                + ProtCap2::AgentCaps.val(
+                    (1 << 0) | // device id
+                (1 << 4) | // device status
+                (1 << 5) | // indirect ctrl
+                (1 << 7), // push c-image support
+                ),
+        );
+        regs.sec_fw_recovery_if_prot_cap_3.write(
+            ProtCap3::NumOfCmsRegions.val(1) + ProtCap3::MaxRespTime.val(20), // 1.048576 second maximum response time
+        );
+        regs.sec_fw_recovery_if_device_status_0
+            .write(DeviceStatus0::DevStatus.val(0x3)); // ready to accept recovery image
+    }
+
+    romtime::println!(
+        "I3C recovery prot_cap 2 and 3: {:08x} {:08x}",
+        regs.sec_fw_recovery_if_prot_cap_2.get(),
+        regs.sec_fw_recovery_if_prot_cap_3.get(),
+    );
+    romtime::println!(
+        "I3C recovery device status: {:x}",
+        regs.sec_fw_recovery_if_device_status_0
+            .read(DeviceStatus0::DevStatus)
+    );
 }

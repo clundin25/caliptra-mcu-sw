@@ -1,10 +1,11 @@
 // Licensed under the Apache-2.0 license
 
 use crate::fpga_regs::{Control, FifoData, FifoRegs, FifoStatus, ItrngFifoStatus, WrapperRegs};
-use crate::{InitParams, McuHwModel, Output, SecurityState};
+use crate::{xi3c, InitParams, McuHwModel, Output, SecurityState};
 use anyhow::{anyhow, Error, Result};
 use caliptra_emu_bus::Event;
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
+use registers_generated::i3c;
 use registers_generated::mci::bits::Go::Go;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -89,6 +90,7 @@ pub struct ModelFpgaRealtime {
     mci: Mci,
     i3c_mmio: *mut u32,
     i3c_controller_mmio: *mut u32,
+    i3c_controller: xi3c::Controller,
 
     realtime_thread: Option<thread::JoinHandle<()>>,
     realtime_thread_exit_flag: Arc<AtomicBool>,
@@ -264,6 +266,34 @@ impl ModelFpgaRealtime {
             }
         }
     }
+
+    pub fn i3c_target_configured(&mut self) -> bool {
+        let i3c_target = unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) };
+        i3c_target.stdby_ctrl_mode_stby_cr_device_addr.get() != 0
+    }
+
+    pub fn configure_i3c_controller(&mut self) {
+        println!("I3C controller initializing");
+        let xi3c_config = xi3c::Config {
+            device_id: 0,
+            base_address: self.i3c_controller_mmio,
+            input_clock_hz: 199_999_000,
+            rw_fifo_depth: 16,
+            wr_threshold: 12,
+            device_count: 1,
+            ibi_capable: true,
+            hj_capable: false,
+            entdaa_enable: true,
+            known_static_addrs: vec![0x3a, 0x3b],
+        };
+
+        self.i3c_controller.set_s_clk(199_999_000, 12_500_000, 1);
+        self.i3c_controller
+            .cfg_initialize(&xi3c_config, self.i3c_controller_mmio as usize)
+            .unwrap();
+        self.i3c_controller.bus_init().unwrap();
+        println!("I3C controller finished initializing");
+    }
 }
 
 impl McuHwModel for ModelFpgaRealtime {
@@ -326,7 +356,7 @@ impl McuHwModel for ModelFpgaRealtime {
         }));
 
         // TODO: initialize this after the I3C target is configured.
-        // let i3c_controller = xi3c::Controller::new(i3c_controller_mmio);
+        let i3c_controller = xi3c::Controller::new(i3c_controller_mmio);
 
         let mut m = Self {
             devs,
@@ -338,6 +368,7 @@ impl McuHwModel for ModelFpgaRealtime {
             mci: Mci { ptr: mci_ptr },
             i3c_mmio,
             i3c_controller_mmio,
+            i3c_controller,
 
             realtime_thread,
             realtime_thread_exit_flag,
@@ -505,6 +536,10 @@ impl Drop for ModelFpgaRealtime {
         self.realtime_thread_exit_flag
             .store(true, Ordering::Relaxed);
         self.realtime_thread.take().unwrap().join().unwrap();
+        self.i3c_controller.off();
+
+        let i3c_target = unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) };
+        i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
         self.set_subsystem_reset(true);
 
         // Unmap UIO memory space so that the file lock is released
@@ -560,8 +595,15 @@ mod test {
             ..Default::default()
         })
         .unwrap();
+        println!("Waiting on I3C target to be configured");
+        let mut xi3c_configured = false;
         for _ in 0..2_000_000 {
             model.step();
+            if !xi3c_configured && model.i3c_target_configured() {
+                xi3c_configured = true;
+                println!("I3C target configured");
+                model.configure_i3c_controller();
+            }
         }
     }
 }
