@@ -3,8 +3,9 @@
 use crate::fpga_regs::{Control, FifoData, FifoRegs, FifoStatus, ItrngFifoStatus, WrapperRegs};
 use crate::{xi3c, InitParams, McuHwModel, Output, SecurityState};
 use anyhow::{anyhow, Error, Result};
-use caliptra_emu_bus::Event;
+use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
+use emulator_bmc::Bmc;
 use registers_generated::i3c;
 use registers_generated::mci::bits::Go::Go;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,6 +30,9 @@ const OTP_MAPPING: (usize, usize) = (1, 4);
 // Set to core_clk cycles per ITRNG sample.
 const ITRNG_DIVISOR: u32 = 400;
 const DEFAULT_AXI_PAUSER: u32 = 0x1;
+
+// use the virtual target dynamic address for the recovery target
+const recovery_target_addr: u8 = 0x3b;
 
 // ITRNG FIFO stores 1024 DW and outputs 4 bits at a time to Caliptra.
 const FPGA_ITRNG_FIFO_SIZE: usize = 1024;
@@ -96,6 +100,11 @@ pub struct ModelFpgaRealtime {
     realtime_thread_exit_flag: Arc<AtomicBool>,
 
     output: Output,
+    recovery_started: bool,
+    bmc: Bmc,
+    from_bmc: mpsc::Receiver<Event>,
+    to_bmc: mpsc::Sender<Event>,
+    recovery_fifo_blocks: Vec<Vec<u8>>,
 }
 
 impl ModelFpgaRealtime {
@@ -221,7 +230,7 @@ impl ModelFpgaRealtime {
 
     fn realtime_thread_itrng_fn(
         wrapper: Arc<Wrapper>,
-        exit: Arc<AtomicBool>,
+        running: Arc<AtomicBool>,
         mut itrng_nibbles: Box<dyn Iterator<Item = u8> + Send>,
     ) {
         // Reset ITRNG FIFO to clear out old data
@@ -238,7 +247,7 @@ impl ModelFpgaRealtime {
         // Small delay to allow reset to complete
         thread::sleep(Duration::from_millis(1));
 
-        while !exit.load(Ordering::Relaxed) {
+        while running.load(Ordering::Relaxed) {
             // Once TRNG data is requested the FIFO will continously empty. Load at max one FIFO load at a time.
             // FPGA ITRNG FIFO is 1024 DW deep.
             for _ in 0..FPGA_ITRNG_FIFO_SIZE {
@@ -261,7 +270,7 @@ impl ModelFpgaRealtime {
             }
             // 1 second * (20 MHz / (2^13 throttling counter)) / 8 nibbles per DW: 305 DW of data consumed in 1 second.
             let end_time = Instant::now() + Duration::from_millis(1000);
-            while !exit.load(Ordering::Relaxed) && Instant::now() < end_time {
+            while running.load(Ordering::Relaxed) && Instant::now() < end_time {
                 thread::sleep(Duration::from_millis(1));
             }
         }
@@ -274,6 +283,10 @@ impl ModelFpgaRealtime {
 
     pub fn configure_i3c_controller(&mut self) {
         println!("I3C controller initializing");
+        println!(
+            "XI3C HW version = {:x}",
+            self.i3c_controller.regs().version.get()
+        );
         let xi3c_config = xi3c::Config {
             device_id: 0,
             base_address: self.i3c_controller_mmio,
@@ -291,14 +304,251 @@ impl ModelFpgaRealtime {
         self.i3c_controller
             .cfg_initialize(&xi3c_config, self.i3c_controller_mmio as usize)
             .unwrap();
-        self.i3c_controller.bus_init().unwrap();
         println!("I3C controller finished initializing");
+    }
+
+    pub fn start_recovery_bmc(&mut self) {
+        self.recovery_started = true;
+    }
+
+    fn bmc_step(&mut self) {
+        if !self.recovery_started {
+            return;
+        }
+        self.bmc.step();
+
+        // check if we need to fill the recovey FIFO
+        if !self.recovery_fifo_blocks.is_empty() {
+            let fifo_status =
+                self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
+            if fifo_status[0] & 1 == 0 {
+                // fifo is empty, send a block
+                let chunk = self.recovery_fifo_blocks.pop().unwrap();
+                self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoData, &chunk);
+            }
+        }
+
+        // we need to translate from the BMC events to the I3C controller block reads and writes
+        let Ok(event) = self.from_bmc.try_recv() else {
+            return;
+        };
+        // ignore messages that aren't meant for Caliptra core.
+        if !matches!(event.dest, Device::CaliptraCore) {
+            return;
+        }
+        match event.event {
+            EventData::RecoveryBlockReadRequest {
+                source_addr,
+                target_addr,
+                command_code,
+            } => {
+                println!("From BMC: Recovery block read request {:?}", command_code);
+
+                let payload = self.recovery_block_read_request(command_code);
+
+                self.to_bmc
+                    .send(Event {
+                        src: Device::CaliptraCore,
+                        dest: Device::BMC,
+                        event: EventData::RecoveryBlockReadResponse {
+                            source_addr: target_addr,
+                            target_addr: source_addr,
+                            command_code,
+                            payload,
+                        },
+                    })
+                    .unwrap();
+            }
+            EventData::RecoveryBlockReadResponse {
+                source_addr: _,
+                target_addr: _,
+                command_code: _,
+                payload: _,
+            } => todo!(),
+            EventData::RecoveryBlockWrite {
+                source_addr: _,
+                target_addr: _,
+                command_code,
+                payload,
+            } => {
+                println!("Recovery block write request: {:?}", command_code);
+
+                self.recovery_block_write_request(command_code, &payload);
+            }
+            EventData::RecoveryImageAvailable { image_id: _, image } => {
+                // do the indirect fifo thing
+                println!("Recovery image available; writing blocks");
+
+                let len = ((image.len() / 4) as u32).to_le_bytes();
+                let mut ctrl = vec![0, 1];
+                ctrl.extend_from_slice(&len);
+
+                println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
+                self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoCtrl, &ctrl);
+                self.recovery_fifo_blocks = image.chunks(128).map(|chunk| chunk.to_vec()).collect();
+                self.recovery_fifo_blocks.reverse(); // reverse so we can pop from the end
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn command_code_to_u8(command: RecoveryCommandCode) -> u8 {
+        match command {
+            RecoveryCommandCode::ProtCap => 34,
+            RecoveryCommandCode::DeviceId => 35,
+            RecoveryCommandCode::DeviceStatus => 36,
+            RecoveryCommandCode::DeviceReset => 37,
+            RecoveryCommandCode::RecoveryCtrl => 38,
+            RecoveryCommandCode::RecoveryStatus => 39,
+            RecoveryCommandCode::HwStatus => 40,
+            RecoveryCommandCode::IndirectCtrl => 41,
+            RecoveryCommandCode::IndirectStatus => 42,
+            RecoveryCommandCode::IndirectData => 43,
+            RecoveryCommandCode::Vendor => 44,
+            RecoveryCommandCode::IndirectFifoCtrl => 45,
+            RecoveryCommandCode::IndirectFifoStatus => 46,
+            RecoveryCommandCode::IndirectFifoData => 47,
+        }
+    }
+
+    fn command_code_to_len(command: RecoveryCommandCode) -> (u16, u16) {
+        match command {
+            RecoveryCommandCode::ProtCap => (15, 15),
+            RecoveryCommandCode::DeviceId => (24, 255),
+            RecoveryCommandCode::DeviceStatus => (7, 255),
+            RecoveryCommandCode::DeviceReset => (3, 3),
+            RecoveryCommandCode::RecoveryCtrl => (3, 3),
+            RecoveryCommandCode::RecoveryStatus => (2, 2),
+            RecoveryCommandCode::HwStatus => (4, 255),
+            RecoveryCommandCode::IndirectCtrl => (6, 6),
+            RecoveryCommandCode::IndirectStatus => (6, 6),
+            RecoveryCommandCode::IndirectData => (1, 252),
+            RecoveryCommandCode::Vendor => (1, 255),
+            RecoveryCommandCode::IndirectFifoCtrl => (6, 6),
+            RecoveryCommandCode::IndirectFifoStatus => (20, 20),
+            RecoveryCommandCode::IndirectFifoData => (1, 4095),
+        }
+    }
+
+    // send a recovery block read request to the I3C target
+    fn recovery_block_read_request(&mut self, command: RecoveryCommandCode) -> Vec<u8> {
+        // per the recovery spec, this maps to a private write and private read
+
+        // First we write the recovery command code for the block we want
+        let mut cmd = xi3c::Command {
+            cmd_type: 1,
+            no_repeated_start: 0, // we want the next command (read) to be Sr
+            pec: 1,
+            target_addr: recovery_target_addr,
+            ..Default::default()
+        };
+
+        let recovery_command_code = Self::command_code_to_u8(command);
+
+        println!(
+            "Sending write to target: 0x{:x} to start recovery block read (with no termination)",
+            recovery_command_code
+        );
+        assert!(
+            self.i3c_controller
+                .master_send_polled(&mut cmd, &[recovery_command_code], 1)
+                .is_ok(),
+            "Failed to ack write message sent to target"
+        );
+        println!("Acknowledge received");
+
+        // then we send a private read for the minimum length
+        let len_range = Self::command_code_to_len(command);
+        cmd.target_addr = recovery_target_addr;
+        cmd.no_repeated_start = 0;
+        cmd.tid = 0;
+        cmd.pec = 0;
+        cmd.cmd_type = 1;
+        println!(
+            "Starting private read from target for {} bytes with repeated start",
+            len_range.0
+        );
+        self.i3c_controller
+            .master_recv(&mut cmd, len_range.0 + 2)
+            .expect("Failed to receive ack from target");
+        println!("Acknowledge received");
+
+        // read in the length, lsb then msb
+        println!(
+            "Reading the minimum block length ({}+ bytes expected)",
+            len_range.0
+        );
+        let resp = self
+            .i3c_controller
+            .master_recv_finish(
+                Some(self.realtime_thread_exit_flag.clone()),
+                &cmd,
+                len_range.0 + 2,
+            )
+            .expect(&format!("Expected to read {}+ bytes", len_range.0 + 2));
+
+        if resp.len() < 2 {
+            panic!("Expected to read at least 2 bytes from target for recovery block length");
+        }
+        println!("Read from target {:02x?}", resp);
+        let len = u16::from_le_bytes([resp[0], resp[1]]);
+        if len < len_range.0 || len > len_range.1 {
+            panic!(
+                "Expected to read between {} and {} bytes from target, got {}",
+                len_range.0, len_range.1, len
+            );
+        }
+        let len = len as usize;
+        let left = len - (resp.len() - 2);
+        println!("Expect to read {} bytes from target ({} more)", len, left);
+        // read the rest of the bytes
+        if left > 0 {
+            // TODO: if the length is more than the minimum we need to abort and restart with the correct value
+            // because the xi3c controller does not support variable reads.
+            todo!()
+        }
+        println!("Got block read back from target: {:x?}", &resp[2..]);
+        resp[2..].to_vec()
+    }
+
+    // send a recovery block write request to the I3C target
+    fn recovery_block_write_request(&mut self, command: RecoveryCommandCode, payload: &[u8]) {
+        // per the recovery spec, this maps to a private write
+
+        let mut cmd = xi3c::Command {
+            cmd_type: 1,
+            no_repeated_start: 1,
+            pec: 1,
+            target_addr: recovery_target_addr,
+            ..Default::default()
+        };
+
+        let recovery_command_code = Self::command_code_to_u8(command);
+
+        println!(
+            "Sending write to target: 0x{:x} + 2 bytes length + {} bytes payload",
+            recovery_command_code,
+            payload.len(),
+        );
+
+        let mut data = vec![recovery_command_code];
+        data.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        data.extend_from_slice(&payload);
+
+        assert!(
+            self.i3c_controller
+                .master_send_polled(&mut cmd, &data, data.len() as u16)
+                .is_ok(),
+            "Failed to ack write message sent to target"
+        );
+        println!("Acknowledge received");
     }
 }
 
 impl McuHwModel for ModelFpgaRealtime {
     fn step(&mut self) {
         self.handle_log();
+        self.bmc_step();
     }
 
     fn new_unbooted(params: InitParams) -> Result<Self>
@@ -343,7 +593,7 @@ impl McuHwModel for ModelFpgaRealtime {
             .map_mapping(OTP_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
 
-        let realtime_thread_exit_flag = Arc::new(AtomicBool::new(false));
+        let realtime_thread_exit_flag = Arc::new(AtomicBool::new(true));
         let realtime_thread_exit_flag2 = realtime_thread_exit_flag.clone();
         let realtime_wrapper = wrapper.clone();
 
@@ -355,8 +605,30 @@ impl McuHwModel for ModelFpgaRealtime {
             )
         }));
 
-        // TODO: initialize this after the I3C target is configured.
         let i3c_controller = xi3c::Controller::new(i3c_controller_mmio);
+
+        // For now, we copy the runtime directly into the SRAM
+        let mut mcu_fw = params.mcu_firmware.to_vec();
+        while mcu_fw.len() % 8 != 0 {
+            mcu_fw.push(0);
+        }
+
+        let (caliptra_cpu_event_sender, from_bmc) = mpsc::channel();
+        let (to_bmc, caliptra_cpu_event_recv) = mpsc::channel();
+
+        // these aren't used
+        let (mcu_cpu_event_sender, mcu_cpu_event_recv) = mpsc::channel();
+
+        // This is a fake BMC that runs the recovery flow as a series of events for recovery block reads and writes.
+        let mut bmc = Bmc::new(
+            caliptra_cpu_event_sender,
+            caliptra_cpu_event_recv,
+            mcu_cpu_event_sender,
+            mcu_cpu_event_recv,
+        );
+        bmc.push_recovery_image(params.caliptra_firmware.to_vec());
+        bmc.push_recovery_image(params.soc_manifest.to_vec());
+        bmc.push_recovery_image(params.mcu_firmware.to_vec());
 
         let mut m = Self {
             devs,
@@ -374,6 +646,11 @@ impl McuHwModel for ModelFpgaRealtime {
             realtime_thread_exit_flag,
 
             output,
+            recovery_started: false,
+            bmc,
+            from_bmc,
+            to_bmc,
+            recovery_fifo_blocks: vec![],
         };
 
         // Set generic input wires.
@@ -538,6 +815,7 @@ impl Drop for ModelFpgaRealtime {
         self.realtime_thread.take().unwrap().join().unwrap();
         self.i3c_controller.off();
 
+        // ensure that we put the I3C target into a state where we will reset it properly
         let i3c_target = unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) };
         i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
         self.set_subsystem_reset(true);
@@ -577,20 +855,26 @@ mod test {
         let caliptra_fw = caliptra_builder
             .get_caliptra_fw()
             .expect("Could not build Caliptra FW bundle");
+        // TODO: pass this in to the MCU through the OTP
         let _vendor_pk_hash = caliptra_builder
             .get_vendor_pk_hash()
             .expect("Could not get vendor PK hash");
+        let soc_manifest = caliptra_builder
+            .get_soc_manifest()
+            .expect("Could not get SOC manifest");
 
         let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
         let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
         let mcu_rom = std::fs::read(mcu_rom).unwrap();
         let mcu_runtime = std::fs::read(mcu_runtime).unwrap();
+        let soc_manifest = std::fs::read(soc_manifest).unwrap();
 
         let mut model = DefaultHwModel::new_unbooted(InitParams {
             caliptra_rom: &caliptra_rom,
             caliptra_firmware: &caliptra_fw,
             mcu_rom: &mcu_rom,
             mcu_firmware: &mcu_runtime,
+            soc_manifest: &soc_manifest,
             active_mode: true,
             ..Default::default()
         })
@@ -603,6 +887,8 @@ mod test {
                 xi3c_configured = true;
                 println!("I3C target configured");
                 model.configure_i3c_controller();
+                println!("Starting recovery flow (BMC)");
+                model.start_recovery_bmc();
             }
         }
     }
