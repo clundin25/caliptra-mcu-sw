@@ -240,44 +240,44 @@ pub fn runtime_build_with_apps(
     let app_offset = (runtime_end_offset + INTERRUPT_TABLE_SIZE).next_multiple_of(4096);
     let padding = app_offset - runtime_end_offset - INTERRUPT_TABLE_SIZE;
 
-    // build the apps with the data memory at some incorrect offset
-    let apps_bin_len =
-        apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?.len();
-    println!("Apps built: {} bytes", apps_bin_len);
+    // // build the apps with the data memory at some incorrect offset
+    // let apps_bin_len =
+    //     apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?.len();
+    // println!("Apps built: {} bytes", apps_bin_len);
 
-    // re-link and place the apps and data RAM after the runtime binary
-    let (kernel_size2, apps_memory_offset) = runtime_build_no_apps(
-        Some(kernel_size),
-        Some(app_offset),
-        Some(apps_bin_len),
-        features,
-        output_name,
-        platform,
-        memory_map,
-    )?;
+    // // re-link and place the apps and data RAM after the runtime binary
+    // let (kernel_size2, apps_memory_offset) = runtime_build_no_apps(
+    //     Some(kernel_size),
+    //     Some(app_offset),
+    //     Some(apps_bin_len),
+    //     features,
+    //     output_name,
+    //     platform,
+    //     memory_map,
+    // )?;
 
-    assert_eq!(
-        kernel_size, kernel_size2,
-        "Kernel size changed between runs"
-    );
+    // assert_eq!(
+    //     kernel_size, kernel_size2,
+    //     "Kernel size changed between runs"
+    // );
 
     // re-link the applications with the correct data memory offsets
-    let apps_bin = apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?;
-    assert_eq!(
-        apps_bin_len,
-        apps_bin.len(),
-        "Applications sizes changed between runs"
-    );
+    // let apps_bin = apps_build_flat_tbf(app_offset, apps_memory_offset, features, example_app)?;
+    // assert_eq!(
+    //     apps_bin_len,
+    //     apps_bin.len(),
+    //     "Applications sizes changed between runs"
+    // );
 
-    println!("Apps data memory offset is {:x}", apps_memory_offset);
-    println!("Apps built: {} bytes", apps_bin.len());
+    // println!("Apps data memory offset is {:x}", apps_memory_offset);
+    // println!("Apps built: {} bytes", apps_bin.len());
 
     let mut bin = std::fs::read(&runtime_bin)?;
     let kernel_size = bin.len();
     println!("Kernel binary built: {} bytes", kernel_size);
 
     bin.extend_from_slice(vec![0; padding].as_slice());
-    bin.extend_from_slice(&apps_bin);
+    // bin.extend_from_slice(&apps_bin);
     std::fs::write(&runtime_bin, &bin)?;
 
     println!("Kernel binary size: {} bytes", kernel_size);

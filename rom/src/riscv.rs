@@ -21,6 +21,7 @@ use caliptra_api::CaliptraApiError;
 use caliptra_api::SocManager;
 use core::{fmt::Write, hint::black_box, ptr::addr_of};
 use registers_generated::{fuses::Fuses, i3c, mbox, mci, otp_ctrl, soc};
+use riscv_csr::csr::ReadWriteRiscvCsr;
 use romtime::{HexWord, Mci, StaticRef};
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -135,7 +136,19 @@ impl Soc {
     }
 }
 
+// defined in VeeR spec: https://chipsalliance.github.io/Cores-VeeR-EL2/html/main/docs_rendered/html/memory-map.html#region-access-control-register-mrac
+const MRAC_CSR: usize = 0x7c0;
+
 pub fn rom_start() {
+    // Set all memory to side effects and cacheable.
+    // The LSU of the VeeR core is set to 64 bits, which translates all
+    // memory access to 64 bits by default, even though the core is 32 bits.
+    // If we set side effects to true everywhere, then all accesses are instead
+    // translated to 32 bits, so we waste less latency and bandwidth.
+    // We only have I-Cache (no D-Cache), so it is safe to set all memory to cacheable.
+    let mrac = ReadWriteRiscvCsr::<usize, (), MRAC_CSR>::new();
+    mrac.set(0xffff_ffff);
+
     romtime::println!("[mcu-rom] Hello from ROM");
 
     let otp_base: StaticRef<otp_ctrl::regs::OtpCtrl> =
@@ -208,84 +221,98 @@ pub fn rom_start() {
 
     romtime::println!(
         "[mcu-rom] Waiting for Caliptra to be ready for mbox: {}",
-        soc.ready_for_mbox()
+        HexWord(soc.flow_status())
     );
     while !soc.ready_for_mbox() {}
-
-    // tell Caliptra to download firmware from the recovery interface
     romtime::println!(
-        "[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command: status {}",
-        HexWord(u32::from(
-            soc_manager.soc_mbox().status().read().mbox_fsm_ps()
-        ))
+        "[mcu-rom] Caliptra is ready for mailbox commands, addr = {}",
+        HexWord(unsafe { MCU_MEMORY_MAP.mbox_offset + 0x18 })
     );
-    if let Err(err) =
-        soc_manager.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
-    {
-        match err {
-            CaliptraApiError::MailboxCmdFailed(code) => {
-                romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
-            }
-            _ => {
-                romtime::println!("[mcu-rom] Error sending mailbox command");
-            }
-        }
-        fatal_error(4);
-    }
-    romtime::println!(
-        "[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command: status {}",
-        HexWord(u32::from(
-            soc_manager.soc_mbox().status().read().mbox_fsm_ps()
-        ))
-    );
-    {
-        // drop this to release the lock
-        if let Err(err) = soc_manager.finish_mailbox_resp(8, 8) {
-            match err {
-                CaliptraApiError::MailboxCmdFailed(code) => {
-                    romtime::println!(
-                        "[mcu-rom] Error finishing mailbox command: {}",
-                        HexWord(code)
-                    );
-                }
-                _ => {
-                    romtime::println!("[mcu-rom] Error finishing mailbox command");
-                }
-            }
-            fatal_error(5);
-        }
-    };
 
+    romtime::println!("[mcu-rom] Getting status");
+
+    // let status =
+    //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x08) as *mut u32) };
+
+    // let status =
+    //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.mbox_offset + 0x18) as *mut u32) };
+
+    // romtime::println!("Direct Status {}", HexWord(status));
+
+    // // tell Caliptra to download firmware from the recovery interface
     // romtime::println!(
-    //     "mbox status: {}",
-    //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    //     "[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command: status {}",
+    //     HexWord(u32::from(
+    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+    //     ))
     // );
-    // romtime::println!("grabbing mbox lock");
-    // let lock = u32::from(soc_manager.soc_mbox().lock().read()); // read to lock the mbox
-    //                                                             // romtime::println!("mbox lock: {}", HexWord(lock));
-    //                                                             // romtime::println!(
-    //                                                             //     "mbox status: {}",
-    //                                                             //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    //                                                             // );
-    //                                                             // romtime::println!("Write command");
-    // soc_manager.soc_mbox().cmd().write(|_| 0x5249_4644);
-    // // romtime::println!(
-    // //     "mbox status: {}",
-    // //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    // // );
-    // // romtime::println!("Write dlen");
-    // //soc_manager.soc_mbox().dlen().write(|_| 0u32.into());
+    // if let Err(err) =
+    //     soc_manager.start_mailbox_req(CommandId::RI_DOWNLOAD_FIRMWARE.into(), 0, [].into_iter())
+    // {
+    //     match err {
+    //         CaliptraApiError::MailboxCmdFailed(code) => {
+    //             romtime::println!("[mcu-rom] Error sending mailbox command: {}", HexWord(code));
+    //         }
+    //         _ => {
+    //             romtime::println!("[mcu-rom] Error sending mailbox command");
+    //         }
+    //     }
+    //     fatal_error(4);
+    // }
+    // romtime::println!(
+    //     "[mcu-rom] Done sending RI_DOWNLOAD_FIRMWARE command: status {}",
+    //     HexWord(u32::from(
+    //         soc_manager.soc_mbox().status().read().mbox_fsm_ps()
+    //     ))
+    // );
+    // {
+    //     // drop this to release the lock
+    //     if let Err(err) = soc_manager.finish_mailbox_resp(8, 8) {
+    //         match err {
+    //             CaliptraApiError::MailboxCmdFailed(code) => {
+    //                 romtime::println!(
+    //                     "[mcu-rom] Error finishing mailbox command: {}",
+    //                     HexWord(code)
+    //                 );
+    //             }
+    //             _ => {
+    //                 romtime::println!("[mcu-rom] Error finishing mailbox command");
+    //             }
+    //         }
+    //         fatal_error(5);
+    //     }
+    // };
+
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
+    romtime::println!("grabbing mbox lock");
+    let lock = u32::from(soc_manager.soc_mbox().lock().read()); // read to lock the mbox
+    romtime::println!("mbox lock: {}", HexWord(lock));
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
+    romtime::println!("Write command");
+    soc_manager.soc_mbox().cmd().write(|_| 0x5249_4644);
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
+    romtime::println!("Write dlen");
+    soc_manager.soc_mbox().dlen().write(|_| 0u32.into());
     // unsafe { core::ptr::write_volatile(0xa412_000c as *mut u32, 3) };
-    // // romtime::println!(
-    // //     "mbox status: {}",
-    // //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    // // );
-    // // romtime::println!("Write execute");
-    // soc_manager.soc_mbox().execute().write(|_| 1u32.into());
-    // romtime::println!(
-    //     "mbox status: {}",
-    //     HexWord(u32::from(soc_manager.soc_mbox().status().read()))
-    // );
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
+    romtime::println!("Write execute");
+    soc_manager.soc_mbox().execute().write(|_| 1u32.into());
+    romtime::println!(
+        "mbox status: {}",
+        HexWord(u32::from(soc_manager.soc_mbox().status().read()))
+    );
 
     romtime::println!("[mcu-rom] Starting recovery flow");
     let mut i3c = I3c::new(i3c_base);

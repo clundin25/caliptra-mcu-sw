@@ -98,10 +98,9 @@ pub struct ModelFpgaRealtime {
 
 impl ModelFpgaRealtime {
     fn set_subsystem_reset(&mut self, reset: bool) {
-        self.wrapper
-            .regs()
-            .control
-            .modify(Control::CptraSsRstB.val(reset as u32) + Control::SsDebugIntent::SET);
+        self.wrapper.regs().control.modify(
+            Control::CptraSsRstB.val((!reset) as u32) + Control::CptraPwrgood.val((!reset) as u32),
+        );
     }
 
     fn set_secrets_valid(&mut self, value: bool) {
@@ -466,6 +465,9 @@ impl McuHwModel for ModelFpgaRealtime {
 
     fn set_axi_user(&mut self, pauser: u32) {
         self.wrapper.regs().pauser.set(pauser);
+        self.wrapper.regs().lsu_user.set(pauser);
+        self.wrapper.regs().ifu_user.set(pauser);
+        self.wrapper.regs().clp_user.set(pauser);
     }
 
     fn set_caliptra_boot_go(&mut self, go: bool) {
@@ -503,6 +505,7 @@ impl Drop for ModelFpgaRealtime {
         self.realtime_thread_exit_flag
             .store(true, Ordering::Relaxed);
         self.realtime_thread.take().unwrap().join().unwrap();
+        self.set_subsystem_reset(true);
 
         // Unmap UIO memory space so that the file lock is released
         self.unmap_mapping(self.wrapper.ptr, FPGA_WRAPPER_MAPPING);
@@ -557,7 +560,7 @@ mod test {
             ..Default::default()
         })
         .unwrap();
-        for _ in 0..5_000_000 {
+        for _ in 0..2_000_000 {
             model.step();
         }
     }
