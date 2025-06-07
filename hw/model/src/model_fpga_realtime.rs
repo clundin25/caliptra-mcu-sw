@@ -29,7 +29,7 @@ const OTP_MAPPING: (usize, usize) = (1, 4);
 
 // Set to core_clk cycles per ITRNG sample.
 const ITRNG_DIVISOR: u32 = 400;
-const DEFAULT_AXI_PAUSER: u32 = 0x1;
+const DEFAULT_AXI_PAUSER: u32 = 0xcccc_cccc;
 
 // use the virtual target dynamic address for the recovery target
 const recovery_target_addr: u8 = 0x3b;
@@ -105,6 +105,8 @@ pub struct ModelFpgaRealtime {
     from_bmc: mpsc::Receiver<Event>,
     to_bmc: mpsc::Sender<Event>,
     recovery_fifo_blocks: Vec<Vec<u8>>,
+    bmc_step_counter: usize,
+    i3c_target: &'static i3c::regs::I3c,
 }
 
 impl ModelFpgaRealtime {
@@ -315,18 +317,38 @@ impl ModelFpgaRealtime {
         if !self.recovery_started {
             return;
         }
-        self.bmc.step();
+
+        self.bmc_step_counter += 1;
 
         // check if we need to fill the recovey FIFO
-        if !self.recovery_fifo_blocks.is_empty() {
-            let fifo_status =
-                self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
-            if fifo_status[0] & 1 == 0 {
-                // fifo is empty, send a block
-                let chunk = self.recovery_fifo_blocks.pop().unwrap();
-                self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoData, &chunk);
+        if self.bmc_step_counter % 1000 == 0 {
+            if !self.recovery_fifo_blocks.is_empty() {
+                let fifo_status =
+                    self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
+                let empty = fifo_status[0] & 1 == 1;
+                let full = fifo_status[0] & 2 == 2;
+                println!(
+                    "FIFO status: empty {} full {}, status {:x?}",
+                    empty, full, fifo_status
+                );
+                // while empty or not full, send
+                if fifo_status[0] & 1 == 1 || fifo_status[0] & 2 == 0 {
+                    // fifo is empty, send a block
+                    let chunk = self.recovery_fifo_blocks.pop().unwrap();
+                    println!("Sending block ({} left)", self.recovery_fifo_blocks.len());
+                    self.recovery_block_write_request(
+                        RecoveryCommandCode::IndirectFifoData,
+                        &chunk,
+                    );
+                }
             }
         }
+
+        // don't run the BMC every time as it can spam requests
+        if self.bmc_step_counter < 1_000_000 || self.bmc_step_counter % 100_000 != 0 {
+            return;
+        }
+        self.bmc.step();
 
         // we need to translate from the BMC events to the I3C controller block reads and writes
         let Ok(event) = self.from_bmc.try_recv() else {
@@ -342,7 +364,7 @@ impl ModelFpgaRealtime {
                 target_addr,
                 command_code,
             } => {
-                println!("From BMC: Recovery block read request {:?}", command_code);
+                //println!("From BMC: Recovery block read request {:?}", command_code);
 
                 let payload = self.recovery_block_read_request(command_code);
 
@@ -371,7 +393,7 @@ impl ModelFpgaRealtime {
                 command_code,
                 payload,
             } => {
-                println!("Recovery block write request: {:?}", command_code);
+                //println!("Recovery block write request: {:?}", command_code);
 
                 self.recovery_block_write_request(command_code, &payload);
             }
@@ -384,8 +406,11 @@ impl ModelFpgaRealtime {
                 ctrl.extend_from_slice(&len);
 
                 println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
+                // let fifo_status =
+                //     self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
+
                 self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoCtrl, &ctrl);
-                self.recovery_fifo_blocks = image.chunks(128).map(|chunk| chunk.to_vec()).collect();
+                self.recovery_fifo_blocks = image.chunks(256).map(|chunk| chunk.to_vec()).collect();
                 self.recovery_fifo_blocks.reverse(); // reverse so we can pop from the end
             }
             _ => todo!(),
@@ -445,17 +470,17 @@ impl ModelFpgaRealtime {
 
         let recovery_command_code = Self::command_code_to_u8(command);
 
-        println!(
-            "Sending write to target: 0x{:x} to start recovery block read (with no termination)",
-            recovery_command_code
-        );
+        // println!(
+        //     "Sending write to target: 0x{:x} to start recovery block read (with no termination)",
+        //     recovery_command_code
+        // );
         assert!(
             self.i3c_controller
                 .master_send_polled(&mut cmd, &[recovery_command_code], 1)
                 .is_ok(),
             "Failed to ack write message sent to target"
         );
-        println!("Acknowledge received");
+        // println!("Acknowledge received");
 
         // then we send a private read for the minimum length
         let len_range = Self::command_code_to_len(command);
@@ -464,20 +489,20 @@ impl ModelFpgaRealtime {
         cmd.tid = 0;
         cmd.pec = 0;
         cmd.cmd_type = 1;
-        println!(
-            "Starting private read from target for {} bytes with repeated start",
-            len_range.0
-        );
+        // println!(
+        //     "Starting private read from target for {} bytes with repeated start",
+        //     len_range.0
+        // );
         self.i3c_controller
             .master_recv(&mut cmd, len_range.0 + 2)
             .expect("Failed to receive ack from target");
-        println!("Acknowledge received");
+        // println!("Acknowledge received");
 
         // read in the length, lsb then msb
-        println!(
-            "Reading the minimum block length ({}+ bytes expected)",
-            len_range.0
-        );
+        // println!(
+        //     "Reading the minimum block length ({}+ bytes expected)",
+        //     len_range.0
+        // );
         let resp = self
             .i3c_controller
             .master_recv_finish(
@@ -490,7 +515,7 @@ impl ModelFpgaRealtime {
         if resp.len() < 2 {
             panic!("Expected to read at least 2 bytes from target for recovery block length");
         }
-        println!("Read from target {:02x?}", resp);
+        // println!("Read from target {:02x?}", resp);
         let len = u16::from_le_bytes([resp[0], resp[1]]);
         if len < len_range.0 || len > len_range.1 {
             panic!(
@@ -500,14 +525,14 @@ impl ModelFpgaRealtime {
         }
         let len = len as usize;
         let left = len - (resp.len() - 2);
-        println!("Expect to read {} bytes from target ({} more)", len, left);
+        // println!("Expect to read {} bytes from target ({} more)", len, left);
         // read the rest of the bytes
         if left > 0 {
             // TODO: if the length is more than the minimum we need to abort and restart with the correct value
             // because the xi3c controller does not support variable reads.
             todo!()
         }
-        println!("Got block read back from target: {:x?}", &resp[2..]);
+        // println!("Got block read back from target: {:x?}", &resp[2..]);
         resp[2..].to_vec()
     }
 
@@ -525,11 +550,11 @@ impl ModelFpgaRealtime {
 
         let recovery_command_code = Self::command_code_to_u8(command);
 
-        println!(
-            "Sending write to target: 0x{:x} + 2 bytes length + {} bytes payload",
-            recovery_command_code,
-            payload.len(),
-        );
+        // println!(
+        //     "Sending write to target: 0x{:x} + 2 bytes length + {} bytes payload",
+        //     recovery_command_code,
+        //     payload.len(),
+        // );
 
         let mut data = vec![recovery_command_code];
         data.extend_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -541,7 +566,7 @@ impl ModelFpgaRealtime {
                 .is_ok(),
             "Failed to ack write message sent to target"
         );
-        println!("Acknowledge received");
+        // println!("Acknowledge received");
     }
 }
 
@@ -596,6 +621,7 @@ impl McuHwModel for ModelFpgaRealtime {
         let realtime_thread_exit_flag = Arc::new(AtomicBool::new(true));
         let realtime_thread_exit_flag2 = realtime_thread_exit_flag.clone();
         let realtime_wrapper = wrapper.clone();
+        let i3c_target = unsafe { &*(i3c_mmio as *const i3c::regs::I3c) };
 
         let realtime_thread = Some(std::thread::spawn(move || {
             Self::realtime_thread_itrng_fn(
@@ -651,6 +677,8 @@ impl McuHwModel for ModelFpgaRealtime {
             from_bmc,
             to_bmc,
             recovery_fifo_blocks: vec![],
+            bmc_step_counter: 0,
+            i3c_target,
         };
 
         // Set generic input wires.
@@ -735,6 +763,15 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
+        println!(
+            "Mode {}",
+            if (m.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
+                "subsystem"
+            } else {
+                "passive"
+            }
+        );
+
         // TODO: remove this when we can finish subsystem/active mode
         // println!("Writing MCU firmware to SRAM");
         // // For now, we copy the runtime directly into the SRAM
@@ -811,13 +848,12 @@ impl McuHwModel for ModelFpgaRealtime {
 impl Drop for ModelFpgaRealtime {
     fn drop(&mut self) {
         self.realtime_thread_exit_flag
-            .store(true, Ordering::Relaxed);
+            .store(false, Ordering::Relaxed);
         self.realtime_thread.take().unwrap().join().unwrap();
         self.i3c_controller.off();
 
         // ensure that we put the I3C target into a state where we will reset it properly
-        let i3c_target = unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) };
-        i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
+        self.i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
         self.set_subsystem_reset(true);
 
         // Unmap UIO memory space so that the file lock is released
@@ -847,8 +883,15 @@ mod test {
             Some(&mcu_config_fpga::FPGA_MEMORY_MAP),
         )
         .expect("Could not build MCU runtime");
-        let mut caliptra_builder =
-            mcu_builder::CaliptraBuilder::new(true, None, None, None, None, None, None);
+        let mut caliptra_builder = mcu_builder::CaliptraBuilder::new(
+            true,
+            None,
+            None,
+            None,
+            None,
+            Some(mcu_runtime.into()),
+            None,
+        );
         let caliptra_rom = caliptra_builder
             .get_caliptra_rom()
             .expect("Could not build Caliptra ROM");
@@ -881,7 +924,7 @@ mod test {
         .unwrap();
         println!("Waiting on I3C target to be configured");
         let mut xi3c_configured = false;
-        for _ in 0..2_000_000 {
+        for _ in 0..100_000_000 {
             model.step();
             if !xi3c_configured && model.i3c_target_configured() {
                 xi3c_configured = true;
@@ -891,5 +934,6 @@ mod test {
                 model.start_recovery_bmc();
             }
         }
+        println!("Ending");
     }
 }

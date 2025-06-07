@@ -700,11 +700,11 @@ impl Controller {
                 space_index += 1;
             }
         }
-        println!("Waiting for master_send_polled response");
+        //println!("Waiting for master_send_polled response");
         if self.get_response() != 0 {
             Err(XST_SEND_ERROR)
         } else {
-            println!("master_send_polled OK");
+            //println!("master_send_polled OK");
             Ok(())
         }
     }

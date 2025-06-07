@@ -239,16 +239,20 @@ pub fn rom_start() {
     romtime::println!("[mcu-rom] Setting Caliptra mailbox user 0 to 1");
 
     // TODO: read this value from somewhere
-    soc.registers.cptra_mbox_valid_axi_user[0].set(1);
+    soc.registers.cptra_mbox_valid_axi_user[0].set(0xcccc_cccc);
     romtime::println!("[mcu-rom] Locking Caliptra mailbox user 0");
     soc.registers.cptra_mbox_axi_user_lock[0].set(1);
 
     romtime::println!("[mcu-rom] Setting TRNG user");
-    soc.registers.cptra_trng_valid_axi_user.set(1);
+    soc.registers.cptra_trng_valid_axi_user.set(0xcccc_cccc);
     romtime::println!("[mcu-rom] Locking TRNG user");
     soc.registers.cptra_trng_axi_user_lock.set(1);
     romtime::println!("[mcu-rom] Setting DMA user");
-    soc.registers.ss_caliptra_dma_axi_user.set(1);
+    soc.registers.ss_caliptra_dma_axi_user.set(0xcccc_cccc);
+
+    romtime::println!("[mcu-rom] Initialize I3C");
+    let mut i3c = I3c::new(i3c_base);
+    configure_i3c(&mut i3c, 0x3a, true);
 
     soc.populate_fuses(&fuses);
     soc.fuse_write_done();
@@ -317,7 +321,6 @@ pub fn rom_start() {
     };
 
     romtime::println!("[mcu-rom] Starting recovery flow");
-    let mut i3c = I3c::new(i3c_base);
     recovery_flow(&mut mci, &mut i3c);
     romtime::println!("[mcu-rom] Recovery flow complete");
 
@@ -345,8 +348,6 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
     // TODO: implement Caliptra boot flow
 
     // TODO: read this value from the fuses (according to the spec)?
-    romtime::println!("[mcu-rom] Initialize I3C");
-    configure_i3c(i3c, 0x3a, true);
     // i3c.registers.sec_fw_recovery_if_device_id_0.set(0x3a); // placeholder address for now
     // i3c.registers.stdby_ctrl_mode_stby_cr_device_addr.set(0x3a);
 
@@ -377,6 +378,23 @@ fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
     }
 
     romtime::println!("TTI QUEUE_SIZE: {:x}", regs.tti_tti_queue_size.get());
+
+    // Set PROT_CAP early so that the BMC won't abort the recovery flow.
+    // if recovery_enabled {
+    //     romtime::println!("Enabling recovery interface prot cap");
+    //     regs.sec_fw_recovery_if_prot_cap_2.write(
+    //         ProtCap2::RecProtVersion.val(0x101)
+    //             + ProtCap2::AgentCaps.val(
+    //                 (1 << 0) | // device id
+    //             (1 << 4) | // device status
+    //             (1 << 5) | // indirect ctrl
+    //             (1 << 7), // push c-image support
+    //             ),
+    //     );
+    //     regs.sec_fw_recovery_if_prot_cap_3.write(
+    //         ProtCap3::NumOfCmsRegions.val(1) + ProtCap3::MaxRespTime.val(20), // 1.048576 second maximum response time
+    //     );
+    // }
 
     // initialize timing registers
     romtime::println!("Initialize timing registers");
@@ -495,11 +513,11 @@ fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
     //         + InterruptEnable::RxDataThldStatEn::SET
     //         + InterruptEnable::TxDataThldStatEn::SET,
     // );
-    regs.tti_interrupt_enable.set(0xffff_ffff);
-    romtime::println!(
-        "I3C target interrupt enable {:x}",
-        regs.tti_interrupt_enable.get()
-    );
+    // regs.tti_interrupt_enable.set(0xffff_ffff);
+    // romtime::println!(
+    //     "I3C target interrupt enable {:x}",
+    //     regs.tti_interrupt_enable.get()
+    // );
 
     romtime::println!(
         "I3C target status {:x}, interrupt status {:x}",
@@ -507,32 +525,19 @@ fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
         regs.tti_interrupt_status.get()
     );
 
-    if recovery_enabled {
-        romtime::println!("Enabling recovery interface");
-        regs.sec_fw_recovery_if_prot_cap_2.write(
-            ProtCap2::RecProtVersion.val(0x101)
-                + ProtCap2::AgentCaps.val(
-                    (1 << 0) | // device id
-                (1 << 4) | // device status
-                (1 << 5) | // indirect ctrl
-                (1 << 7), // push c-image support
-                ),
-        );
-        regs.sec_fw_recovery_if_prot_cap_3.write(
-            ProtCap3::NumOfCmsRegions.val(1) + ProtCap3::MaxRespTime.val(20), // 1.048576 second maximum response time
-        );
-        regs.sec_fw_recovery_if_device_status_0
-            .write(DeviceStatus0::DevStatus.val(0x3)); // ready to accept recovery image
-    }
+    // if recovery_enabled {
+    // regs.sec_fw_recovery_if_device_status_0
+    //     .write(DeviceStatus0::DevStatus.val(0x3)); // ready to accept recovery image
+    //}
 
-    romtime::println!(
-        "I3C recovery prot_cap 2 and 3: {:08x} {:08x}",
-        regs.sec_fw_recovery_if_prot_cap_2.get(),
-        regs.sec_fw_recovery_if_prot_cap_3.get(),
-    );
-    romtime::println!(
-        "I3C recovery device status: {:x}",
-        regs.sec_fw_recovery_if_device_status_0
-            .read(DeviceStatus0::DevStatus)
-    );
+    // romtime::println!(
+    //     "I3C recovery prot_cap 2 and 3: {:08x} {:08x}",
+    //     regs.sec_fw_recovery_if_prot_cap_2.get(),
+    //     regs.sec_fw_recovery_if_prot_cap_3.get(),
+    // );
+    // romtime::println!(
+    //     "I3C recovery device status: {:x}",
+    //     regs.sec_fw_recovery_if_device_status_0
+    //         .read(DeviceStatus0::DevStatus)
+    // );
 }
