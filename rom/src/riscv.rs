@@ -236,7 +236,7 @@ pub fn rom_start() {
     while !soc.ready_for_fuses() {}
 
     romtime::println!("[mcu-rom] Writing fuses to Caliptra");
-    romtime::println!("[mcu-rom] Setting Caliptra mailbox user 0 to 1");
+    romtime::println!("[mcu-rom] Setting Caliptra mailbox user 0 to CCCCCCCC");
 
     // TODO: read this value from somewhere
     soc.registers.cptra_mbox_valid_axi_user[0].set(0xcccc_cccc);

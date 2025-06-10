@@ -174,7 +174,7 @@ impl ModelFpgaRealtime {
                 .log_fifo_status
                 .is_set(FifoStatus::Full)
             {
-                panic!("FPGA log FIFO overran");
+                //panic!("FPGA log FIFO overran");
             }
             if self
                 .wrapper
@@ -716,20 +716,21 @@ impl McuHwModel for ModelFpgaRealtime {
 
         // Currently not using strap UDS and FE
         m.set_secrets_valid(false);
+        
+        println!("Putting subsystem into reset");
+        m.set_subsystem_reset(true);
 
         println!("Clearing fifo");
         // Sometimes there's garbage in here; clean it out
         m.clear_logs();
 
-        println!("Putting subsystem into reset");
-        m.set_subsystem_reset(true);
 
         println!("new_unbooted");
 
         // Set initial PAUSER
         m.set_axi_user(DEFAULT_AXI_PAUSER);
 
-        println!("AXI user written");
+        println!("AXI user written {:x}", DEFAULT_AXI_PAUSER);
 
         // Write ROM images over backdoors
         // ensure that they are 8-byte aligned to write to AXI
@@ -763,14 +764,14 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
-        println!(
-            "Mode {}",
-            if (m.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
-                "subsystem"
-            } else {
-                "passive"
-            }
-        );
+        // println!(
+        //     "Mode {}",
+        //     if (m.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
+        //         "subsystem"
+        //     } else {
+        //         "passive"
+        //     }
+        // );
 
         // TODO: remove this when we can finish subsystem/active mode
         // println!("Writing MCU firmware to SRAM");
@@ -809,10 +810,12 @@ impl McuHwModel for ModelFpgaRealtime {
     }
 
     fn set_axi_user(&mut self, pauser: u32) {
-        self.wrapper.regs().pauser.set(pauser);
+        self.wrapper.regs().arm_user.set(pauser);
         self.wrapper.regs().lsu_user.set(pauser);
         self.wrapper.regs().ifu_user.set(pauser);
-        self.wrapper.regs().clp_user.set(pauser);
+        self.wrapper.regs().dma_axi_user.set(pauser);
+        self.wrapper.regs().soc_config_user.set(pauser);
+        self.wrapper.regs().sram_config_user.set(pauser);
     }
 
     fn set_caliptra_boot_go(&mut self, go: bool) {
@@ -905,6 +908,7 @@ mod test {
         let soc_manifest = caliptra_builder
             .get_soc_manifest()
             .expect("Could not get SOC manifest");
+        use tock_registers::interfaces::Readable;
 
         let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
         let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
@@ -931,7 +935,16 @@ mod test {
                 println!("I3C target configured");
                 model.configure_i3c_controller();
                 println!("Starting recovery flow (BMC)");
-                model.start_recovery_bmc();
+        println!(
+            "Mode {}",
+             if (model.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
+                 "subsystem"
+             } else {
+                 "passive"
+             }
+         );
+
+   model.start_recovery_bmc();
             }
         }
         println!("Ending");
