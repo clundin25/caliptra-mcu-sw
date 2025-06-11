@@ -55,14 +55,16 @@ sequenceDiagram
 ```mermaid
 classDiagram
     direction RL
-    MCTP Transport <|--|> SPDMResponder: processRequest() / sendResponse()
-    SecureSessionMgr <|-- SPDMResponder: processSecureMessage()
-    TranscriptMgr <|-- SPDMResponder
+    MCTP Transport <|--|> SpdmContext: processRequest() / sendResponse()
+    SecureSessionMgr <|-- SpdmContext: processSecureMessage()
+    TranscriptMgr <|-- SpdmContext
     TranscriptMgr <|-- SecureSessionMgr
-    class SPDMResponder{
+    class SpdmContext{
       - transcriptMgr
+      - deviceCertStore
       - sessionMgr
-      + processRequest()
+      + new()
+      + process_message()
       + sendResponse()
     }
     class SecureSessionMgr {
@@ -72,6 +74,8 @@ classDiagram
     class TranscriptMgr{
       +TraitMethods
     }
+
+
 ```
 
 ## SPDM Responder
@@ -96,27 +100,27 @@ The SPDM Responder supports the following messages:
 
 ### Responder Interface
 ```Rust
-pub struct SpdmResponder<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> {
+pub struct SpdmResponder<T: SpdmTransport, C: SpdmCertStore> {
     transport: &'a dyn T,
     transcript_manager: TranscriptManager,
-    session_manager: &'a dyn V,
+    session_manager: SpdmSecureSessionManager,
     cert_store: &'a dyn C,
     measurements: SpdmMeasurements,
 }
 
-impl<T: SpdmTransport, V: SpdmSecureSessionManager, C: SpdmCertStore> SpdmResponder<T, V, C, M> {
-    pub fn new(transport: T, session_manager: V, cert_store: &'a dyn C) -> Self {
+impl<T: SpdmTransport, C: SpdmCertStore> SpdmResponder<T, C> {
+    pub fn new(transport: T, cert_store: &'a dyn C) -> Self {
         SpdmResponder {
             transport,
             transcript_manager : TranscriptManager::new(),
-            session_manager,
+            session_manager : SpdmSecureSessionManager::new(),
             cert_store,
             measurements: SpdmMeasurements::default(),
         }
     }
 
-    pub async fn handle_request(&mut self, request_info: u32) {
-        // request_info: Bits[16:23] Message Type [SPDM | Secure SPDM]
+    pub async fn process_message(&mut self, msg_buf: &mut MessageBuf<'a>) -> SpdmResult<()> {
+        // receive a request from the transport and process
     }
 }
 
@@ -468,7 +472,7 @@ impl SpdmMeasurements {
 
 
 ### Freeform Measurement Manifest
-The freeform measurement manifest is a device specific. In case of Caliptra, the measurement value of freeform measurement manifest contains the response of `QUOTE_PCR` command in raw-bit-stream format. The Freeform measurement manifest implements the `SpdmMeasurements` trait to provide the interface to retrieve the measurements from the device in the DMTF measurement specification format. The measurement block/record format is as shown below:
+The freeform measurement manifest is device-specific. For Caliptra, the measurement value of the freeform measurement manifest contains the raw bitstream response of the `QUOTE_PCR` command. The Freeform measurement manifest implements the `SpdmMeasurements` interface, enabling retrieval of device measurements in the DMTF measurement specification format. The structure of the measurement block/record is described below:
 
 **Table: Measurement block/record for Freeform Measurement Manifest**
 | Field                                 | Value / Description                                                      
@@ -546,30 +550,30 @@ sequenceDiagram
     participant Requester
     participant Responder
     Requester->>+Responder: GET_MEASUREMENTS <br/>Measurement type raw bits
-    Note right of Responder: MEASUREMENTS Response too large <br/> DataTransferSize = 1024 bytes<br/> Response size = 6629 bytes
+    Note right of Responder: MEASUREMENTS Response too large <br/> DataTransferSize = 1023 bytes<br/> Response size = 6629 bytes
     Note right of Responder: Initializes `LargeResponseCtx` with <br/> `MeasurementsResponse` instance.
     Note right of Responder: Gets handle = 17 from initialization 
     Responder-->>-Requester: ERROR<br/> ErrorCode = LargeResponse<br/> Handle = 17
 
     alt Chunk 0
         Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 0
-        Note right of Responder: Checks if `chunk` is in use for handle 17 <br/> Computes chunk size = 1023 - 12 = 1011 bytes <br/> chunk0 size = 1023 - 16 = 1007 bytes
-        Note right of Responder: Invokes `chunk_get()` with offset = 0 <br/> and chunk size = 1007 bytes on the enum object
+        Note right of Responder: Verifies that `chunk` is in use for handle 17 <br/> Computes chunk size = 1023 - 12 = 1011 bytes <br/> chunk0 size = 1023 - 16 = 1007 bytes
+        Note right of Responder: Invokes `chunk_get()` with offset = 0 <br/> and chunk size = 1007 bytes
         Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 0<br/>Chunk Size = 1007 bytes<br/> Chunk 0 Data
     end
 
     alt Chunk 1
         Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 1
-        Note right of Responder: Invokes `chunk_get()` with offset = 1007 <br/> and chunk size = 1011 bytes on the enum object
+        Note right of Responder: Invokes `chunk_get()` with offset = 1007 <br/> and chunk size = 1011 bytes
         Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 1<br/>Chunk Size = 1011 bytes<br/> Chunk 1 Data
     end
 
     Note over Requester,Responder: .... <br/> 
     alt Last Chunk
         Requester->>+Responder: CHUNK_GET<br/> Handle = 17<br/> Chunk Sequence = 6
-        Note right of Responder: Invokes `chunk_get()` with offset = 6025 <br/> and chunk size = 567 bytes on the enum object
+        Note right of Responder: Invokes `chunk_get()` with offset = 6025 <br/> and chunk size = 567 bytes
         Responder-->>-Requester: CHUNK_RESPONSE<br/> Handle = 17 <br/>Chunk Sequence = 6<br/>Chunk Size = 567 bytes<br/> Chunk 6 Data<br/> Last Chunk
-        Note right of Responder: Last chunk, reset the `chunk_get` context for handle 17,<br/> increment the next handle to 18
+        Note right of Responder: Last chunk, reset the `LargeResponseCtx`,<br/> increment the next handle to 18
     end
 ```
 
@@ -581,20 +585,6 @@ enum `LargeResponse` is used to represent the large response message being trans
 pub(crate) enum LargeResponse{
     Measurements(MeasurementsResponse),
 }
-
-impl LargeResponse {
-    /// Get the chunk of the large message response from the specified offset
-    /// 
-    /// # Arguments
-    /// * `ctx` - The context containing the SPDM responder state
-    /// * `offset` - The offset in the large message response to start reading from
-    /// * `chunk_buf` - The buffer to store the chunk data
-    /// 
-    /// # Returns
-    /// Returns `ChunkResult<()>` indicating success or error on failure
-    pub(crate) async fn get_chunk<'a>(&self, ctx: &mut SpdmContext<'a>, offset: usize, chunk_buf: &mut [u8]) -> ChunkResult<()>;
-}
-
 
 /// Manages the context for ongoing large message responses
 pub(crate) struct LargeResponseCtx {
@@ -620,14 +610,21 @@ impl LargeResponseCtx {
     /// # Returns
     /// A `ChunkResult` containing the chunk handle(u8) if successful
     pub fn init(&mut self, large_rsp: LargeMsgResponse, large_rsp_size: usize) -> ChunkResult<u8>;
+    
+    /// Is large message response in progress
+    ///
+    /// # Returns
+    /// Returns `true` if a large response is currently in progress, otherwise `false`
+    // Is large message response in progress
+    pub fn in_progress(&self) -> bool;
 }
 ```
 
 ### Large Request Transfer
 Large request messages, such as `SET_CERTIFICATE` requests, are also divided into smaller chunks. 
 
-For these large requests, the requester transmits a `CHUNK_SEND` message containing the unique `Handle` associated with the request and the relevant information for chunk 0. The responder then initializes the `LargeRequestCtx` using the provided chunk data and provides the `CHUNK_SEND_ACK` response. This is followed by a series of `CHUNK_SEND` and `CHUNK_SEND_ACK` until the last chunk. Upon identifying the type of large request from the chunks, the appropriate request handler is invoked and is provided as response to the last `CHUNK_SEND` request from requester. 
-TBD
+For these large requests, the requester transmits a `CHUNK_SEND` message containing the unique `Handle` associated with the request and the relevant information for chunk 0. The responder then initializes the `LargeRequestCtx` using the provided chunk data and provides the `CHUNK_SEND_ACK` response. This is followed by a series of `CHUNK_SEND` and `CHUNK_SEND_ACK` until the last chunk is transmitted. Upon identifying the type of large request from the chunks, the appropriate request handler is invoked and is provided as response to the last `CHUNK_SEND` request from requester. 
+**TBD**
 
 
 
