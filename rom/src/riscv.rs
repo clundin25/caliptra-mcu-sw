@@ -23,6 +23,7 @@ use core::{fmt::Write, hint::black_box, ptr::addr_of};
 use registers_generated::i3c::bits::DeviceStatus0;
 use registers_generated::i3c::bits::HcControl::BusEnable;
 use registers_generated::i3c::bits::HcControl::ModeSelector;
+use registers_generated::i3c::bits::IndirectFifoCtrl0;
 use registers_generated::i3c::bits::ProtCap2;
 use registers_generated::i3c::bits::ProtCap3;
 use registers_generated::i3c::bits::QueueThldCtrl;
@@ -215,7 +216,29 @@ pub fn rom_start() {
             }
         }
     } else {
-        Fuses::default()
+        let mut vendor = [
+            0xb1, 0x7c, 0xa8, 0x77, 0x66, 0x66, 0x57, 0xcc, 0xd1, 0x00, 0xe6, 0x92, 0x6c, 0x72,
+            0x06, 0xb6, 0x0c, 0x99, 0x5c, 0xb6, 0x89, 0x92, 0xc6, 0xc9, 0xba, 0xef, 0xce, 0x72,
+            0x8a, 0xf0, 0x54, 0x41, 0xde, 0xe1, 0xff, 0x41, 0x5a, 0xdf, 0xc1, 0x87, 0xe1, 0xe4,
+            0xed, 0xb4, 0xd3, 0xb2, 0xd9, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        // swizzle
+        for i in (0..64).step_by(4) {
+            let a = vendor[i];
+            let b = vendor[i + 1];
+            let c = vendor[i + 2];
+            let d = vendor[i + 3];
+            vendor[i] = d;
+            vendor[i + 1] = c;
+            vendor[i + 2] = b;
+            vendor[i + 3] = a;
+        }
+
+        Fuses {
+            vendor_hashes_manuf_partition: vendor,
+            ..Default::default()
+        }
     };
 
     let flow_status = soc.flow_status();
@@ -353,6 +376,15 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
 
     romtime::println!("[mcu-rom] MCI flow status: {}", HexWord(mci.flow_status()));
 
+    romtime::println!("Writing a few bytes to the beginning of SRAM");
+    for i in 0..16 {
+        let x = 0x01020300 + i;
+        let addr = unsafe { MCU_MEMORY_MAP.sram_offset } + i * 4;
+        romtime::println!("Writing address {:x} <= {:08x}", addr, x);
+        unsafe { core::ptr::write_volatile(addr as *mut u32, x) };
+        assert_eq!(unsafe { core::ptr::read_volatile(addr as *const u32) }, x);
+    }
+
     // TODO: what value are we looking for
     romtime::println!("[mcu-rom] Waiting for firmware to be loaded");
     let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0xfff0) as *const u32 };
@@ -403,18 +435,20 @@ fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
     // values of all of these set to 0-5 seem to work for receiving data correctly
     // 6-7 gets corrupted data but will ACK
     // 8+ will fail to ACK
-    regs.soc_mgmt_if_t_r_reg.set(0); // rise time of both SDA and SCL in clock units
-    regs.soc_mgmt_if_t_f_reg.set(0); // rise time of both SDA and SCL in clock units
+    //
+    let clocks = 0;
+    regs.soc_mgmt_if_t_r_reg.set(clocks); // rise time of both SDA and SCL in clock units
+    regs.soc_mgmt_if_t_f_reg.set(clocks); // rise time of both SDA and SCL in clock units
 
     // if this is set to 6+ then ACKs start failing
-    regs.soc_mgmt_if_t_hd_dat_reg.set(0); // data hold time in clock units
-    regs.soc_mgmt_if_t_su_dat_reg.set(0); // data setup time in clock units
+    regs.soc_mgmt_if_t_hd_dat_reg.set(clocks); // data hold time in clock units
+    regs.soc_mgmt_if_t_su_dat_reg.set(clocks); // data setup time in clock units
 
-    regs.soc_mgmt_if_t_high_reg.set(0); // High period of the SCL in clock units
-    regs.soc_mgmt_if_t_low_reg.set(0); // Low period of the SCL in clock units
-    regs.soc_mgmt_if_t_hd_sta_reg.set(0); // Hold time for (repeated) START in clock units
-    regs.soc_mgmt_if_t_su_sta_reg.set(0); // Setup time for repeated START in clock units
-    regs.soc_mgmt_if_t_su_sto_reg.set(0); // Setup time for STOP in clock units
+    regs.soc_mgmt_if_t_high_reg.set(clocks); // High period of the SCL in clock units
+    regs.soc_mgmt_if_t_low_reg.set(clocks); // Low period of the SCL in clock units
+    regs.soc_mgmt_if_t_hd_sta_reg.set(clocks); // Hold time for (repeated) START in clock units
+    regs.soc_mgmt_if_t_su_sta_reg.set(clocks); // Setup time for repeated START in clock units
+    regs.soc_mgmt_if_t_su_sto_reg.set(clocks); // Setup time for STOP in clock units
 
     // set this to 1 microsecond
     regs.soc_mgmt_if_t_free_reg.set(200); // Bus free time in clock units before doing IBI
@@ -499,6 +533,11 @@ fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {
         "TTI data buffer thresholds ctrl: {:x}",
         regs.tti_tti_data_buffer_thld_ctrl.get()
     );
+
+    // reset the FIFO as there might be junk in it
+    regs.sec_fw_recovery_if_indirect_fifo_ctrl_0
+        .write(IndirectFifoCtrl0::Reset.val(1));
+    regs.sec_fw_recovery_if_indirect_fifo_ctrl_1.set(0);
 
     romtime::println!("Enable PHY to the bus");
     // enable the PHY connection to the bus

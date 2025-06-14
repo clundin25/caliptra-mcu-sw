@@ -195,7 +195,20 @@ impl CaliptraBuilder {
             &crypto.sha384_digest(bundle.manifest.preamble.vendor_pub_key_info.as_bytes())?,
         )
         .encode_hex();
+        println!(
+            "Vendor signature r-value: {:08x?}",
+            &bundle.manifest.preamble.vendor_sigs.ecc_sig.r
+        );
         let fw_bytes = bundle.to_bytes()?;
+        let hash: String = from_hw_format(&crypto.sha384_digest(&fw_bytes)?).encode_hex();
+        println!("Image hash: {}", hash);
+        let hash: String =
+            from_hw_format(&crypto.sha384_digest(bundle.manifest.as_bytes())?).encode_hex();
+        println!("Image manifest digest = {}", hash);
+        let hash: String =
+            from_hw_format(&crypto.sha384_digest(bundle.manifest.preamble.as_bytes())?)
+                .encode_hex();
+        println!("Image preamble digest = {}", hash);
         let path = PROJECT_ROOT.join("target").join("caliptra-fw-bundle.bin");
         std::fs::write(&path, fw_bytes)?;
         Ok((path, vendor_pk_hash))

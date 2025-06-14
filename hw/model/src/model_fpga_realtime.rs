@@ -107,6 +107,8 @@ pub struct ModelFpgaRealtime {
     recovery_fifo_blocks: Vec<Vec<u8>>,
     bmc_step_counter: usize,
     i3c_target: &'static i3c::regs::I3c,
+    blocks_sent: usize,
+    chk: u32,
 }
 
 impl ModelFpgaRealtime {
@@ -278,6 +280,10 @@ impl ModelFpgaRealtime {
         }
     }
 
+    pub fn i3c_core(&mut self) -> &i3c::regs::I3c {
+        unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) }
+    }
+
     pub fn i3c_target_configured(&mut self) -> bool {
         let i3c_target = unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) };
         i3c_target.stdby_ctrl_mode_stby_cr_device_addr.get() != 0
@@ -313,6 +319,13 @@ impl ModelFpgaRealtime {
         self.recovery_started = true;
     }
 
+    fn update_checksum(&mut self, chunk: &[u8]) {
+        assert_eq!(chunk.len(), 256);
+        for i in (0..256).step_by(4) {
+            self.chk ^= u32::from_le_bytes(chunk[i..i + 4].try_into().unwrap());
+        }
+    }
+
     fn bmc_step(&mut self) {
         if !self.recovery_started {
             return;
@@ -321,21 +334,24 @@ impl ModelFpgaRealtime {
         self.bmc_step_counter += 1;
 
         // check if we need to fill the recovey FIFO
-        if self.bmc_step_counter % 1000 == 0 {
+        if self.bmc_step_counter % 128 == 0 {
             if !self.recovery_fifo_blocks.is_empty() {
                 let fifo_status =
                     self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
                 let empty = fifo_status[0] & 1 == 1;
                 let full = fifo_status[0] & 2 == 2;
-                println!(
-                    "FIFO status: empty {} full {}, status {:x?}",
-                    empty, full, fifo_status
-                );
+                //println!(
+                //    "FIFO status: empty {} full {}, status {:x?}",
+                //    empty, full, fifo_status
+                //);
                 // while empty or not full, send
-                if fifo_status[0] & 1 == 1 || fifo_status[0] & 2 == 0 {
+                if empty {
                     // fifo is empty, send a block
                     let chunk = self.recovery_fifo_blocks.pop().unwrap();
-                    println!("Sending block ({} left)", self.recovery_fifo_blocks.len());
+                    self.update_checksum(&chunk);
+                    //println!("     BMC blocks {} checksum {:08x}", self.blocks_sent, self.chk);
+                    self.blocks_sent += 1;
+                    //println!("Sending block ({} left)", self.recovery_fifo_blocks.len());
                     self.recovery_block_write_request(
                         RecoveryCommandCode::IndirectFifoData,
                         &chunk,
@@ -345,7 +361,7 @@ impl ModelFpgaRealtime {
         }
 
         // don't run the BMC every time as it can spam requests
-        if self.bmc_step_counter < 1_000_000 || self.bmc_step_counter % 100_000 != 0 {
+        if self.bmc_step_counter < 100_000 || self.bmc_step_counter % 10_000 != 0 {
             return;
         }
         self.bmc.step();
@@ -364,7 +380,7 @@ impl ModelFpgaRealtime {
                 target_addr,
                 command_code,
             } => {
-                //println!("From BMC: Recovery block read request {:?}", command_code);
+                // println!("From BMC: Recovery block read request {:?}", command_code);
 
                 let payload = self.recovery_block_read_request(command_code);
 
@@ -405,11 +421,48 @@ impl ModelFpgaRealtime {
                 let mut ctrl = vec![0, 1];
                 ctrl.extend_from_slice(&len);
 
+                thread::sleep(Duration::from_millis(50));
                 println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
                 // let fifo_status =
                 //     self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
 
                 self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoCtrl, &ctrl);
+                let reported_len = self
+                    .i3c_core()
+                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                    .get();
+                println!("I3C core reported length: {}", reported_len);
+                if reported_len as usize != image.len() / 4 {
+                    //panic!(
+                    //    "I3C core reported length should have been {}",
+                    //    image.len() / 4
+                    //);
+                    println!(
+                        "I3C core reported length should have been {}; attempting to write directly",
+                        image.len() / 4
+                    );
+                 self
+                    .i3c_core()
+                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                    .set(image.len() as u32 / 4);
+                }
+                let reported_len = self
+                    .i3c_core()
+                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                    .get();
+                println!("I3C core reported length: {}", reported_len);
+                if reported_len as usize != image.len() / 4 {
+                    panic!(
+                        "I3C core reported length should have been {}",
+                        image.len() / 4
+                    );
+                }
+
+ 
+                let mut image = image.clone();
+                while image.len() % 256 != 0 {
+                    image.push(0);
+                }
                 self.recovery_fifo_blocks = image.chunks(256).map(|chunk| chunk.to_vec()).collect();
                 self.recovery_fifo_blocks.reverse(); // reverse so we can pop from the end
             }
@@ -679,6 +732,8 @@ impl McuHwModel for ModelFpgaRealtime {
             recovery_fifo_blocks: vec![],
             bmc_step_counter: 0,
             i3c_target,
+            blocks_sent: 0,
+            chk: 0,
         };
 
         // Set generic input wires.
@@ -716,14 +771,13 @@ impl McuHwModel for ModelFpgaRealtime {
 
         // Currently not using strap UDS and FE
         m.set_secrets_valid(false);
-        
+
         println!("Putting subsystem into reset");
         m.set_subsystem_reset(true);
 
         println!("Clearing fifo");
         // Sometimes there's garbage in here; clean it out
         m.clear_logs();
-
 
         println!("new_unbooted");
 
@@ -902,9 +956,10 @@ mod test {
             .get_caliptra_fw()
             .expect("Could not build Caliptra FW bundle");
         // TODO: pass this in to the MCU through the OTP
-        let _vendor_pk_hash = caliptra_builder
+        let vendor_pk_hash = caliptra_builder
             .get_vendor_pk_hash()
             .expect("Could not get vendor PK hash");
+        println!("Vendor PK hash: {:x?}", vendor_pk_hash);
         let soc_manifest = caliptra_builder
             .get_soc_manifest()
             .expect("Could not get SOC manifest");
@@ -928,23 +983,23 @@ mod test {
         .unwrap();
         println!("Waiting on I3C target to be configured");
         let mut xi3c_configured = false;
-        for _ in 0..100_000_000 {
+        for _ in 0..1_000_000_000 {
             model.step();
             if !xi3c_configured && model.i3c_target_configured() {
                 xi3c_configured = true;
                 println!("I3C target configured");
                 model.configure_i3c_controller();
                 println!("Starting recovery flow (BMC)");
-        println!(
-            "Mode {}",
-             if (model.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
-                 "subsystem"
-             } else {
-                 "passive"
-             }
-         );
+                println!(
+                    "Mode {}",
+                    if (model.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
+                        "subsystem"
+                    } else {
+                        "passive"
+                    }
+                );
 
-   model.start_recovery_bmc();
+                model.start_recovery_bmc();
             }
         }
         println!("Ending");
