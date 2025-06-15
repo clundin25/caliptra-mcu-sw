@@ -7,6 +7,7 @@ use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use emulator_bmc::Bmc;
 use registers_generated::i3c;
+use registers_generated::i3c::bits::DeviceStatus0;
 use registers_generated::mci::bits::Go::Go;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -105,10 +106,11 @@ pub struct ModelFpgaRealtime {
     from_bmc: mpsc::Receiver<Event>,
     to_bmc: mpsc::Sender<Event>,
     recovery_fifo_blocks: Vec<Vec<u8>>,
+    recovery_ctrl_len: usize,
+    recovery_ctrl_written: bool,
     bmc_step_counter: usize,
     i3c_target: &'static i3c::regs::I3c,
     blocks_sent: usize,
-    chk: u32,
 }
 
 impl ModelFpgaRealtime {
@@ -319,13 +321,6 @@ impl ModelFpgaRealtime {
         self.recovery_started = true;
     }
 
-    fn update_checksum(&mut self, chunk: &[u8]) {
-        assert_eq!(chunk.len(), 256);
-        for i in (0..256).step_by(4) {
-            self.chk ^= u32::from_le_bytes(chunk[i..i + 4].try_into().unwrap());
-        }
-    }
-
     fn bmc_step(&mut self) {
         if !self.recovery_started {
             return;
@@ -336,8 +331,63 @@ impl ModelFpgaRealtime {
         // check if we need to fill the recovey FIFO
         if self.bmc_step_counter % 128 == 0 {
             if !self.recovery_fifo_blocks.is_empty() {
-                let fifo_status =
-                    self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
+                if !self.recovery_ctrl_written {
+                    let status = self
+                        .i3c_core()
+                        .sec_fw_recovery_if_device_status_0
+                        .read(DeviceStatus0::DevStatus);
+
+                    if status != 3 && self.bmc_step_counter % 65536 == 0 {
+                        println!("Waiting for device status to be 3, currently: {}", status);
+                        return;
+                    }
+
+                    let len = ((self.recovery_ctrl_len / 4) as u32).to_le_bytes();
+                    let mut ctrl = vec![0, 1];
+                    ctrl.extend_from_slice(&len);
+
+                    println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
+                    self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoCtrl, &ctrl);
+
+                    let reported_len = self
+                        .i3c_core()
+                        .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                        .get();
+
+                    println!("I3C core reported length: {}", reported_len);
+                    if reported_len as usize != self.recovery_ctrl_len / 4 {
+                        println!(
+                            "I3C core reported length should have been {}",
+                            self.recovery_ctrl_len / 4
+                        );
+
+                        self.print_i3c_registers();
+
+                        panic!(
+                            "I3C core reported length should have been {}",
+                            self.recovery_ctrl_len / 4
+                        );
+                        //  self
+                        //     .i3c_core()
+                        //     .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                        //     .set(image.len() as u32 / 4);
+                        // }
+                        // let reported_len = self
+                        //     .i3c_core()
+                        //     .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                        //     .get();
+                        // println!("I3C core reported length: {}", reported_len);
+                        // if reported_len as usize != image.len() / 4 {
+                        //     panic!(
+                        //         "I3C core reported length should have been {}",
+                        //         image.len() / 4
+                        //     );
+                    }
+                    self.recovery_ctrl_written = true;
+                }
+                let fifo_status = self
+                    .recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus)
+                    .expect("Device should response to indirect fifo status read request");
                 let empty = fifo_status[0] & 1 == 1;
                 let full = fifo_status[0] & 2 == 2;
                 //println!(
@@ -348,10 +398,9 @@ impl ModelFpgaRealtime {
                 if empty {
                     // fifo is empty, send a block
                     let chunk = self.recovery_fifo_blocks.pop().unwrap();
-                    self.update_checksum(&chunk);
                     //println!("     BMC blocks {} checksum {:08x}", self.blocks_sent, self.chk);
                     self.blocks_sent += 1;
-                    //println!("Sending block ({} left)", self.recovery_fifo_blocks.len());
+                    println!("Sending block ({} left)", self.recovery_fifo_blocks.len());
                     self.recovery_block_write_request(
                         RecoveryCommandCode::IndirectFifoData,
                         &chunk,
@@ -382,20 +431,20 @@ impl ModelFpgaRealtime {
             } => {
                 // println!("From BMC: Recovery block read request {:?}", command_code);
 
-                let payload = self.recovery_block_read_request(command_code);
-
-                self.to_bmc
-                    .send(Event {
-                        src: Device::CaliptraCore,
-                        dest: Device::BMC,
-                        event: EventData::RecoveryBlockReadResponse {
-                            source_addr: target_addr,
-                            target_addr: source_addr,
-                            command_code,
-                            payload,
-                        },
-                    })
-                    .unwrap();
+                if let Some(payload) = self.recovery_block_read_request(command_code) {
+                    self.to_bmc
+                        .send(Event {
+                            src: Device::CaliptraCore,
+                            dest: Device::BMC,
+                            event: EventData::RecoveryBlockReadResponse {
+                                source_addr: target_addr,
+                                target_addr: source_addr,
+                                command_code,
+                                payload,
+                            },
+                        })
+                        .unwrap();
+                }
             }
             EventData::RecoveryBlockReadResponse {
                 source_addr: _,
@@ -417,48 +466,11 @@ impl ModelFpgaRealtime {
                 // do the indirect fifo thing
                 println!("Recovery image available; writing blocks");
 
-                let len = ((image.len() / 4) as u32).to_le_bytes();
-                let mut ctrl = vec![0, 1];
-                ctrl.extend_from_slice(&len);
-
-                thread::sleep(Duration::from_millis(50));
-                println!("Writing Indirect fifo ctrl: {:x?}", ctrl);
+                self.recovery_ctrl_len = image.len();
+                self.recovery_ctrl_written = false;
                 // let fifo_status =
                 //     self.recovery_block_read_request(RecoveryCommandCode::IndirectFifoStatus);
 
-                self.recovery_block_write_request(RecoveryCommandCode::IndirectFifoCtrl, &ctrl);
-                let reported_len = self
-                    .i3c_core()
-                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
-                    .get();
-                println!("I3C core reported length: {}", reported_len);
-                if reported_len as usize != image.len() / 4 {
-                    //panic!(
-                    //    "I3C core reported length should have been {}",
-                    //    image.len() / 4
-                    //);
-                    println!(
-                        "I3C core reported length should have been {}; attempting to write directly",
-                        image.len() / 4
-                    );
-                 self
-                    .i3c_core()
-                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
-                    .set(image.len() as u32 / 4);
-                }
-                let reported_len = self
-                    .i3c_core()
-                    .sec_fw_recovery_if_indirect_fifo_ctrl_1
-                    .get();
-                println!("I3C core reported length: {}", reported_len);
-                if reported_len as usize != image.len() / 4 {
-                    panic!(
-                        "I3C core reported length should have been {}",
-                        image.len() / 4
-                    );
-                }
-
- 
                 let mut image = image.clone();
                 while image.len() % 256 != 0 {
                     image.push(0);
@@ -508,8 +520,187 @@ impl ModelFpgaRealtime {
         }
     }
 
+    fn print_i3c_registers(&mut self) {
+        println!("Dumping registers");
+        println!(
+            "sec_fw_recovery_if_prot_cap_0: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_prot_cap_0
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_prot_cap_1: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_prot_cap_1
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_prot_cap_2: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_prot_cap_2
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_prot_cap_3: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_prot_cap_3
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_0: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_0
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_1: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_1
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_2: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_2
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_3: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_3
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_4: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_4
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_5: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_5
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_id_reserved: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_id_reserved
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_status_0: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_status_0
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_status_1: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_status_1
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_device_reset: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_device_reset
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_recovery_ctrl: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_recovery_ctrl
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_recovery_status: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_recovery_status
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_hw_status: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_hw_status
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_ctrl_0: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_ctrl_0
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_ctrl_1: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_status_0: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_status_0
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_status_1: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_status_1
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_status_2: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_status_2
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_status_3: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_status_3
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_status_4: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_status_4
+                .get()
+                .swap_bytes()
+        );
+        println!(
+            "sec_fw_recovery_if_indirect_fifo_reserved: {:08x}",
+            self.i3c_core()
+                .sec_fw_recovery_if_indirect_fifo_reserved
+                .get()
+                .swap_bytes()
+        );
+    }
+
     // send a recovery block read request to the I3C target
-    fn recovery_block_read_request(&mut self, command: RecoveryCommandCode) -> Vec<u8> {
+    fn recovery_block_read_request(&mut self, command: RecoveryCommandCode) -> Option<Vec<u8>> {
         // per the recovery spec, this maps to a private write and private read
 
         // First we write the recovery command code for the block we want
@@ -527,12 +718,19 @@ impl ModelFpgaRealtime {
         //     "Sending write to target: 0x{:x} to start recovery block read (with no termination)",
         //     recovery_command_code
         // );
-        assert!(
-            self.i3c_controller
-                .master_send_polled(&mut cmd, &[recovery_command_code], 1)
-                .is_ok(),
-            "Failed to ack write message sent to target"
-        );
+        if self
+            .i3c_controller
+            .master_send_polled(&mut cmd, &[recovery_command_code], 1)
+            .is_err()
+        {
+            return None;
+        }
+
+        // assert!(
+        //         .is_ok(),
+        //     "Failed to ack write message sent to target for command code {}",
+        //     recovery_command_code
+        // );
         // println!("Acknowledge received");
 
         // then we send a private read for the minimum length
@@ -571,9 +769,10 @@ impl ModelFpgaRealtime {
         // println!("Read from target {:02x?}", resp);
         let len = u16::from_le_bytes([resp[0], resp[1]]);
         if len < len_range.0 || len > len_range.1 {
+            self.print_i3c_registers();
             panic!(
-                "Expected to read between {} and {} bytes from target, got {}",
-                len_range.0, len_range.1, len
+                "Reading block {:?} expected to read between {} and {} bytes from target, got {}",
+                command, len_range.0, len_range.1, len
             );
         }
         let len = len as usize;
@@ -586,7 +785,7 @@ impl ModelFpgaRealtime {
             todo!()
         }
         // println!("Got block read back from target: {:x?}", &resp[2..]);
-        resp[2..].to_vec()
+        Some(resp[2..].to_vec())
     }
 
     // send a recovery block write request to the I3C target
@@ -733,7 +932,8 @@ impl McuHwModel for ModelFpgaRealtime {
             bmc_step_counter: 0,
             i3c_target,
             blocks_sent: 0,
-            chk: 0,
+            recovery_ctrl_written: false,
+            recovery_ctrl_len: 0,
         };
 
         // Set generic input wires.
@@ -983,7 +1183,7 @@ mod test {
         .unwrap();
         println!("Waiting on I3C target to be configured");
         let mut xi3c_configured = false;
-        for _ in 0..1_000_000_000 {
+        for _ in 0..2_000_000 {
             model.step();
             if !xi3c_configured && model.i3c_target_configured() {
                 xi3c_configured = true;
@@ -1002,6 +1202,21 @@ mod test {
                 model.start_recovery_bmc();
             }
         }
+        let ptr = unsafe {
+            core::slice::from_raw_parts((model.mci.ptr as *const u8).offset(0xc0_0000), 512 * 1024)
+        };
+        let all_zero = ptr.iter().all(|&x| x == 0);
+        println!("MCU SRAM all 0: {}", all_zero);
+        if let Some((i, _)) = ptr.iter().enumerate().find(|(i, &x)| x != 0) {
+            println!("Found non-zero at {}", i);
+            println!(
+                "Found non-zeroes at {}, value: {:02x?}",
+                i,
+                ptr[0..4].to_vec()
+            );
+        }
+        println!("blocks {}", model.blocks_sent);
+
         println!("Ending");
     }
 }

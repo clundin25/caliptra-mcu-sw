@@ -134,6 +134,8 @@ impl CaliptraBuilder {
         flags.set_image_source(IMAGE_SOURCE_IN_REQUEST);
         let crypto = Crypto::default();
         let digest = from_hw_format(&crypto.sha384_digest(&data)?);
+        let d: String = digest.clone().encode_hex();
+        println!("MCU len {} digest: {}", data.len(), d);
 
         Ok(AuthManifestImageMetadata {
             fw_id: 2,

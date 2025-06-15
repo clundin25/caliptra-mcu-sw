@@ -36,13 +36,13 @@ clear_dccm:
     addi a0, a0, 4
     bltu a0, a1, clear_dccm
 
-    li a0, 0xb0080000
-    li a1, 393216
-    add a1, a1, a0
-clear_sram:
-    sw zero, 0(a0)
-    addi a0, a0, 4
-    bltu a0, a1, clear_sram
+;    li a0, 0xa8c00000
+;    li a1, 393216
+;    add a1, a1, a0
+;clear_sram:
+;    sw zero, 0(a0)
+;    addi a0, a0, 4
+;    bltu a0, a1, clear_sram
 
 
     # Copy BSS

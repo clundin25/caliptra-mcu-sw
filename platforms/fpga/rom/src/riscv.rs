@@ -40,7 +40,7 @@ pub extern "C" fn rom_entry() -> ! {
 
     mcu_rom_common::rom_start();
 
-    let addr = MCU_MEMORY_MAP.sram_offset + 0x80;
+    let addr = MCU_MEMORY_MAP.sram_offset;
     romtime::println!("[mcu-rom] Jumping to firmware at {:08x}", addr);
     exit_rom(addr);
 }
@@ -72,7 +72,6 @@ fn exit_rom(addr: u32) -> ! {
             jr a3",
                 in("a3") addr,
                 options(noreturn),
-
         }
     }
 }

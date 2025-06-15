@@ -59,6 +59,10 @@ impl Soc {
         Soc { registers }
     }
 
+    pub fn fw_ready(&self) -> bool {
+        self.registers.ss_generic_fw_exec_ctrl[0].get() & 4 != 0
+    }
+
     pub fn flow_status(&self) -> u32 {
         self.registers.cptra_flow_status.get()
     }
@@ -249,8 +253,8 @@ pub fn rom_start() {
     // }
 
     // TODO: pass these in as parameters
-    soc.registers.cptra_wdt_cfg[0].set(100_000_000);
-    soc.registers.cptra_wdt_cfg[1].set(100_000_000);
+    soc.registers.cptra_wdt_cfg[0].set(1000_000_000);
+    soc.registers.cptra_wdt_cfg[1].set(1000_000_000);
 
     romtime::println!(
         "[mcu-rom] Waiting for Caliptra to be ready for fuses: {}",
@@ -344,11 +348,16 @@ pub fn rom_start() {
     };
 
     romtime::println!("[mcu-rom] Starting recovery flow");
-    recovery_flow(&mut mci, &mut i3c);
+    recovery_flow(&soc, &mut mci, &mut i3c);
     romtime::println!("[mcu-rom] Recovery flow complete");
 
     // Check that the firmware was actually loaded before jumping to it
-    let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0x80) as *const u32 };
+    let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0) as *const u32 };
+    for i in 0..8 {
+        romtime::println!("Bytes from SRAM: {}: {:02x}", i, unsafe {
+            core::ptr::read_volatile((firmware_ptr as *const u8).offset(i))
+        });
+    }
     // Safety: this address is valid
     if unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {
         romtime::println!("Invalid firmware detected; halting");
@@ -367,7 +376,7 @@ impl I3c {
     }
 }
 
-pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
+pub fn recovery_flow(soc: &Soc, mci: &mut Mci, i3c: &mut I3c) {
     // TODO: implement Caliptra boot flow
 
     // TODO: read this value from the fuses (according to the spec)?
@@ -376,20 +385,15 @@ pub fn recovery_flow(mci: &mut Mci, i3c: &mut I3c) {
 
     romtime::println!("[mcu-rom] MCI flow status: {}", HexWord(mci.flow_status()));
 
-    romtime::println!("Writing a few bytes to the beginning of SRAM");
-    for i in 0..16 {
-        let x = 0x01020300 + i;
-        let addr = unsafe { MCU_MEMORY_MAP.sram_offset } + i * 4;
-        romtime::println!("Writing address {:x} <= {:08x}", addr, x);
-        unsafe { core::ptr::write_volatile(addr as *mut u32, x) };
-        assert_eq!(unsafe { core::ptr::read_volatile(addr as *const u32) }, x);
-    }
-
     // TODO: what value are we looking for
-    romtime::println!("[mcu-rom] Waiting for firmware to be loaded");
-    let firmware_ptr = unsafe { (MCU_MEMORY_MAP.sram_offset + 0xfff0) as *const u32 };
-    while unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {}
+    romtime::println!("[mcu-rom] Waiting for firmware to be ready");
+    while !soc.fw_ready() {}
+    let firmware_ptr = unsafe { MCU_MEMORY_MAP.sram_offset as *const u32 };
+    //while unsafe { core::ptr::read_volatile(firmware_ptr) } == 0 {}
     romtime::println!("[mcu-rom] Firmware load detected");
+    //for i in 0..4 {
+    //    unsafe { romtime::println!("SRAM: {:02x}", core::ptr::read_volatile((MCU_MEMORY_MAP.sram_offset as *const u8).offset(i))); }
+    //}
 }
 
 fn configure_i3c(i3c: &mut I3c, addr: u8, recovery_enabled: bool) {

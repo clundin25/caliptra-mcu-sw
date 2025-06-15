@@ -33,10 +33,12 @@ statemachine! {
             / activate = Activate,
 
         // check if we need to send another recovery image (if awaiting image is set and running recovery)
-        Activate + DeviceStatus(DeviceStatusBlock) [check_device_status_recovery_running_recovery]
-            = ActivateCheckRecoveryStatus,
-        ActivateCheckRecoveryStatus + RecoveryStatus(RecoveryStatusBlock) [check_recovery_status_awaiting]
-            / start_recovery = WaitForRecoveryPending,
+        Activate + DeviceStatus(DeviceStatusBlock) [check_device_status_recovery]
+            = WaitForRecoveryStatus,
+        // Activate + DeviceStatus(DeviceStatusBlock) [check_device_status_recovery_running_recovery]
+        //     = ActivateCheckRecoveryStatus,
+        // ActivateCheckRecoveryStatus + RecoveryStatus(RecoveryStatusBlock) [check_recovery_status_awaiting]
+        //     / start_recovery = WaitForRecoveryPending,
     }
 }
 
@@ -48,7 +50,7 @@ pub(crate) fn state_to_read_request(state: States) -> Option<Event> {
         States::WaitForRecoveryStatus => Some(RecoveryCommandCode::RecoveryStatus),
         States::WaitForRecoveryPending => Some(RecoveryCommandCode::DeviceStatus),
         States::Activate => Some(RecoveryCommandCode::DeviceStatus),
-        States::ActivateCheckRecoveryStatus => Some(RecoveryCommandCode::RecoveryStatus),
+        //States::ActivateCheckRecoveryStatus => Some(RecoveryCommandCode::RecoveryStatus),
         _ => None,
     };
 
@@ -183,17 +185,17 @@ impl StateMachineContext for Context {
     }
 
     /// Check that the recovery status is running the recovery image.
-    fn check_device_status_recovery_running_recovery(
-        &self,
-        status: &DeviceStatusBlock,
-    ) -> Result<bool, ()> {
-        let status = status.reg.read(DeviceStatus::Status);
-        if status == DeviceStatus::Status::RunnningRecoveryImage.value {
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
+    // fn check_device_status_recovery_running_recovery(
+    //     &self,
+    //     status: &DeviceStatusBlock,
+    // ) -> Result<bool, ()> {
+    //     let status = status.reg.read(DeviceStatus::Status);
+    //     if status == DeviceStatus::Status::RunnningRecoveryImage.value {
+    //         Ok(true)
+    //     } else {
+    //         Ok(false)
+    //     }
+    // }
 
     fn send_recovery_control(&mut self, _status: DeviceStatusBlock) -> Result<(), ()> {
         self.events_to_caliptra
