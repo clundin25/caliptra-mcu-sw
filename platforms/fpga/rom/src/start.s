@@ -26,6 +26,15 @@ _start:
     # Initialize the stack pointer
     la sp, STACK_TOP
 
+    li t0, 0xaaaaaaaa
+    csrrw t0, 0x7c0, t0
+    fence.i
+
+    li a0, 0xa8c00000
+    li t1, 0x01020304
+    sw t1, 0(a0)
+    fence.i
+    lw t2, 0(a0)
 
     # the FPGA does not clear RAM on reset, so we do it here
     li a0, 0x50000000

@@ -80,7 +80,7 @@ pub fn runtime_build_no_apps(
 
     let ld_string = runtime_ld_script(
         memory_map,
-        memory_map.sram_offset + INTERRUPT_TABLE_SIZE as u32,
+        memory_map.sram_offset,// + INTERRUPT_TABLE_SIZE as u32,
         runtime_size as u32,
         apps_offset as u32,
         apps_size as u32,

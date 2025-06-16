@@ -172,9 +172,18 @@ pub fn rom_start() {
     // translated to 32 bits, so we waste less latency and bandwidth.
     // We only have I-Cache (no D-Cache), so it is safe to set all memory to cacheable.
     let mrac = ReadWriteRiscvCsr::<usize, (), MRAC_CSR>::new();
-    mrac.set(0xffff_ffff);
+    mrac.set(0xaaaa_aaaa);
 
     romtime::println!("[mcu-rom] Hello from ROM");
+    let val = 0x01020304u32;
+    let addr = unsafe { 0xa8c0_0000u32 as *mut u32 };
+    romtime::println!("[mcu-rom] Write {:08x} <= {:08x}", addr as u32, val);
+    unsafe {
+        core::ptr::write_volatile(addr, val);
+    }
+    romtime::println!("[mcu-rom] Read {:08x} => {:02x}", addr as u32, unsafe {
+        core::ptr::read_volatile(addr as *const u8)
+    });
 
     let otp_base: StaticRef<otp_ctrl::regs::OtpCtrl> =
         unsafe { StaticRef::new(MCU_MEMORY_MAP.otp_offset as *const otp_ctrl::regs::OtpCtrl) };
