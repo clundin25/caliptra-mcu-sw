@@ -176,7 +176,9 @@ impl CaliptraBuilder {
     }
 
     fn compile_caliptra_rom() -> Result<PathBuf> {
-        let rom_bytes = caliptra_builder::rom_for_fw_integration_tests()?;
+        //let rom_bytes = caliptra_builder::rom_for_fw_integration_tests()?;
+        let rom_bytes =
+            caliptra_builder::build_firmware_rom(&caliptra_builder::firmware::ROM_FPGA_WITH_UART)?;
         let path = PROJECT_ROOT.join("target").join("caliptra-rom.bin");
         std::fs::write(&path, rom_bytes)?;
         Ok(path)
@@ -188,8 +190,8 @@ impl CaliptraBuilder {
             ..Default::default()
         };
         let bundle = caliptra_builder::build_and_sign_image(
-            &caliptra_builder::firmware::FMC_WITH_UART,
-            &caliptra_builder::firmware::APP_WITH_UART,
+            &caliptra_builder::firmware::FMC_FPGA_WITH_UART,
+            &caliptra_builder::firmware::APP_WITH_UART_FPGA,
             opts,
         )?;
         let crypto = Crypto::default();

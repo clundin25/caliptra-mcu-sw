@@ -270,7 +270,6 @@ dependencies = [
  "caliptra-image-gen",
  "caliptra-image-types",
  "caliptra-lms-types",
- "fips204",
  "memoffset 0.8.0",
  "zerocopy",
 ]
@@ -378,6 +377,7 @@ dependencies = [
 name = "caliptra-drivers"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
  "bitfield",
  "bitflags 2.9.1",
  "caliptra-api",
@@ -599,7 +599,6 @@ dependencies = [
  "caliptra-image-types",
  "caliptra-registers",
  "memoffset 0.8.0",
- "ufmt 0.2.0",
  "zerocopy",
 ]
 
