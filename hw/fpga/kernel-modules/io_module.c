@@ -65,10 +65,10 @@ int init_module(void)
     uio_info0.mem[3].size = 0x00010000;
     uio_info0.mem[3].memtype = UIO_MEM_PHYS;
 
-    // MCU SRAM
-    uio_info0.mem[4].name = "mcu_sram";
+    // OTP RAM
+    uio_info0.mem[4].name = "otp_ram";
     uio_info0.mem[4].addr = 0xB0080000;
-    uio_info0.mem[4].size = 0x00080000;
+    uio_info0.mem[4].size = 0x00010000;
     uio_info0.mem[4].memtype = UIO_MEM_PHYS;
 
 

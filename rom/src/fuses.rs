@@ -19,8 +19,11 @@ impl Otp {
     }
 
     pub fn init(&self) -> Result<(), McuError> {
-        if self.registers.otp_status.get() & ((1 << 21) - 1) != 0 {
-            romtime::println!("OTP error: {}", self.registers.otp_status.get());
+        if self.registers.otp_status.get() & ((1 << 22) - 1) != 0 {
+            romtime::println!(
+                "OTP status reported errors: {}",
+                HexWord(self.registers.otp_status.get())
+            );
             return Err(McuError::FusesError);
         }
 

@@ -6,9 +6,15 @@ use anyhow::{anyhow, Error, Result};
 use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
 use caliptra_hw_model_types::{DEFAULT_FIELD_ENTROPY, DEFAULT_UDS_SEED};
 use emulator_bmc::Bmc;
-use registers_generated::i3c;
+use registers_generated::fuses::{
+    VENDOR_HASHES_MANUF_PARTITION_BYTE_OFFSET, VENDOR_HASHES_MANUF_PARTITION_BYTE_SIZE,
+    VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET, VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
+    VENDOR_TEST_PARTITION_BYTE_OFFSET, VENDOR_TEST_PARTITION_BYTE_SIZE,
+};
 use registers_generated::i3c::bits::DeviceStatus0;
 use registers_generated::mci::bits::Go::Go;
+use registers_generated::otp_ctrl::bits::OtpStatus;
+use registers_generated::{i3c, otp_ctrl};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -21,7 +27,7 @@ const FPGA_WRAPPER_MAPPING: (usize, usize) = (0, 0);
 const CALIPTRA_MAPPING: (usize, usize) = (0, 1);
 const CALIPTRA_ROM_MAPPING: (usize, usize) = (0, 2);
 const I3C_CONTROLLER_MAPPING: (usize, usize) = (0, 3);
-const MCU_SRAM_MAPPING: (usize, usize) = (0, 4);
+const OTP_RAM_MAPPING: (usize, usize) = (0, 4);
 const LC_MAPPING: (usize, usize) = (1, 0);
 const MCU_ROM_MAPPING: (usize, usize) = (1, 1);
 const I3C_TARGET_MAPPING: (usize, usize) = (1, 2);
@@ -91,9 +97,10 @@ pub struct ModelFpgaRealtime {
     caliptra_mmio: CaliptraMmio,
     caliptra_rom_backdoor: *mut u8,
     mcu_rom_backdoor: *mut u8,
-    mcu_sram_backdoor: *mut u8,
+    otp_ram_backdoor: *mut u8,
     mci: Mci,
     i3c_mmio: *mut u32,
+    otp_mmio: *mut u32,
     i3c_controller_mmio: *mut u32,
     i3c_controller: xi3c::Controller,
 
@@ -284,6 +291,92 @@ impl ModelFpgaRealtime {
 
     pub fn i3c_core(&mut self) -> &i3c::regs::I3c {
         unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) }
+    }
+
+    pub fn otp(&mut self) -> &otp_ctrl::regs::OtpCtrl {
+        unsafe { &*(self.otp_mmio as *const otp_ctrl::regs::OtpCtrl) }
+    }
+
+    fn read_otp_word(&mut self, word_offset: usize) -> u32 {
+        let otp = self.otp();
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
+
+        otp.direct_access_address.set(word_offset as u32);
+        otp.direct_access_cmd.set(1);
+        // wait for idle
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
+        // check for errors
+        if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
+            panic!("OTP read error: {:x}", otp.otp_status.get());
+        }
+        otp.dai_rdata_rf_direct_access_rdata_0.get()
+    }
+
+    fn read_otp_byte(&mut self, offset: usize) -> u8 {
+        let word = self.read_otp_word(offset / 4);
+        word.to_le_bytes()[offset % 4]
+    }
+
+    pub fn read_otp_data(&mut self, offset: usize, len: usize) -> Vec<u8> {
+        let mut data = vec![];
+        for i in offset..offset + len {
+            data.push(self.read_otp_byte(i));
+        }
+        data
+    }
+
+    fn write_otp_word(&mut self, word_offset: usize, data: u32) {
+        let otp = self.otp();
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
+
+        otp.dai_wdata_rf_direct_access_wdata_0.set(data);
+        otp.direct_access_address.set(word_offset as u32);
+        otp.direct_access_cmd.set(2);
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
+        if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
+            println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
+            println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
+            println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
+            println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
+            println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
+            println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
+            println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
+            println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
+            println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
+            println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
+            println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
+            println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
+            println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
+            println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
+            println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
+            println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
+            println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
+            println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
+
+            panic!("OTP write error: {:x}", otp.otp_status.get());
+        }
+    }
+
+    // fn write_otp_byte(&mut self, offset: usize, data: u8) {
+    //     let word = self.read_otp_word(offset / 4);
+    //     let mut bytes = word.to_le_bytes();
+    //     bytes[offset % 4] = data;
+    //     self.write_otp_word(offset / 4, u32::from_le_bytes(bytes));
+    // }
+
+    pub fn write_otp_data(&mut self, offset: usize, data: &[u8]) {
+        if offset % 4 != 0 {
+            panic!("OTP write offset must be a multiple of 4");
+        }
+        if data.len() % 4 != 0 {
+            panic!("OTP write data length must be a multiple of 4");
+        }
+        for i in (0..data.len()).step_by(4) {
+            self.write_otp_word(
+                i / 4,
+                u32::from_le_bytes(data[i..i + 4].try_into().unwrap()),
+            );
+        }
     }
 
     pub fn i3c_target_configured(&mut self) -> bool {
@@ -845,8 +938,8 @@ impl McuHwModel for ModelFpgaRealtime {
         let caliptra_rom_backdoor = devs[CALIPTRA_ROM_MAPPING.0]
             .map_mapping(CALIPTRA_ROM_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u8;
-        let mcu_sram_backdoor = devs[MCU_SRAM_MAPPING.0]
-            .map_mapping(MCU_SRAM_MAPPING.1)
+        let otp_ram_backdoor = devs[OTP_RAM_MAPPING.0]
+            .map_mapping(OTP_RAM_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u8;
         let mcu_rom_backdoor = devs[MCU_ROM_MAPPING.0]
             .map_mapping(MCU_ROM_MAPPING.1)
@@ -863,10 +956,10 @@ impl McuHwModel for ModelFpgaRealtime {
         let i3c_controller_mmio = devs[I3C_CONTROLLER_MAPPING.0]
             .map_mapping(I3C_CONTROLLER_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
-        let _lc_mmio = devs[LC_MAPPING.0]
-            .map_mapping(LC_MAPPING.1)
-            .map_err(fmt_uio_error)? as *mut u32;
-        let _otp_mmio = devs[OTP_MAPPING.0]
+        // let _lc_mmio = devs[LC_MAPPING.0]
+        //     .map_mapping(LC_MAPPING.1)
+        //     .map_err(fmt_uio_error)? as *mut u32;
+        let otp_mmio = devs[OTP_MAPPING.0]
             .map_mapping(OTP_MAPPING.1)
             .map_err(fmt_uio_error)? as *mut u32;
 
@@ -914,9 +1007,10 @@ impl McuHwModel for ModelFpgaRealtime {
             caliptra_mmio: CaliptraMmio { ptr: caliptra_mmio },
             caliptra_rom_backdoor,
             mcu_rom_backdoor,
-            mcu_sram_backdoor,
+            otp_ram_backdoor,
             mci: Mci { ptr: mci_ptr },
             i3c_mmio,
+            otp_mmio,
             i3c_controller_mmio,
             i3c_controller,
 
@@ -975,6 +1069,63 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Putting subsystem into reset");
         m.set_subsystem_reset(true);
 
+        // set the reset vector to point to the ROM backdoor
+        println!("Writing MCU reset vector");
+        m.wrapper
+            .regs()
+            .mcu_reset_vector
+            .set(mcu_config_fpga::FPGA_MEMORY_MAP.rom_offset);
+
+        let mut mcu_rom_data = params.mcu_rom.to_vec();
+        while mcu_rom_data.len() % 8 != 0 {
+            mcu_rom_data.push(0);
+        }
+
+        let mcu_rom_slice =
+            unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
+
+        println!("Write blank ROM into MCU while we provision OTP");
+        mcu_rom_slice.fill(0);
+
+        println!("Taking subsystem out of reset");
+        m.set_subsystem_reset(false);
+
+        println!("Wait for OTP to be idle");
+
+        let otp = m.otp();
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
+        println!("OTP is idle; programming some bytes");
+
+        let vendor_data = m.read_otp_data(
+            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
+        );
+        println!("Before: {:?}", vendor_data);
+
+        m.write_otp_data(
+            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        );
+        let vendor_data = m.read_otp_data(
+            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
+        );
+        println!("After: {:?}", vendor_data);
+
+        m.set_subsystem_reset(true);
+
+        panic!("Exiting early");
+
+        // let pattern = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        // println!("Writing to OTP memory: {:?}", pattern);
+        // let otp_mem = unsafe { core::slice::from_raw_parts_mut(m.otp_ram_backdoor, 16384) };
+
+        // otp_mem[..pattern.len()].copy_from_slice(&pattern);
+        // println!(
+        //     "OTP memory written with pattern, reading : {:?}",
+        //     &otp_mem[..pattern.len()]
+        // );
+
         println!("Clearing fifo");
         // Sometimes there's garbage in here; clean it out
         m.clear_logs();
@@ -992,10 +1143,6 @@ impl McuHwModel for ModelFpgaRealtime {
         while caliptra_rom_data.len() % 8 != 0 {
             caliptra_rom_data.push(0);
         }
-        let mut mcu_rom_data = params.mcu_rom.to_vec();
-        while mcu_rom_data.len() % 8 != 0 {
-            mcu_rom_data.push(0);
-        }
 
         // copy the ROM data
         let caliptra_rom_slice = unsafe {
@@ -1004,16 +1151,7 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Writing Caliptra ROM ({} bytes)", caliptra_rom_data.len());
         caliptra_rom_slice.copy_from_slice(&caliptra_rom_data);
         println!("Writing MCU ROM");
-        let mcu_rom_slice =
-            unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
         mcu_rom_slice.copy_from_slice(&mcu_rom_data);
-
-        // set the reset vector to point to the ROM backdoor
-        println!("Writing MCU reset vector");
-        m.wrapper
-            .regs()
-            .mcu_reset_vector
-            .set(mcu_config_fpga::FPGA_MEMORY_MAP.rom_offset);
 
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
@@ -1118,10 +1256,11 @@ impl Drop for ModelFpgaRealtime {
         self.unmap_mapping(self.caliptra_mmio.ptr, CALIPTRA_MAPPING);
         self.unmap_mapping(self.caliptra_rom_backdoor as *mut u32, CALIPTRA_ROM_MAPPING);
         self.unmap_mapping(self.mcu_rom_backdoor as *mut u32, MCU_ROM_MAPPING);
-        self.unmap_mapping(self.mcu_sram_backdoor as *mut u32, MCU_SRAM_MAPPING);
+        self.unmap_mapping(self.otp_ram_backdoor as *mut u32, OTP_RAM_MAPPING);
         self.unmap_mapping(self.mci.ptr, MCI_MAPPING);
         self.unmap_mapping(self.i3c_mmio, I3C_TARGET_MAPPING);
         self.unmap_mapping(self.i3c_controller_mmio, I3C_CONTROLLER_MAPPING);
+        self.unmap_mapping(self.otp_mmio, OTP_MAPPING);
     }
 }
 

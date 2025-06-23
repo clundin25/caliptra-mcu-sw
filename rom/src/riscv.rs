@@ -207,15 +207,16 @@ pub fn rom_start() {
     mci.caliptra_boot_go();
 
     // only do these on the emulator for now
-    // let otp = Otp::new(otp_base);
-    // let otp_status = otp.status();
-    // romtime::println!("[mcu-rom] OTP status: {}", HexWord(otp_status));
+    let otp = Otp::new(otp_base);
+    let otp_status = otp.status();
+    romtime::println!("[mcu-rom] OTP status: {}", HexWord(otp_status));
 
     // let lc_status =
     //     unsafe { core::ptr::read_volatile((MCU_MEMORY_MAP.lc_offset + 0x4) as *const u32) };
     // romtime::println!("[mcu-rom] LC status: {}", HexWord(lc_status));
 
-    let fuses = if unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
+    let fuses = if true {
+        // unsafe { MCU_MEMORY_MAP.rom_offset } == 0x8000_0000 {
         let otp = Otp::new(otp_base);
         if let Err(err) = otp.init() {
             romtime::println!("Error initializing OTP: {}", HexWord(err as u32));
