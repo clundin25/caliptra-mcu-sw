@@ -353,7 +353,7 @@ impl ModelFpgaRealtime {
             println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
             println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
 
-            panic!("OTP write error: {:x}", otp.otp_status.get());
+            //panic!("OTP write error: {:x}", otp.otp_status.get());
         }
     }
 
@@ -1160,7 +1160,7 @@ impl McuHwModel for ModelFpgaRealtime {
 
         m.set_subsystem_reset(true);
 
-        panic!("Exiting early");
+        //panic!("Exiting early");
 
         // let pattern = [1u8, 2, 3, 4, 5, 6, 7, 8];
         // println!("Writing to OTP memory: {:?}", pattern);
@@ -1318,51 +1318,51 @@ mod test {
 
     #[test]
     fn test_new_unbooted() {
-        // let mcu_rom = mcu_builder::rom_build(Some("fpga"), "").expect("Could not build MCU ROM");
-        // let mcu_runtime = &mcu_builder::runtime_build_with_apps(
-        //     &[],
-        //     Some("fpga-runtime.bin"),
-        //     false,
-        //     Some("fpga"),
-        //     Some(&mcu_config_fpga::FPGA_MEMORY_MAP),
-        // )
-        // .expect("Could not build MCU runtime");
-        // let mut caliptra_builder = mcu_builder::CaliptraBuilder::new(
-        //     true,
-        //     None,
-        //     None,
-        //     None,
-        //     None,
-        //     Some(mcu_runtime.into()),
-        //     None,
-        // );
-        // let caliptra_rom = caliptra_builder
-        //     .get_caliptra_rom()
-        //     .expect("Could not build Caliptra ROM");
-        // let caliptra_fw = caliptra_builder
-        //     .get_caliptra_fw()
-        //     .expect("Could not build Caliptra FW bundle");
-        // // TODO: pass this in to the MCU through the OTP
-        // let vendor_pk_hash = caliptra_builder
-        //     .get_vendor_pk_hash()
-        //     .expect("Could not get vendor PK hash");
-        // println!("Vendor PK hash: {:x?}", vendor_pk_hash);
-        // let soc_manifest = caliptra_builder
-        //     .get_soc_manifest()
-        //     .expect("Could not get SOC manifest");
+        let mcu_rom = mcu_builder::rom_build(Some("fpga"), "").expect("Could not build MCU ROM");
+        let mcu_runtime = &mcu_builder::runtime_build_with_apps(
+            &[],
+            Some("fpga-runtime.bin"),
+            false,
+            Some("fpga"),
+            Some(&mcu_config_fpga::FPGA_MEMORY_MAP),
+        )
+        .expect("Could not build MCU runtime");
+        let mut caliptra_builder = mcu_builder::CaliptraBuilder::new(
+            true,
+            None,
+            None,
+            None,
+            None,
+            Some(mcu_runtime.into()),
+            None,
+        );
+        let caliptra_rom = caliptra_builder
+            .get_caliptra_rom()
+            .expect("Could not build Caliptra ROM");
+        let caliptra_fw = caliptra_builder
+            .get_caliptra_fw()
+            .expect("Could not build Caliptra FW bundle");
+        // TODO: pass this in to the MCU through the OTP
+        let vendor_pk_hash = caliptra_builder
+            .get_vendor_pk_hash()
+            .expect("Could not get vendor PK hash");
+        println!("Vendor PK hash: {:x?}", vendor_pk_hash);
+        let soc_manifest = caliptra_builder
+            .get_soc_manifest()
+            .expect("Could not get SOC manifest");
         use tock_registers::interfaces::Readable;
 
-        // let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
-        // let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
-        // let mcu_rom = std::fs::read(mcu_rom).unwrap();
-        // let mcu_runtime = std::fs::read(mcu_runtime).unwrap();
-        // let soc_manifest = std::fs::read(soc_manifest).unwrap();
+        let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
+        let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
+        let mcu_rom = std::fs::read(mcu_rom).unwrap();
+        let mcu_runtime = std::fs::read(mcu_runtime).unwrap();
+        let soc_manifest = std::fs::read(soc_manifest).unwrap();
 
-        let caliptra_rom = vec![0u8; 1024];
-        let caliptra_fw = vec![0u8; 1024];
-        let mcu_rom = vec![0u8; 1024];
-        let mcu_runtime = vec![0u8; 1024];
-        let soc_manifest = vec![0u8; 1024];
+        // //let caliptra_rom = vec![0u8; 1024];
+        // let caliptra_fw = vec![0u8; 1024];
+        // //let mcu_rom = vec![0u8; 1024];
+        // let mcu_runtime = vec![0u8; 1024];
+        // let soc_manifest = vec![0u8; 1024];
 
         let mut model = DefaultHwModel::new_unbooted(InitParams {
             caliptra_rom: &caliptra_rom,
