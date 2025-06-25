@@ -1035,47 +1035,49 @@ impl McuHwModel for ModelFpgaRealtime {
         m.set_generic_input_wires(&input_wires);
         println!("Writing to OTP backdoor");
         let otp = m.otp_ram_backdoor as *mut u32;
-        // unsafe {
-        //     //let otp = core::slice::from_raw_parts_mut(m.otp_ram_backdoor as *mut u32, 16384 / 4);
-        //     let otp = m.otp_ram_backdoor as *mut u32;
-        //     println!(
-        //         "Read OTP RAM backdoor at {}: {:x}",
-        //         0,
-        //         core::ptr::read_volatile(otp.offset(0))
-        //     );
-        //     println!(
-        //         "Read OTP RAM backdoor at {}: {:x}",
-        //         1,
-        //         core::ptr::read_volatile(otp.offset(1))
-        //     );
-        //     println!(
-        //         "Read OTP RAM backdoor at {}: {:x}",
-        //         2,
-        //         core::ptr::read_volatile(otp.offset(2))
-        //     );
+        unsafe {
+            let otp = core::slice::from_raw_parts_mut(m.otp_ram_backdoor as *mut u32, 16384 / 4);
+            otp.fill(0);
+            let otp = m.otp_ram_backdoor as *mut u32;
+            // println!(
+            //     "Read OTP RAM backdoor at {}: {:x}",
+            //     0,
+            //     core::ptr::read_volatile(otp.offset(0))
+            // );
+            // println!(
+            //     "Read OTP RAM backdoor at {}: {:x}",
+            //     1,
+            //     core::ptr::read_volatile(otp.offset(1))
+            // );
+            // println!(
+            //     "Read OTP RAM backdoor at {}: {:x}",
+            //     2,
+            //     core::ptr::read_volatile(otp.offset(2))
+            // );
 
-        //     println!("Write OTP RAM backdoor at {}: {:x}", 0, 10);
-        //     core::ptr::write_volatile(otp.offset(0), 10);
-        //     println!("Write OTP RAM backdoor at {}: {:x}", 1, 11);
-        //     core::ptr::write_volatile(otp.offset(1), 11);
-        //     println!("Write OTP RAM backdoor at {}: {:x}", 2, 12);
-        //     core::ptr::write_volatile(otp.offset(2), 12);
+            // println!("Write OTP RAM backdoor at {}: {:x}", 0, 10);
+            // core::ptr::write_volatile(otp.offset(0), 10);
+            // println!("Write OTP RAM backdoor at {}: {:x}", 1, 11);
+            // core::ptr::write_volatile(otp.offset(1), 11);
+            // println!("Write OTP RAM backdoor at {}: {:x}", 2, 12);
+            // core::ptr::write_volatile(otp.offset(2), 12);
 
-        //     println!(
-        //         "Read OTP RAM backdoor at {}: {:x}",
-        //         0,
-        //         core::ptr::read_volatile(otp.offset(0))
-        //     );
-        //     println!(
-        //         "Read OTP RAM backdoor at {}: {:x}",
-        //         1,
-        //         core::ptr::read_volatile(otp.offset(1))
-        //     );
-        //     // println!(
-        //     //     "Read OTP RAM backdoor at {}: {:x}",
-        //     //     2,
-        //     // );
-        // }
+            println!(
+                "Read OTP RAM backdoor at {}: {:x}",
+                0,
+                core::ptr::read_volatile(otp.offset(0))
+            );
+            println!(
+                "Read OTP RAM backdoor at {}: {:x}",
+                1,
+                core::ptr::read_volatile(otp.offset(1))
+            );
+            println!(
+                "Read OTP RAM backdoor at {}: {:x}",
+                2,
+                core::ptr::read_volatile(otp.offset(2))
+            );
+        }
 
         // Set Security State signal wires
         println!("Set security state");
@@ -1130,33 +1132,43 @@ impl McuHwModel for ModelFpgaRealtime {
         let mcu_rom_slice =
             unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
 
-        println!("Write blank ROM into MCU while we provision OTP");
-        mcu_rom_slice.fill(0);
+        // println!("Write blank ROM into MCU while we provision OTP");
+        // mcu_rom_slice.fill(0);
 
-        println!("Taking subsystem out of reset");
-        m.set_subsystem_reset(false);
+        //println!("Taking subsystem out of reset");
+        //m.set_subsystem_reset(false);
 
-        println!("Wait for OTP to be idle");
+        // println!("Wait for OTP to be idle");
 
-        let otp = m.otp();
-        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
-        println!("OTP is idle; programming some bytes");
+        // let otp = m.otp();
+        // let mut cnt = 0;
+        // while !otp.otp_status.is_set(OtpStatus::DaiIdle) {
+        //     cnt += 1;
+        //     if cnt % 10_000 == 0 {
+        //         println!(
+        //             "Waiting for OTP to be idle {} status: {:08x}",
+        //             cnt,
+        //             otp.otp_status.get()
+        //         );
+        //     }
+        // }
+        // println!("OTP is idle; programming some bytes");
 
-        let vendor_data = m.read_otp_data(
-            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
-        );
-        println!("Before: {:?}", vendor_data);
+        // let vendor_data = m.read_otp_data(
+        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
+        // );
+        // println!("Before: {:?}", vendor_data);
 
-        m.write_otp_data(
-            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        );
-        let vendor_data = m.read_otp_data(
-            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-            VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
-        );
-        println!("After: {:?}", vendor_data);
+        // m.write_otp_data(
+        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+        //     &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        // );
+        // let vendor_data = m.read_otp_data(
+        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
+        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
+        // );
+        // println!("After: {:?}", vendor_data);
 
         m.set_subsystem_reset(true);
 
@@ -1202,14 +1214,14 @@ impl McuHwModel for ModelFpgaRealtime {
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
 
-        // println!(
-        //     "Mode {}",
-        //     if (m.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
-        //         "subsystem"
-        //     } else {
-        //         "passive"
-        //     }
-        // );
+        println!(
+            "Mode {}",
+            if (m.caliptra_mmio.soc().cptra_hw_config.get() >> 5) & 1 == 1 {
+                "subsystem"
+            } else {
+                "passive"
+            }
+        );
 
         // TODO: remove this when we can finish subsystem/active mode
         // println!("Writing MCU firmware to SRAM");
@@ -1298,6 +1310,14 @@ impl Drop for ModelFpgaRealtime {
         // ensure that we put the I3C target into a state where we will reset it properly
         self.i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
         self.set_subsystem_reset(true);
+
+        // clear the ROM backdoors
+        let mcu_rom_slice =
+            unsafe { core::slice::from_raw_parts_mut(self.mcu_rom_backdoor, 48 * 1024) };
+        mcu_rom_slice.fill(0);
+        let caliptra_rom_slice =
+            unsafe { core::slice::from_raw_parts_mut(self.caliptra_rom_backdoor, 96 * 1024) };
+        caliptra_rom_slice.fill(0);
 
         // Unmap UIO memory space so that the file lock is released
         self.unmap_mapping(self.wrapper.ptr, FPGA_WRAPPER_MAPPING);
