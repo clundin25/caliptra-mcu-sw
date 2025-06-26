@@ -166,4 +166,35 @@ impl I3c {
                 HcControl::BusEnable::CLEAR,
         );
     }
+    pub fn read_indirect_fifo_status_2(&self) -> u32 {
+        self.registers
+            .sec_fw_recovery_if_indirect_fifo_status_2
+            .get()
+    }
+    pub fn write_i3c_ec_soc_mgmt_if_rec_intf_cfg(&self, value: u32) {
+        self.registers.soc_mgmt_if_rec_intf_cfg.set(value);
+    }
+    pub fn read_prot_cap2(&self) -> u32 {
+        self.registers.sec_fw_recovery_if_prot_cap_2.get()
+    }
+    pub fn read_device_status0(&self) -> u32 {
+        self.registers.sec_fw_recovery_if_device_status_0.get()
+    }
+    pub fn read_recovery_status(&self) -> u32 {
+        self.registers.sec_fw_recovery_if_recovery_status.get()
+    }
+    pub fn set_indirect_fifo_ctrl_1(&self, value: u32) {
+        self.registers
+            .sec_fw_recovery_if_indirect_fifo_ctrl_1
+            .set(value);
+    }
+    pub fn write_indirect_fifo_data(&self, value: u32) {
+        self.registers.tti_tx_data_port.set(value);
+    }
+    pub fn read_recovery_if_recovery_ctrl(&self) -> u32 {
+        self.registers.sec_fw_recovery_if_recovery_ctrl.get()
+    }
+    pub fn set_recovery_if_recovery_ctrl(&self, value: u32) {
+        self.registers.sec_fw_recovery_if_recovery_ctrl.set(value);
+    }
 }

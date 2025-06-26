@@ -64,6 +64,7 @@ pub struct StartCaliptraArgs {
     pub owner_pk_hash: Option<String>,
     pub device_lifecycle: Option<String>,
     pub wdt_timeout: Option<u64>,
+    pub use_mcu_recovery_interface: bool,
 }
 
 /// Creates and returns an initialized a Caliptra emulator CPU.
@@ -80,6 +81,7 @@ pub fn start_caliptra(
     let wdt_timeout = args
         .wdt_timeout
         .unwrap_or(EXPECTED_CALIPTRA_BOOT_TIME_IN_CYCLES);
+    let args_use_mcu_recovery_interface = args.use_mcu_recovery_interface;
     let mut mfg_pk_hash = match hex::decode(args.mfg_pk_hash.as_ref().unwrap_or(&String::new())) {
         Ok(mfg_pk_hash) => mfg_pk_hash,
         Err(_) => {
@@ -197,6 +199,12 @@ pub fn start_caliptra(
         })
     };
 
+    if args_use_mcu_recovery_interface {
+        println!("Caliptra: Using MCU Recovery Interface");
+    } else {
+        println!("Caliptra Emulator: Using Caliptra Recovery Interface");
+    }
+
     let bus_args = CaliptraRootBusArgs {
         clock: clock.clone(),
         pic: pic.clone(),
@@ -222,6 +230,7 @@ pub fn start_caliptra(
             },
         ),
         subsystem_mode: args.active_mode,
+        use_mcu_recovery_interface: args_use_mcu_recovery_interface,
         ..Default::default()
     };
 

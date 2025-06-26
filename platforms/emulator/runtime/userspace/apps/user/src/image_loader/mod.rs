@@ -19,7 +19,7 @@ use libtock_platform::ErrorCode;
 #[allow(unused)]
 use mcu_config::boot;
 #[allow(unused)]
-use mcu_config::boot::{BootConfig, PartitionId, PartitionStatus, RollbackEnable};
+use mcu_config::boot::{BootConfigAsync, PartitionId, PartitionStatus, RollbackEnable};
 #[allow(unused)]
 use mcu_config_emulator::flash::{
     PartitionTable, StandAloneChecksumCalculator, IMAGE_A_PARTITION, IMAGE_B_PARTITION,

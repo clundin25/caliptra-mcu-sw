@@ -3,5 +3,8 @@
 pub mod flash_api;
 pub mod flash_ctrl;
 
-#[cfg(feature = "test-mcu-rom-flash-access")]
+#[cfg(any(
+    feature = "test-mcu-rom-flash-access",
+    feature = "test-flash-based-boot"
+))]
 pub mod flash_test;

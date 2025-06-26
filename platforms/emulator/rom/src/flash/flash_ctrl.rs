@@ -17,6 +17,14 @@ pub const PRIMARY_FLASH_CTRL_BASE: StaticRef<PrimaryFlashCtrl> = unsafe {
     StaticRef::new(primary_flash_ctrl::PRIMARY_FLASH_CTRL_ADDR as *const PrimaryFlashCtrl)
 };
 
+#[allow(dead_code)]
+pub const SECONDARY_FLASH_CTRL_BASE: StaticRef<PrimaryFlashCtrl> = unsafe {
+    StaticRef::new(
+        registers_generated::secondary_flash_ctrl::SECONDARY_FLASH_CTRL_ADDR
+            as *const PrimaryFlashCtrl,
+    )
+};
+
 const PAGE_SIZE: usize = 256;
 const FLASH_MAX_PAGES: usize = 64 * 1024 * 1024 / PAGE_SIZE;
 

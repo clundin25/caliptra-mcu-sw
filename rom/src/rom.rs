@@ -15,6 +15,7 @@ Abstract:
 use crate::fatal_error;
 use crate::fuses::Otp;
 use crate::i3c::I3c;
+use crate::{FlashPartitionIntf, RecoveryIntfPeripheral};
 use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
 use caliptra_api::SocManager;
@@ -146,7 +147,47 @@ impl Soc {
     }
 }
 
-pub fn rom_start() {
+pub struct I3CRecoveryIntfPeripheral<'a> {
+    pub i3c: &'a mut I3c,
+}
+
+impl<'a> I3CRecoveryIntfPeripheral<'a> {
+    pub fn new(i3c: &'a mut I3c) -> Self {
+        I3CRecoveryIntfPeripheral { i3c }
+    }
+}
+
+impl RecoveryIntfPeripheral for I3CRecoveryIntfPeripheral<'_> {
+    fn read_indirect_fifo_status_2(&self) -> u32 {
+        self.i3c.read_indirect_fifo_status_2()
+    }
+    fn write_i3c_ec_soc_mgmt_if_rec_intf_cfg(&self, value: u32) {
+        self.i3c.write_i3c_ec_soc_mgmt_if_rec_intf_cfg(value);
+    }
+    fn read_prot_cap2(&self) -> u32 {
+        self.i3c.read_prot_cap2()
+    }
+    fn read_device_status0(&self) -> u32 {
+        self.i3c.read_device_status0()
+    }
+    fn read_recovery_status(&self) -> u32 {
+        self.i3c.read_recovery_status()
+    }
+    fn set_indirect_fifo_ctrl_1(&self, value: u32) {
+        self.i3c.set_indirect_fifo_ctrl_1(value);
+    }
+    fn write_indirect_fifo_data(&self, value: u32) {
+        self.i3c.write_indirect_fifo_data(value);
+    }
+    fn read_recovery_if_recovery_ctrl(&self) -> u32 {
+        self.i3c.read_recovery_if_recovery_ctrl()
+    }
+    fn set_recovery_if_recovery_ctrl(&self, value: u32) {
+        self.i3c.set_recovery_if_recovery_ctrl(value);
+    }
+}
+
+pub fn rom_start(flash_partition_driver: Option<&mut dyn FlashPartitionIntf>) {
     romtime::println!("[mcu-rom] Hello from ROM");
 
     let straps: StaticRef<mcu_config::McuStraps> = unsafe { StaticRef::new(addr_of!(MCU_STRAPS)) };
@@ -287,6 +328,18 @@ pub fn rom_start() {
         }
         fatal_error(5);
     };
+
+    if let Some(flash_driver) = flash_partition_driver {
+        romtime::println!("[mcu-rom] Starting Flash recovery flow");
+        let mut i3c = I3c::new(i3c_base);
+        let mut i3c_recovery = I3CRecoveryIntfPeripheral::new(&mut i3c);
+
+        crate::recovery::load_flash_image_to_recovery(&mut i3c_recovery, flash_driver)
+            .map_err(|_| fatal_error(1))
+            .unwrap();
+
+        romtime::println!("[mcu-rom] Flash Recovery flow complete");
+    }
 
     romtime::println!("[mcu-rom] Waiting for firmware to be ready");
     while !soc.fw_ready() {}

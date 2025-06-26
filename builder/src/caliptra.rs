@@ -21,6 +21,7 @@ use hex::ToHex;
 use std::{num::ParseIntError, path::PathBuf, str::FromStr};
 use zerocopy::{transmute, IntoBytes};
 
+#[derive(Clone, Debug)]
 pub struct CaliptraBuilder {
     active_mode: bool,
     fpga: bool,
@@ -123,6 +124,18 @@ impl CaliptraBuilder {
             self.soc_manifest = Some(path);
         }
         Ok(self.soc_manifest.clone().unwrap())
+    }
+
+    pub fn replace_manifest_metadata(&mut self, metadata: Vec<SocImage>) -> Result<PathBuf> {
+        println!("Replacing SoC manifest metadata with: {:?}", metadata);
+        // Replace the current metadata
+        self.soc_images = Some(metadata);
+
+        self.soc_manifest = None; // Clear the cached manifest
+
+        // Rebuild the SoC manifest
+        println!("Rebuilding SoC manifest with new metadata");
+        self.get_soc_manifest()
     }
 
     pub fn get_vendor_pk_hash(&mut self) -> Result<&str> {

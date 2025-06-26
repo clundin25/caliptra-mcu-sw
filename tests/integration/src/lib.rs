@@ -78,6 +78,7 @@ mod test {
         streaming_boot_package_path: Option<PathBuf>,
         primary_flash_image_path: Option<PathBuf>,
         secondary_flash_image_path: Option<PathBuf>,
+        caliptra_builder: Option<CaliptraBuilder>,
     ) -> ExitStatus {
         let mut cargo_run_args = vec![
             "run",
@@ -162,16 +163,20 @@ mod test {
         let lc_size = format!("0x{:x}", mcu_config_emulator::EMULATOR_MEMORY_MAP.lc_size);
         cargo_run_args.extend(["--lc-size", &lc_size]);
 
-        let mut caliptra_builder = CaliptraBuilder::new(
-            true,
-            false,
-            None,
-            None,
-            None,
-            None,
-            Some(runtime_path.clone()),
-            soc_images,
-        );
+        let mut caliptra_builder = if let Some(caliptra_builder) = caliptra_builder {
+            caliptra_builder
+        } else {
+            CaliptraBuilder::new(
+                true,
+                false,
+                None,
+                None,
+                None,
+                None,
+                Some(runtime_path.clone()),
+                soc_images,
+            )
+        };
 
         if active_mode {
             if manufacturing_mode {
@@ -248,6 +253,7 @@ mod test {
             i3c_port,
             true,  // active mode is always true
             false, //set this to true if you want to run in manufacturing mode
+            None,
             None,
             None,
             None,
@@ -340,6 +346,7 @@ mod test {
             None,
             None,
             None,
+            None,
         );
         assert_eq!(0, test.code().unwrap_or_default());
 
@@ -363,6 +370,7 @@ mod test {
             i3c_port,
             true,
             false,
+            None,
             None,
             None,
             None,
