@@ -199,12 +199,6 @@ pub fn start_caliptra(
         })
     };
 
-    if args_use_mcu_recovery_interface {
-        println!("Caliptra: Using MCU Recovery Interface");
-    } else {
-        println!("Caliptra Emulator: Using Caliptra Recovery Interface");
-    }
-
     let bus_args = CaliptraRootBusArgs {
         clock: clock.clone(),
         pic: pic.clone(),

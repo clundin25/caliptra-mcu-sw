@@ -1,14 +1,18 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{FlashPartitionIntf, RecoveryIntfPeripheral};
+use crate::flash::flash_api::FlashPartition;
 use bitfield::bitfield;
 use flash_image::{FlashChecksums, FlashHeader, ImageHeader};
+use registers_generated::i3c;
+use registers_generated::i3c::bits::{RecIntfCfg, RecoveryCtrl};
+use romtime::StaticRef;
 use smlang::statemachine;
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use zerocopy::FromBytes;
 
 const ACTIVATE_RECOVERY_IMAGE_CMD: u32 = 0xF;
-const BYPASS_CFG_USE_I3C_FIFO: u32 = 0x0;
-const BYPASS_CFG_AXI_DIRECT_FIFO: u32 = 0x1;
+const BYPASS_CFG_USE_I3C: u32 = 0x0;
+const BYPASS_CFG_AXI_DIRECT: u32 = 0x1;
 
 statemachine! {
     derive_states: [Clone, Copy, Debug],
@@ -199,10 +203,7 @@ impl StateMachineContext for Context {
     }
 }
 
-pub fn get_flash_image_info(
-    id: u32,
-    flash_driver: &mut dyn FlashPartitionIntf,
-) -> Result<(u32, u32), ()> {
+pub fn get_flash_image_info(id: u32, flash_driver: &mut FlashPartition) -> Result<(u32, u32), ()> {
     // get the maximum size between FlashHeader, Checksums, and ImageHeader
     let mut buf = [0u8; 12];
 
@@ -249,8 +250,8 @@ pub fn recovery_img_index_to_image_id(recovery_image_index: u32) -> Result<u32, 
 }
 
 pub fn load_flash_image_to_recovery(
-    recovery_periph: &mut dyn RecoveryIntfPeripheral,
-    flash_driver: &mut dyn FlashPartitionIntf,
+    i3c_periph: StaticRef<i3c::regs::I3c>,
+    flash_driver: &mut FlashPartition,
 ) -> Result<(), ()> {
     let context = Context::new();
     let mut state_machine = StateMachine::new(context);
@@ -258,7 +259,9 @@ pub fn load_flash_image_to_recovery(
     let mut prev_state = States::ReadProtCap;
     let mut last_percent = 0u32;
 
-    recovery_periph.write_i3c_ec_soc_mgmt_if_rec_intf_cfg(BYPASS_CFG_AXI_DIRECT_FIFO);
+    i3c_periph
+        .soc_mgmt_if_rec_intf_cfg
+        .modify(RecIntfCfg::RecIntfBypass.val(BYPASS_CFG_AXI_DIRECT));
     while *state_machine.state() != States::Done {
         if prev_state != *state_machine.state() {
             romtime::println!(
@@ -272,20 +275,21 @@ pub fn load_flash_image_to_recovery(
         match *state_machine.state() {
             States::ReadProtCap => {
                 // Read the ProtCap2 register
-                let prot_cap = recovery_periph.read_prot_cap2();
+                let prot_cap = i3c_periph.sec_fw_recovery_if_prot_cap_2.get();
                 let _ = state_machine.process_event(Events::ProtCap(ProtCap2(prot_cap)));
             }
 
             States::ReadDeviceStatus => {
                 // Read the Device Status register
-                let device_status = recovery_periph.read_device_status0();
+                let device_status = i3c_periph.sec_fw_recovery_if_device_status_0.get();
                 let _ =
                     state_machine.process_event(Events::DeviceStatus(DeviceStatus0(device_status)));
             }
 
             States::WaitForRecoveryStatus => {
                 // Read the Recovery Status register
-                let recovery_status = RecoveryStatus(recovery_periph.read_recovery_status());
+                let recovery_status =
+                    RecoveryStatus(i3c_periph.sec_fw_recovery_if_recovery_status.get());
                 let res = state_machine.process_event(Events::RecoveryStatus(recovery_status));
                 if res.is_ok() {
                     state_machine.context_mut().recovery_image_index =
@@ -303,8 +307,9 @@ pub fn load_flash_image_to_recovery(
                     state_machine.context_mut().flash_offset = image_info.0;
                     state_machine.context_mut().image_size = image_info.1;
                     state_machine.context_mut().transfer_offset = 0;
-                    recovery_periph
-                        .set_indirect_fifo_ctrl_1(state_machine.context().image_size / 4);
+                    i3c_periph
+                        .sec_fw_recovery_if_indirect_fifo_ctrl_1
+                        .set(state_machine.context().image_size / 4);
                 }
             }
 
@@ -337,44 +342,45 @@ pub fn load_flash_image_to_recovery(
                             &mut data,
                         )
                         .map_err(|_| ())?;
-                    recovery_periph.write_indirect_fifo_data(u32::from_be_bytes(data));
+                    i3c_periph.tti_tx_data_port.set(u32::from_be_bytes(data));
                     state_machine.context_mut().transfer_offset += 4; // Simulate writing 4 bytes
                 }
             }
 
             States::WaitForRecoveryPending => {
-                let device_status = recovery_periph.read_device_status0();
+                let device_status = i3c_periph.sec_fw_recovery_if_device_status_0.get();
                 let _ =
                     state_machine.process_event(Events::DeviceStatus(DeviceStatus0(device_status)));
             }
 
             States::Activate => {
                 // Activate the recovery image
-                let mut recovery_ctrl =
-                    RecoveryCtrl0(recovery_periph.read_recovery_if_recovery_ctrl());
-                recovery_ctrl.set_activate_rec_image(ACTIVATE_RECOVERY_IMAGE_CMD);
-                recovery_periph.set_recovery_if_recovery_ctrl(recovery_ctrl.0);
+                i3c_periph
+                    .sec_fw_recovery_if_recovery_ctrl
+                    .modify(RecoveryCtrl::ActivateRecImg.val(ACTIVATE_RECOVERY_IMAGE_CMD));
                 let _ = state_machine.process_event(Events::CheckFwActivation);
             }
 
             States::CheckFwActivation => {
                 // Check if the device is running recovery
-                let recovery_status = recovery_periph.read_recovery_status();
-                let _ = state_machine
-                    .process_event(Events::RecoveryStatus(RecoveryStatus(recovery_status)));
+                let recovery_status =
+                    RecoveryStatus(i3c_periph.sec_fw_recovery_if_recovery_status.get());
+                let _ = state_machine.process_event(Events::RecoveryStatus(recovery_status));
             }
 
             States::ActivateCheckRecoveryStatus => {
                 // Check the recovery status after activation
-                let recovery_status = recovery_periph.read_recovery_status();
-                let _ = state_machine
-                    .process_event(Events::RecoveryStatus(RecoveryStatus(recovery_status)));
+                let recovery_status =
+                    RecoveryStatus(i3c_periph.sec_fw_recovery_if_recovery_status.get());
+                let _ = state_machine.process_event(Events::RecoveryStatus(recovery_status));
             }
 
             _ => {}
         }
     }
-    recovery_periph.write_i3c_ec_soc_mgmt_if_rec_intf_cfg(BYPASS_CFG_USE_I3C_FIFO);
+    i3c_periph
+        .soc_mgmt_if_rec_intf_cfg
+        .modify(RecIntfCfg::RecIntfBypass.val(BYPASS_CFG_USE_I3C));
 
     Ok(())
 }

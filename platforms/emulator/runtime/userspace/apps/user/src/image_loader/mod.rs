@@ -11,7 +11,7 @@ mod config;
 
 use core::fmt::Write;
 #[allow(unused)]
-use libapi_emulated_caliptra::flash_boot_cfg::FlashBootConfig;
+use libapi_emulated_caliptra::image_loading::flash_boot_cfg::FlashBootConfig;
 #[allow(unused)]
 use libsyscall_caliptra::flash::SpiFlash;
 use libtock_console::Console;

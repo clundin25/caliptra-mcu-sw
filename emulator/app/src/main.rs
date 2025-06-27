@@ -449,15 +449,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             None
         };
 
-        let use_mcu_recovery_interface;
-        #[cfg(feature = "test-flash-based-boot")]
-        {
-            use_mcu_recovery_interface = true;
-        }
-        #[cfg(not(feature = "test-flash-based-boot"))]
-        {
-            use_mcu_recovery_interface = false;
-        }
+        let use_mcu_recovery_interface = cfg!(feature = "test-flash-based-boot");
 
         let (caliptra_cpu, soc_to_caliptra) = start_caliptra(&StartCaliptraArgs {
             rom: cli.caliptra_rom,

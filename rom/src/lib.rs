@@ -14,6 +14,8 @@ Abstract:
 
 #![no_std]
 
+pub mod flash;
+pub use flash::*;
 mod fuses;
 pub use fuses::*;
 mod rom;
@@ -22,34 +24,6 @@ mod i3c;
 mod recovery;
 pub trait FatalErrorHandler {
     fn fatal_error(&mut self, code: u32) -> !;
-}
-
-pub trait RecoveryIntfPeripheral {
-    fn read_indirect_fifo_status_2(&self) -> u32;
-    fn write_i3c_ec_soc_mgmt_if_rec_intf_cfg(&self, value: u32);
-    fn read_prot_cap2(&self) -> u32;
-    fn read_device_status0(&self) -> u32;
-    fn read_recovery_status(&self) -> u32;
-    fn set_indirect_fifo_ctrl_1(&self, value: u32);
-    fn write_indirect_fifo_data(&self, value: u32);
-    fn read_recovery_if_recovery_ctrl(&self) -> u32;
-    fn set_recovery_if_recovery_ctrl(&self, value: u32);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FlashAccessError {
-    InvalidPartition,
-    InvalidStatus,
-    StorageError,
-    ReadFailed,
-    WriteFailed,
-    Unknown,
-}
-
-pub trait FlashPartitionIntf {
-    fn read(&self, partition_offset: usize, buf: &mut [u8]) -> Result<(), FlashAccessError>;
-    fn write(&self, partition_offset: usize, buf: &[u8]) -> Result<(), FlashAccessError>;
-    fn erase(&self, partition_offset: usize, len: usize) -> Result<(), FlashAccessError>;
 }
 
 static mut FATAL_ERROR_HANDLER: Option<&'static mut dyn FatalErrorHandler> = None;
