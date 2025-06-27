@@ -298,5 +298,4 @@ mod test {
             run_test_options_nightly!($test, false);
         };
     }
-
 }
