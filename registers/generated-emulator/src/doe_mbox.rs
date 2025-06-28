@@ -9,10 +9,10 @@ pub trait DoeMboxPeripheral {
     fn set_dma_rom_sram(&mut self, _ram: std::rc::Rc<std::cell::RefCell<caliptra_emu_bus::Ram>>) {}
     fn register_event_channels(
         &mut self,
-        _events_to_caliptra: std::sync::mpsc::Sender<caliptra_emu_bus::Event>,
-        _events_from_caliptra: std::sync::mpsc::Receiver<caliptra_emu_bus::Event>,
-        _events_to_mcu: std::sync::mpsc::Sender<caliptra_emu_bus::Event>,
-        _events_from_mcu: std::sync::mpsc::Receiver<caliptra_emu_bus::Event>,
+        _events_to_caliptra: Option<std::sync::mpsc::Sender<caliptra_emu_bus::Event>>,
+        _events_from_caliptra: Option<std::sync::mpsc::Receiver<caliptra_emu_bus::Event>>,
+        _events_to_mcu: Option<std::sync::mpsc::Sender<caliptra_emu_bus::Event>>,
+        _events_from_mcu: Option<std::sync::mpsc::Receiver<caliptra_emu_bus::Event>>,
     ) {
     }
     fn poll(&mut self) {}

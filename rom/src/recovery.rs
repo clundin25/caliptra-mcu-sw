@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license
 
+use crate::{dma::*, rom};
 use crate::flash::flash_api::FlashPartition;
 use bitfield::bitfield;
 use flash_image::{FlashChecksums, FlashHeader, ImageHeader};
@@ -13,6 +14,7 @@ use zerocopy::FromBytes;
 const ACTIVATE_RECOVERY_IMAGE_CMD: u32 = 0xF;
 const BYPASS_CFG_USE_I3C: u32 = 0x0;
 const BYPASS_CFG_AXI_DIRECT: u32 = 0x1;
+const DMA_TRANSFER_BLOCK_SIZE: usize = 256;
 
 statemachine! {
     derive_states: [Clone, Copy, Debug],
@@ -252,6 +254,7 @@ pub fn recovery_img_index_to_image_id(recovery_image_index: u32) -> Result<u32, 
 pub fn load_flash_image_to_recovery(
     i3c_periph: StaticRef<i3c::regs::I3c>,
     flash_driver: &mut FlashPartition,
+    dma_driver: Option<&mut dyn Dma>,
 ) -> Result<(), ()> {
     let context = Context::new();
     let mut state_machine = StateMachine::new(context);
@@ -333,17 +336,57 @@ pub fn load_flash_image_to_recovery(
                     // If the transfer is complete, we can move to the next state
                     let _ = state_machine.process_event(Events::TransferComplete);
                 } else {
-                    let mut data = [0u8; 4];
-                    flash_driver
-                        .read(
-                            (state_machine.context().flash_offset
-                                + state_machine.context().transfer_offset)
-                                as usize,
-                            &mut data,
-                        )
-                        .map_err(|_| ())?;
-                    i3c_periph.tti_tx_data_port.set(u32::from_be_bytes(data));
-                    state_machine.context_mut().transfer_offset += 4; // Simulate writing 4 bytes
+                    romtime::println!("1");
+                    if let Some(dma_driver) = dma_driver.as_ref () {
+                        // Use DMA to transfer data
+                        
+                        let bytes_to_transfer = core::cmp::min(
+                            state_machine.context().image_size
+                                - state_machine.context().transfer_offset,
+                            DMA_TRANSFER_BLOCK_SIZE as u32,
+                        );
+                        let mut buf = [0u8; DMA_TRANSFER_BLOCK_SIZE];
+                        romtime::println!("2");
+                        // print the address of buf
+
+                        flash_driver
+                            .read(
+                                (state_machine.context().flash_offset
+                                    + state_machine.context().transfer_offset) as usize,
+                                &mut buf[..bytes_to_transfer as usize],
+                            )
+                            .map_err(|_| ())?;
+                                                romtime::println!("Buffer address: {:p}", &buf);
+                        // dump the buffer in hex
+                        for byte in &buf {
+                            romtime::print!("{:02x} ", byte);
+                        }
+                        romtime::println!();
+
+                        romtime::println!("4");
+
+                        dma_driver.write_fifo(&buf[..bytes_to_transfer as usize])
+                            .map_err(|_| ())?;
+                        romtime::println!("5");
+
+                        state_machine.context_mut().transfer_offset += bytes_to_transfer;
+                        romtime::println!("6");
+
+                    } else {
+                        // Fallback to direct read if DMA is not available
+                        let mut data = [0u8; 4];
+                        flash_driver
+                            .read(
+                                (state_machine.context().flash_offset
+                                    + state_machine.context().transfer_offset)
+                                    as usize,
+                                &mut data,
+                            )
+                            .map_err(|_| ())?;
+                        i3c_periph.tti_tx_data_port.set(u32::from_be_bytes(data));
+                        state_machine.context_mut().transfer_offset += 4;
+                    }
+
                 }
             }
 

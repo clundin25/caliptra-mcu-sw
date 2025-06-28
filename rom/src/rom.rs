@@ -16,6 +16,7 @@ use crate::fatal_error;
 use crate::flash::flash_api::FlashPartition;
 use crate::fuses::Otp;
 use crate::i3c::I3c;
+use crate::dma::Dma;
 use caliptra_api::mailbox::CommandId;
 use caliptra_api::CaliptraApiError;
 use caliptra_api::SocManager;
@@ -147,7 +148,7 @@ impl Soc {
     }
 }
 
-pub fn rom_start(flash_partition_driver: Option<&mut FlashPartition>) {
+pub fn rom_start(flash_partition_driver: Option<&mut FlashPartition>, dma_driver: Option<&mut dyn Dma>) {
     romtime::println!("[mcu-rom] Hello from ROM");
 
     let straps: StaticRef<mcu_config::McuStraps> = unsafe { StaticRef::new(addr_of!(MCU_STRAPS)) };
@@ -292,7 +293,7 @@ pub fn rom_start(flash_partition_driver: Option<&mut FlashPartition>) {
     if let Some(flash_driver) = flash_partition_driver {
         romtime::println!("[mcu-rom] Starting Flash recovery flow");
 
-        crate::recovery::load_flash_image_to_recovery(i3c_base, flash_driver)
+        crate::recovery::load_flash_image_to_recovery(i3c_base, flash_driver, dma_driver)
             .map_err(|_| fatal_error(1))
             .unwrap();
 

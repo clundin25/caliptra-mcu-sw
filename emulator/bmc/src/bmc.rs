@@ -5,31 +5,43 @@ use caliptra_emu_bus::{Device, Event, EventData, RecoveryCommandCode};
 use std::sync::mpsc;
 
 pub struct Bmc {
-    events_to_caliptra: mpsc::Sender<Event>,
-    events_from_caliptra: mpsc::Receiver<Event>,
-    events_to_mcu: mpsc::Sender<Event>,
-    events_from_mcu: mpsc::Receiver<Event>,
-
     /// Recovery state machine
     recovery_state_machine: recovery::StateMachine<recovery::Context>,
+
+    // Channel for events going into BMC
+    incoming_event_sender: mpsc::Sender<Event>,
+    incoming_events: mpsc::Receiver<Event>,
+
+    // Channel for events going out of BMC
+    outgoing_event_sender: mpsc::Sender<Event>,
+    outgoing_events: Option<mpsc::Receiver<Event>>,
 }
 
 impl Bmc {
-    pub fn new(
-        events_to_caliptra: mpsc::Sender<Event>,
-        events_from_caliptra: mpsc::Receiver<Event>,
-        events_to_mcu: mpsc::Sender<Event>,
-        events_from_mcu: mpsc::Receiver<Event>,
-    ) -> Bmc {
-        let recovery_context = recovery::Context::new(events_to_caliptra.clone());
+    pub fn new() -> Bmc {
+        
+        let (incoming_event_sender, incoming_events) = mpsc::channel::<Event>();
+        let (outgoing_event_sender, outgoing_events) = mpsc::channel::<Event>();
+        let recovery_context = recovery::Context::new(outgoing_event_sender.clone());
         Bmc {
-            events_to_caliptra,
-            events_from_caliptra,
-            events_to_mcu,
-            events_from_mcu,
             recovery_state_machine: recovery::StateMachine::new(recovery_context),
+            incoming_event_sender,
+            incoming_events,
+            outgoing_event_sender,
+            outgoing_events:Some(outgoing_events),
+          
+
         }
     }
+
+    pub fn get_event_sender(&self) -> mpsc::Sender<Event> {
+        self.incoming_event_sender.clone()
+    }
+
+    pub fn get_event_receiver(&mut self) -> Option<mpsc::Receiver<Event>> {
+        self.outgoing_events.take()
+    }
+
 
     pub fn push_recovery_image(&mut self, image: Vec<u8>) {
         self.recovery_state_machine
@@ -42,25 +54,9 @@ impl Bmc {
     pub fn step(&mut self) {
         let prev_state = *self.recovery_state_machine.state();
         // process any incoming events
-        while let Ok(event) = self.events_from_caliptra.try_recv() {
+        while let Ok(event) = self.incoming_events.try_recv() {
             match event.dest {
                 Device::BMC => self.incoming_caliptra_event(event),
-                // route to the MCU
-                Device::MCU => {
-                    self.events_to_mcu.send(event).unwrap();
-                }
-                Device::ExternalTestSram => {
-                    self.events_to_mcu.send(event).unwrap();
-                }
-                _ => {}
-            }
-        }
-
-        while let Ok(event) = self.events_from_mcu.try_recv() {
-            match event.dest {
-                Device::BMC => self.incoming_mcu_event(event),
-                // route to the Caliptra core
-                Device::CaliptraCore => self.events_to_caliptra.send(event).unwrap(),
                 _ => {}
             }
         }
@@ -83,7 +79,7 @@ impl Bmc {
         }
 
         if let Some(event) = recovery::state_to_read_request(state) {
-            self.events_to_caliptra.send(event).unwrap();
+            self.outgoing_event_sender.send(event).unwrap();
         }
     }
 

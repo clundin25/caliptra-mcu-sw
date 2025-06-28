@@ -23,6 +23,8 @@ use crate::flash::flash_boot_cfg::FlashBootCfg;
 use crate::flash::flash_ctrl::{
     EmulatedFlashCtrl, PRIMARY_FLASH_CTRL_BASE, SECONDARY_FLASH_CTRL_BASE,
 };
+#[allow(unused_imports)]
+use crate::dma::EmulatedDmaCtrl;
 use mcu_config::boot::{BootConfig, BootConfigError, PartitionId, PartitionStatus, RollbackEnable};
 use mcu_config::{McuMemoryMap, McuStraps};
 use mcu_config_emulator::flash::{
@@ -94,7 +96,7 @@ pub extern "C" fn rom_entry() -> ! {
         })
         .ok()
         .unwrap();
-        let mut partition_b = FlashPartition::new(
+        let partition_b = FlashPartition::new(
             &secondary_flash_ctrl,
             "Image B",
             IMAGE_B_PARTITION.offset,
@@ -117,12 +119,13 @@ pub extern "C" fn rom_entry() -> ! {
             }
             _ => fatal_error(1),
         };
+        let mut dma_driver = EmulatedDmaCtrl::new();
 
-        mcu_rom_common::rom_start(Some(&mut flash_image_partition_driver));
+        mcu_rom_common::rom_start(Some(&mut flash_image_partition_driver), Some(&mut dma_driver));
     }
     #[cfg(not(feature = "test-flash-based-boot"))]
     {
-        mcu_rom_common::rom_start(None);
+        mcu_rom_common::rom_start(None, None);
     }
 
     #[cfg(feature = "test-mcu-rom-flash-access")]

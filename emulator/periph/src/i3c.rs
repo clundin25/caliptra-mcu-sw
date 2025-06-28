@@ -78,10 +78,13 @@ pub struct I3c {
     interrupt_status: ReadWriteRegister<u32, InterruptStatus::Register>,
     interrupt_enable: ReadWriteRegister<u32, InterruptEnable::Register>,
 
-    events_to_caliptra: Option<mpsc::Sender<Event>>,
-    events_from_caliptra: Option<mpsc::Receiver<Event>>,
-    events_to_mcu: Option<mpsc::Sender<Event>>,
-    events_from_mcu: Option<mpsc::Receiver<Event>>,
+    // Channel for events going into I3C
+    incoming_event_sender: mpsc::Sender<Event>,
+    incoming_events: mpsc::Receiver<Event>,
+
+    // Channel for events going out of I3C
+    outgoing_event_sender: mpsc::Sender<Event>,
+    outgoing_events: Option<mpsc::Receiver<Event>>,
 }
 
 impl I3c {
@@ -103,6 +106,8 @@ impl I3c {
             timer: timer.clone(),
         };
         i3c_target.set_incoming_command_client(Arc::new(poll_scheduler));
+        let (incoming_event_sender, incoming_events) = mpsc::channel::<Event>();
+        let (outgoing_event_sender, outgoing_events) = mpsc::channel::<Event>();
 
         Self {
             i3c_target,
@@ -128,11 +133,20 @@ impl I3c {
             indirect_fifo_data: Vec::new(),
             interrupt_status: ReadWriteRegister::new(0),
             interrupt_enable: ReadWriteRegister::new(0),
-            events_to_caliptra: None,
-            events_from_caliptra: None,
-            events_to_mcu: None,
-            events_from_mcu: None,
+            incoming_event_sender,
+            incoming_events,
+            outgoing_event_sender,
+            outgoing_events: Some(outgoing_events),
+
         }
+    }
+
+    pub fn get_event_sender(&self) -> mpsc::Sender<Event> {
+        self.incoming_event_sender.clone()
+    }
+
+    pub fn get_event_receiver(&mut self) -> Option<mpsc::Receiver<Event>> {
+        self.outgoing_events.take()
     }
 
     pub fn get_dynamic_address(&self) -> Option<DynamicI3cAddress> {
@@ -248,9 +262,7 @@ impl I3c {
                     }
                 }
 
-                self.events_to_caliptra
-                    .as_ref()
-                    .unwrap()
+                self.outgoing_event_sender
                     .send(Event::new(
                         Device::RecoveryIntf,
                         Device::CaliptraCore,
@@ -283,9 +295,7 @@ impl I3c {
                         1
                     };
 
-                self.events_to_caliptra
-                    .as_ref()
-                    .unwrap()
+                self.outgoing_event_sender
                     .send(Event::new(
                         Device::RecoveryIntf,
                         Device::CaliptraCore,
@@ -474,28 +484,16 @@ impl I3c {
                 self.write_i3c_ec_sec_fw_recovery_if_indirect_fifo_ctrl_1(val);
                 Ok(())
             }
+            0x88..0x8c => {
+                self.write_piocontrol_tx_data_port(val);
+                Ok(())
+            }
             _ => Err(caliptra_emu_bus::BusError::StoreAccessFault),
         }
     }
 }
 
 impl I3cPeripheral for I3c {
-    fn register_event_channels(
-        &mut self,
-        events_to_caliptra: mpsc::Sender<Event>,
-        events_from_caliptra: mpsc::Receiver<Event>,
-        events_to_mcu: mpsc::Sender<Event>,
-        events_from_mcu: mpsc::Receiver<Event>,
-    ) {
-        self.events_to_caliptra = Some(events_to_caliptra);
-        self.events_from_caliptra = Some(events_from_caliptra);
-        self.events_to_mcu = Some(events_to_mcu);
-        self.events_from_mcu = Some(events_from_mcu);
-    }
-    fn read_i3c_base_hci_version(&mut self) -> RvData {
-        RvData::from(Self::HCI_VERSION)
-    }
-
     fn read_i3c_ec_tti_interrupt_enable(
         &mut self,
     ) -> caliptra_emu_bus::ReadWriteRegister<
@@ -893,50 +891,12 @@ impl I3cPeripheral for I3c {
         self.write_tx_data_into_target();
         self.timer.schedule_poll_in(Self::HCI_TICKS);
 
-        if let Some(events_from_caliptra) = &self.events_from_caliptra {
-            // Collect all events first to avoid borrowing issues
-            let mut events = Vec::new();
-            while let Ok(event) = events_from_caliptra.try_recv() {
-                events.push(event);
-            }
-            // Now process events
-            for event in events {
-                match event.dest {
-                    Device::RecoveryIntf => {
-                        self.incoming_caliptra_event(event);
-                    }
-                    // route to the MCU
-                    Device::MCU => {
-                        self.events_to_mcu.as_mut().unwrap().send(event).unwrap();
-                    }
-                    Device::ExternalTestSram => {
-                        self.events_to_mcu.as_mut().unwrap().send(event).unwrap();
-                    }
-                    _ => {}
+        while let Ok(event) = self.incoming_events.try_recv() {
+            match event.dest {
+                Device::RecoveryIntf => {
+                    self.incoming_caliptra_event(event);
                 }
-            }
-        }
-        if let Some(events_from_mcu) = &self.events_from_mcu {
-            // Collect all events first to avoid borrowing issues
-            let mut events = Vec::new();
-            while let Ok(event) = events_from_mcu.try_recv() {
-                events.push(event);
-            }
-            // Now process events
-            for event in events {
-                match event.dest {
-                    Device::RecoveryIntf => {
-                        self.incoming_mcu_event(event);
-                    }
-                    Device::CaliptraCore => {
-                        self.events_to_caliptra
-                            .as_mut()
-                            .unwrap()
-                            .send(event)
-                            .unwrap();
-                    }
-                    _ => {}
-                }
+                _ => {}
             }
         }
 

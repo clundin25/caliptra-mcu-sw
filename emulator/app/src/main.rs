@@ -21,7 +21,7 @@ mod mctp_transport;
 mod tests;
 
 use crate::i3c_socket::start_i3c_socket;
-use caliptra_emu_bus::{Bus, Clock, Timer};
+use caliptra_emu_bus::{Bus, Clock, Device, Timer};
 use caliptra_emu_cpu::{Cpu, Pic, RvInstr, StepAction};
 use caliptra_emu_cpu::{Cpu as CaliptraMainCpu, StepAction as CaliptraMainStepAction};
 use caliptra_emu_periph::CaliptraRootBus as CaliptraMainRootBus;
@@ -52,6 +52,7 @@ use std::process::exit;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use tests::mctp_util::base_protocol::LOCAL_TEST_ENDPOINT_EID;
 use tests::pldm_request_response_test::PldmRequestResponseTest;
 
@@ -283,6 +284,54 @@ fn read_console(running: Arc<AtomicBool>, stdin_uart: Option<Arc<Mutex<Option<u8
     }
 }
 
+fn route_event_to_destination(event_receiver:Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
+                              events_to_caliptra: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+                              events_to_mcu: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+                              events_to_bmc: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+                              events_to_recovery: Option<mpsc::Sender<caliptra_emu_bus::Event>>) {
+
+    if let Some(event_receiver) = event_receiver {
+        if let Ok(event) = event_receiver.try_recv() {
+            match event.dest {
+                Device::CaliptraCore => {
+                    if let Some(events_to_caliptra) = &events_to_caliptra {
+                        events_to_caliptra.send(event).unwrap();
+                    }
+                }
+                Device::MCU => {
+                    if let Some(events_to_mcu) = &events_to_mcu {
+                        events_to_mcu.send(event).unwrap();
+                    }
+                }
+                Device::BMC => {
+                    if let Some(events_to_bmc) = &events_to_bmc {
+                        events_to_bmc.send(event).unwrap();
+                    }
+                }
+                Device::RecoveryIntf => {
+                    if let Some(events_to_recovery) = &events_to_recovery {
+                        events_to_recovery.send(event).unwrap();
+                    }
+                }
+                Device::ExternalTestSram => {
+                    if let Some(events_to_mcu) = &events_to_mcu {
+                        events_to_mcu.send(event).unwrap();
+                    }
+                }
+                _ => {
+                    println!(
+                        "[Emulator] Unknown event destination: {:?} for event: {:?}",
+                        event.dest, event
+                    );
+                }
+
+            }
+        }
+    }
+    
+
+}
+
 // CPU Main Loop (free_run no GDB)
 fn free_run(
     running: Arc<AtomicBool>,
@@ -291,6 +340,15 @@ fn free_run(
     trace_path: Option<PathBuf>,
     stdin_uart: Option<Arc<Mutex<Option<u8>>>>,
     mut bmc: Option<Bmc>,
+    events_to_caliptra: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+    events_from_caliptra: Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
+    events_to_mcu: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+    events_from_mcu: Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
+    events_to_bmc: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+    events_from_bmc: Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
+    events_to_recovery: Option<mpsc::Sender<caliptra_emu_bus::Event>>,
+    events_from_recovery: Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
+    events_from_dma: Option<mpsc::Receiver<caliptra_emu_bus::Event>>,
 ) {
     // read from the console in a separate thread to prevent blocking
     let running_clone = running.clone();
@@ -370,6 +428,45 @@ fn free_run(
             }
         }
     };
+
+    
+    route_event_to_destination(
+        events_from_caliptra,
+        events_to_caliptra.clone(),
+        events_to_mcu.clone(),
+        events_to_bmc.clone(),
+        events_to_recovery.clone(),
+    );
+     route_event_to_destination(
+        events_from_mcu,
+        events_to_caliptra.clone(),
+        events_to_mcu.clone(),
+        events_to_bmc.clone(),
+        events_to_recovery.clone(),
+    );
+     route_event_to_destination(
+        events_from_bmc,
+        events_to_caliptra.clone(),
+        events_to_mcu.clone(),
+        events_to_bmc.clone(),
+        events_to_recovery.clone(),
+    );
+    route_event_to_destination(
+        events_from_recovery,
+        events_to_caliptra.clone(),
+        events_to_mcu.clone(),
+        events_to_bmc.clone(),
+        events_to_recovery.clone(),
+    );
+    route_event_to_destination(
+        events_from_dma,
+        events_to_caliptra.clone(),
+        events_to_mcu.clone(),
+        events_to_bmc.clone(),
+        events_to_recovery.clone(),
+    );
+
+
 }
 
 fn main() -> io::Result<()> {
@@ -650,12 +747,14 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
     } else {
         I3cController::default()
     };
-    let i3c = I3c::new(
+    let mut i3c = I3c::new(
         &clock.clone(),
         &mut i3c_controller,
         i3c_error_irq,
         i3c_notif_irq,
     );
+    let events_to_i3c = i3c.get_event_sender();
+    let events_from_i3c = i3c.get_event_receiver();
     let i3c_dynamic_address = i3c.get_dynamic_address().unwrap();
 
     if cfg!(feature = "test-mctp-ctrl-cmds") {
@@ -833,6 +932,8 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
     )
     .unwrap();
 
+    let events_from_dma = dma_ctrl.get_event_receiver();
+
     emulator_periph::DummyDmaCtrl::set_dma_ram(&mut dma_ctrl, dma_ram.clone());
 
     let delegates: Vec<Box<dyn Bus>> = vec![Box::new(root_bus), Box::new(soc_to_caliptra)];
@@ -897,51 +998,40 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         .periph
         .set_dma_rom_sram(dma_rom_sram.clone());
 
+    auto_root_bus
+        .dma_periph
+        .as_mut()
+        .unwrap()
+        .periph
+        .set_dma_rom_sram(dma_rom_sram.clone());
+
     let cpu_args = DEFAULT_CPU_ARGS;
 
     let mut cpu = Cpu::new(auto_root_bus, clock, pic, cpu_args);
     cpu.write_pc(mcu_root_bus_offsets.rom_offset);
     cpu.register_events();
 
+    let (caliptra_event_sender, caliptra_event_receiver) =
+    caliptra_cpu.as_mut().unwrap().register_events();
+    let (mcu_event_sender, mcu_event_receiver) = cpu.register_events();
+
+    
     let mut bmc;
+    let mut events_from_bmc = None;
+    let mut events_to_bmc= None;
+
     #[cfg(feature = "test-flash-based-boot")]
     {
         println!("Emulator is using MCU recovery interface");
         bmc = None;
-        let (caliptra_event_sender, caliptra_event_receiver) =
-            caliptra_cpu.as_mut().unwrap().register_events();
-        let (mcu_event_sender, mcu_event_receiver) = cpu.register_events();
-        cpu.bus
-            .i3c_periph
-            .as_mut()
-            .unwrap()
-            .periph
-            .register_event_channels(
-                caliptra_event_sender,
-                caliptra_event_receiver,
-                mcu_event_sender,
-                mcu_event_receiver,
-            );
+
+        events_to_bmc = None;
+        events_from_bmc = None;
     }
     #[cfg(not(feature = "test-flash-based-boot"))]
     {
         println!("Emulator is using Caliptra recovery interface");
-        bmc = match caliptra_cpu.as_mut() {
-            Some(caliptra_cpu) => {
-                println!("Initializing recovery interface");
-                let (caliptra_event_sender, caliptra_event_receiver) =
-                    caliptra_cpu.register_events();
-                let (mcu_event_sender, mcu_event_reciever) = cpu.register_events();
-                let bmc = Bmc::new(
-                    caliptra_event_sender,
-                    caliptra_event_receiver,
-                    mcu_event_sender,
-                    mcu_event_reciever,
-                );
-                Some(bmc)
-            }
-            _ => None,
-        };
+        bmc = Some(Bmc::new());
 
         // prepare the BMC recovery interface emulator
         if active_mode {
@@ -950,6 +1040,8 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
                 exit(-1);
             }
             let bmc = bmc.as_mut().unwrap();
+            events_to_bmc = Some(bmc.get_event_sender());
+            events_from_bmc = bmc.get_event_receiver();
 
             // load the firmware images and SoC manifest into the recovery interface emulator
             // TODO: support reading these from firmware bundle as well
@@ -1046,6 +1138,15 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
                 instr_trace,
                 stdin_uart,
                 bmc,
+                Some(caliptra_event_sender),
+                Some(caliptra_event_receiver),
+                Some(mcu_event_sender),
+                Some(mcu_event_receiver),
+                events_to_bmc,
+                events_from_bmc,
+                Some(events_to_i3c),
+                events_from_i3c,
+                events_from_dma,
             );
         }
     }

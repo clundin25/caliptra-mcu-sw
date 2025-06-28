@@ -14,6 +14,8 @@ Abstract:
 
 #![no_std]
 
+mod dma;
+pub use dma::*;
 pub mod flash;
 pub use flash::*;
 mod fuses;

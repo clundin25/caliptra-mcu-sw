@@ -29,6 +29,8 @@ pub extern "C" fn main() {
     riscv::rom_entry();
 }
 
+mod dma;
+
 #[cfg(not(target_arch = "riscv32"))]
 #[no_mangle]
 pub extern "C" fn main() {

@@ -14,11 +14,13 @@ Abstract:
 
 use caliptra_emu_bus::{ActionHandle, Clock, Ram, ReadWriteRegister, Timer};
 use caliptra_emu_cpu::Irq;
-use emulator_consts::RAM_ORG;
+use caliptra_emu_bus::{Device, Event, EventData};
+use emulator_consts::{RAM_ORG, ROM_DEDICATED_RAM_ORG};
 use emulator_registers_generated::dma::DmaPeripheral;
 use registers_generated::dma_ctrl::bits::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 pub enum DmaCtrlIntType {
@@ -29,7 +31,11 @@ pub enum DmaCtrlIntType {
 pub enum AXIPeripheral {
     McuSram = 0,
     ExternalSram = 1,
+    IndirectFifo = 2,
+    McuRomSram = 3,
 }
+
+const INDIRECT_FIFO_REGISTER_OFFSET : u32 = 0x88;
 
 #[derive(Clone, Copy)]
 pub struct AxiAddr {
@@ -52,6 +58,15 @@ const EXTERNAL_SRAM_END_ADDR: AxiAddr = AxiAddr {
     hi: 0x2000_0000,
 };
 
+const INDIRECT_FIFO_END_ADDR: AxiAddr = AxiAddr {
+    lo: 0xffff_ffff,
+    hi: 0x3000_0000,
+};
+
+const ROM_SRAM_END_ADDR: AxiAddr = AxiAddr {
+    lo: 0xffff_ffff,
+    hi: 0x4000_0000,
+};
 /// A dummy dma controller peripheral for emulation purposes.
 pub struct DummyDmaCtrl {
     interrupt_state: ReadWriteRegister<u32, DmaInterruptState::Register>,
@@ -69,6 +84,10 @@ pub struct DummyDmaCtrl {
     operation_start: Option<ActionHandle>,
     error_irq: Irq,
     event_irq: Irq,
+    rom_sram: Option<Rc<RefCell<Ram>>>,
+    // Channel for events going out of I3C
+    outgoing_event_sender: mpsc::Sender<Event>,
+    outgoing_events: Option<mpsc::Receiver<Event>>,
 }
 
 impl DummyDmaCtrl {
@@ -81,6 +100,7 @@ impl DummyDmaCtrl {
         external_sram: Option<Rc<RefCell<Ram>>>,
     ) -> Result<Self, std::io::Error> {
         let timer = Timer::new(clock);
+        let (outgoing_event_sender, outgoing_events) = mpsc::channel::<Event>();
 
         Ok(Self {
             mcu_sram: None,
@@ -100,10 +120,19 @@ impl DummyDmaCtrl {
             operation_start: None,
             error_irq,
             event_irq,
+            rom_sram: None,
+            outgoing_event_sender,
+            outgoing_events: Some(outgoing_events),
+
         })
     }
 
+    pub fn get_event_receiver(&mut self) -> Option<mpsc::Receiver<Event>> {
+        self.outgoing_events.take()
+    }
+
     fn raise_interrupt(&mut self, interrupt_type: DmaCtrlIntType) {
+        println!("[DMA] Raising interrupt");
         match interrupt_type {
             DmaCtrlIntType::Error => {
                 self.interrupt_state
@@ -146,12 +175,15 @@ impl DummyDmaCtrl {
     }
 
     fn handle_io_completion(&mut self, io_compl: Result<(), DmaOpError>) {
+        println!("[DMA] Handling IO completion");
         match io_compl {
             Ok(_) => {
+                println!("[DMA] Operation completed successfully");
                 self.op_status.reg.modify(DmaOpStatus::Done::SET);
                 self.raise_interrupt(DmaCtrlIntType::Event);
             }
             Err(error_type) => {
+                println!("[DMA] Operation failed with error");
                 self.op_status
                     .reg
                     .modify(DmaOpStatus::Err.val(error_type as u32));
@@ -166,6 +198,12 @@ impl DummyDmaCtrl {
             AxiAddr { hi, .. } if hi <= EXTERNAL_SRAM_END_ADDR.hi => {
                 Some(AXIPeripheral::ExternalSram)
             }
+            AxiAddr { hi, .. } if hi <= INDIRECT_FIFO_END_ADDR.hi => {
+                Some(AXIPeripheral::IndirectFifo)
+            }
+            AxiAddr { hi, .. } if hi <= ROM_SRAM_END_ADDR.hi => {
+                Some(AXIPeripheral::McuRomSram)
+            }
             _ => None,
         }
     }
@@ -174,6 +212,11 @@ impl DummyDmaCtrl {
         match peripeheral {
             AXIPeripheral::McuSram => self.mcu_sram.clone(),
             AXIPeripheral::ExternalSram => self.external_sram.clone(),
+            AXIPeripheral::McuRomSram => self.rom_sram.clone(),
+            _ => {
+                // Indirect FIFO is not a RAM, so we return None
+                None
+            }
         }
     }
 
@@ -184,6 +227,8 @@ impl DummyDmaCtrl {
         match peripheral {
             AXIPeripheral::McuSram => Some(addr.lo - RAM_ORG),
             AXIPeripheral::ExternalSram => Some(addr.lo),
+            AXIPeripheral::McuRomSram => Some(addr.lo - ROM_DEDICATED_RAM_ORG),
+            AXIPeripheral::IndirectFifo => Some(addr.lo - INDIRECT_FIFO_END_ADDR.lo),
         }
     }
 
@@ -205,24 +250,44 @@ impl DummyDmaCtrl {
         if dest_ram.is_none() {
             return Err(DmaOpError::WriteError);
         }
+        if source_ram == Some(AXIPeripheral::IndirectFifo) {
+            println!("[DMA] Indirect FIFO is not supported for read operations");
+            return Err(DmaOpError::ReadError);
+        }
 
         let source_addr = Self::ram_address_to_offset(source_addr).unwrap() as usize;
-        let dest_addr = Self::ram_address_to_offset(dest_addr).unwrap() as usize;
-        if source_ram == dest_ram {
-            let ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
-            let mut ram = ram.borrow_mut();
-            let source_data: Vec<u8> = ram.data()[source_addr..source_addr + xfer_size].to_vec();
-
-            ram.data_mut()[dest_addr..dest_addr + xfer_size].copy_from_slice(&source_data);
+        if dest_ram == Some(AXIPeripheral::IndirectFifo) {
+                let source_ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
+                let source_ram = source_ram.borrow_mut();
+                let source_data: &[u8] = &source_ram.data()[source_addr..source_addr + xfer_size];
+                self.outgoing_event_sender
+                    .send(Event::new(
+                        Device::MCU,
+                        Device::RecoveryIntf,
+                        EventData::MemoryWrite {
+                            start_addr: INDIRECT_FIFO_REGISTER_OFFSET,
+                            data: source_data.to_vec(),
+                        },
+                    ))
+                    .unwrap();
         } else {
-            let source_ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
-            let source_ram = source_ram.borrow_mut();
-            let dest_ram = self.get_axi_ram(dest_ram.unwrap()).unwrap();
-            let mut dest_ram = dest_ram.borrow_mut();
+            let dest_addr = Self::ram_address_to_offset(dest_addr).unwrap() as usize;
+            if source_ram == dest_ram {
+                let ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
+                let mut ram = ram.borrow_mut();
+                let source_data: Vec<u8> = ram.data()[source_addr..source_addr + xfer_size].to_vec();
 
-            let source_data = &source_ram.data()[source_addr..source_addr + xfer_size];
+                ram.data_mut()[dest_addr..dest_addr + xfer_size].copy_from_slice(&source_data);
+            } else {
+                let source_ram = self.get_axi_ram(source_ram.unwrap()).unwrap();
+                let source_ram = source_ram.borrow_mut();
+                let dest_ram = self.get_axi_ram(dest_ram.unwrap()).unwrap();
+                let mut dest_ram = dest_ram.borrow_mut();
 
-            dest_ram.data_mut()[dest_addr..dest_addr + xfer_size].copy_from_slice(source_data);
+                let source_data = &source_ram.data()[source_addr..source_addr + xfer_size];
+
+                dest_ram.data_mut()[dest_addr..dest_addr + xfer_size].copy_from_slice(source_data);
+            }
         }
 
         Ok(())
@@ -245,6 +310,10 @@ impl DummyDmaCtrl {
 impl DmaPeripheral for DummyDmaCtrl {
     fn set_dma_ram(&mut self, ram: std::rc::Rc<std::cell::RefCell<caliptra_emu_bus::Ram>>) {
         self.mcu_sram = Some(ram);
+    }
+
+    fn set_dma_rom_sram(&mut self, ram: std::rc::Rc<std::cell::RefCell<caliptra_emu_bus::Ram>>) {
+        self.rom_sram = Some(ram);
     }
 
     fn poll(&mut self) {
@@ -341,6 +410,10 @@ impl DmaPeripheral for DummyDmaCtrl {
         self.source_addr_low.reg.get()
     }
     fn write_source_addr_lower(&mut self, _val: caliptra_emu_types::RvData) {
+        println!(
+            "[DMA] Writing source address lower: {:#x}",
+            _val
+        );
         self.source_addr_low.reg.set(_val);
     }
 
@@ -385,6 +458,7 @@ impl DmaPeripheral for DummyDmaCtrl {
         u32,
         registers_generated::dma_ctrl::bits::DmaOpStatus::Register,
     > {
+        println!("[DMA] Reading DMA operation status {:#x}", self.op_status.reg.get());
         caliptra_emu_bus::ReadWriteRegister::new(self.op_status.reg.get())
     }
     fn write_dma_op_status(
