@@ -329,11 +329,41 @@ impl ModelFpgaRealtime {
         let otp = self.otp();
         while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
 
+        println!("OTP status: {:x}", otp.otp_status.get());
+        if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
+            println!("OTP status: {:x}", otp.otp_status.get());
+            println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
+            println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
+            println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
+            println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
+            println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
+            println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
+            println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
+            println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
+            println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
+            println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
+            println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
+            println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
+            println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
+            println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
+            println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
+            println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
+            println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
+            println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
+
+            //panic!("OTP write error: {:x}", otp.otp_status.get());
+        }
+
+        println!("OTP DAI wdata set {:x}", data);
         otp.dai_wdata_rf_direct_access_wdata_0.set(data);
+        println!("OTP DAI addr set {:x}", word_offset);
         otp.direct_access_address.set(word_offset as u32);
+        println!("OTP DAI cmd set {:x}", 2);
         otp.direct_access_cmd.set(2);
+        println!("OTP DAI wait for idle");
         while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
         if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
+            println!("OTP status: {:x}", otp.otp_status.get());
             println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
             println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
             println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
@@ -1111,11 +1141,20 @@ impl McuHwModel for ModelFpgaRealtime {
         // Currently not using strap UDS and FE
         m.set_secrets_valid(false);
 
-        println!("Putting subsystem into reset");
-        unsafe {
-            core::ptr::read_volatile(otp.offset(2));
-        }
         m.set_subsystem_reset(true);
+
+        println!("Putting subsystem into reset");
+        for i in (256..2000).step_by(256) {
+            let offset = i;
+            unsafe {
+                core::ptr::write_volatile(otp.offset(offset), 0x2);
+                println!(
+                    "OTP data read back {}: {:x}",
+                    i,
+                    core::ptr::read_volatile(otp.offset(offset))
+                );
+            }
+        }
 
         // set the reset vector to point to the ROM backdoor
         println!("Writing MCU reset vector");
@@ -1132,47 +1171,60 @@ impl McuHwModel for ModelFpgaRealtime {
         let mcu_rom_slice =
             unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
 
-        // println!("Write blank ROM into MCU while we provision OTP");
-        // mcu_rom_slice.fill(0);
+        println!("Write blank ROM into MCU while we provision OTP");
+        mcu_rom_slice.fill(0);
 
-        //println!("Taking subsystem out of reset");
-        //m.set_subsystem_reset(false);
+        println!("Taking subsystem out of reset");
+        m.set_subsystem_reset(false);
 
-        // println!("Wait for OTP to be idle");
+        println!("Wait for OTP to be idle");
 
-        // let otp = m.otp();
-        // let mut cnt = 0;
-        // while !otp.otp_status.is_set(OtpStatus::DaiIdle) {
-        //     cnt += 1;
-        //     if cnt % 10_000 == 0 {
-        //         println!(
-        //             "Waiting for OTP to be idle {} status: {:08x}",
-        //             cnt,
-        //             otp.otp_status.get()
-        //         );
-        //     }
-        // }
-        // println!("OTP is idle; programming some bytes");
+        let otp = m.otp();
+        let mut cnt = 0;
+        while !otp.otp_status.is_set(OtpStatus::DaiIdle) {
+            cnt += 1;
+            if cnt % 100_000 == 0 {
+                println!(
+                    "Waiting for OTP to be idle {} status: {:08x}",
+                    cnt,
+                    otp.otp_status.get()
+                );
+                println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
+                println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
+                println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
+                println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
+                println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
+                println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
+                println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
+                println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
+                println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
+                println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
+                println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
+                println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
+                println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
+                println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
+                println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
+                println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
+                println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
+                println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
+            }
+        }
+        println!("OTP is idle; programming some bytes");
 
-        // let vendor_data = m.read_otp_data(
-        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
-        // );
-        // println!("Before: {:?}", vendor_data);
+        let vendor_data = m.read_otp_data(
+            VENDOR_TEST_PARTITION_BYTE_OFFSET,
+            VENDOR_TEST_PARTITION_BYTE_SIZE,
+        );
+        println!("Before: {:?}", vendor_data);
 
-        // m.write_otp_data(
-        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-        //     &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        // );
-        // let vendor_data = m.read_otp_data(
-        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_OFFSET,
-        //     VENDOR_REVOCATIONS_PROD_PARTITION_BYTE_SIZE,
-        // );
-        // println!("After: {:?}", vendor_data);
+        m.write_otp_data(VENDOR_TEST_PARTITION_BYTE_OFFSET, &[6, 0, 0, 0]);
+        let vendor_data = m.read_otp_data(
+            VENDOR_TEST_PARTITION_BYTE_OFFSET,
+            VENDOR_TEST_PARTITION_BYTE_SIZE,
+        );
+        println!("After: {:?}", vendor_data);
 
-        m.set_subsystem_reset(true);
-
-        //panic!("Exiting early");
+        panic!("Exiting early");
 
         // let pattern = [1u8, 2, 3, 4, 5, 6, 7, 8];
         // println!("Writing to OTP memory: {:?}", pattern);
@@ -1300,17 +1352,22 @@ impl McuHwModel for ModelFpgaRealtime {
 
 impl Drop for ModelFpgaRealtime {
     fn drop(&mut self) {
+        println!("Turning off realtime threads");
         self.realtime_thread_exit_flag
             .store(false, Ordering::Relaxed);
         if let Some(t) = self.realtime_thread.take() {
             t.join().unwrap();
         }
+        println!("Turning off I3C controller");
         self.i3c_controller.off();
 
         // ensure that we put the I3C target into a state where we will reset it properly
+        println!("Setting I3C target address to 0");
         self.i3c_target.stdby_ctrl_mode_stby_cr_device_addr.set(0);
+        println!("Putting subsystem into reset");
         self.set_subsystem_reset(true);
 
+        println!("Clearing ROM backdoors");
         // clear the ROM backdoors
         let mcu_rom_slice =
             unsafe { core::slice::from_raw_parts_mut(self.mcu_rom_backdoor, 48 * 1024) };
@@ -1319,6 +1376,7 @@ impl Drop for ModelFpgaRealtime {
             unsafe { core::slice::from_raw_parts_mut(self.caliptra_rom_backdoor, 96 * 1024) };
         caliptra_rom_slice.fill(0);
 
+        println!("Unmapping UIO");
         // Unmap UIO memory space so that the file lock is released
         self.unmap_mapping(self.wrapper.ptr, FPGA_WRAPPER_MAPPING);
         self.unmap_mapping(self.caliptra_mmio.ptr, CALIPTRA_MAPPING);
@@ -1338,51 +1396,51 @@ mod test {
 
     #[test]
     fn test_new_unbooted() {
-        let mcu_rom = mcu_builder::rom_build(Some("fpga"), "").expect("Could not build MCU ROM");
-        let mcu_runtime = &mcu_builder::runtime_build_with_apps(
-            &[],
-            Some("fpga-runtime.bin"),
-            false,
-            Some("fpga"),
-            Some(&mcu_config_fpga::FPGA_MEMORY_MAP),
-        )
-        .expect("Could not build MCU runtime");
-        let mut caliptra_builder = mcu_builder::CaliptraBuilder::new(
-            true,
-            None,
-            None,
-            None,
-            None,
-            Some(mcu_runtime.into()),
-            None,
-        );
-        let caliptra_rom = caliptra_builder
-            .get_caliptra_rom()
-            .expect("Could not build Caliptra ROM");
-        let caliptra_fw = caliptra_builder
-            .get_caliptra_fw()
-            .expect("Could not build Caliptra FW bundle");
+        //let mcu_rom = mcu_builder::rom_build(Some("fpga"), "").expect("Could not build MCU ROM");
+        //let mcu_runtime = &mcu_builder::runtime_build_with_apps(
+        //    &[],
+        //    Some("fpga-runtime.bin"),
+        //    false,
+        //    Some("fpga"),
+        //    Some(&mcu_config_fpga::FPGA_MEMORY_MAP),
+        //)
+        //.expect("Could not build MCU runtime");
+        //let mut caliptra_builder = mcu_builder::CaliptraBuilder::new(
+        //    true,
+        //    None,
+        //    None,
+        //    None,
+        //    None,
+        //    Some(mcu_runtime.into()),
+        //    None,
+        //);
+        //let caliptra_rom = caliptra_builder
+        //    .get_caliptra_rom()
+        //    .expect("Could not build Caliptra ROM");
+        //let caliptra_fw = caliptra_builder
+        //    .get_caliptra_fw()
+        //    .expect("Could not build Caliptra FW bundle");
         // TODO: pass this in to the MCU through the OTP
-        let vendor_pk_hash = caliptra_builder
-            .get_vendor_pk_hash()
-            .expect("Could not get vendor PK hash");
-        println!("Vendor PK hash: {:x?}", vendor_pk_hash);
-        let soc_manifest = caliptra_builder
-            .get_soc_manifest()
-            .expect("Could not get SOC manifest");
+        //let vendor_pk_hash = caliptra_builder
+        //    .get_vendor_pk_hash()
+        //    .expect("Could not get vendor PK hash");
+        //println!("Vendor PK hash: {:x?}", vendor_pk_hash);
+        //let soc_manifest = caliptra_builder
+        //    .get_soc_manifest()
+        //    .expect("Could not get SOC manifest");
         use tock_registers::interfaces::Readable;
 
-        let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
-        let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
-        let mcu_rom = std::fs::read(mcu_rom).unwrap();
-        let mcu_runtime = std::fs::read(mcu_runtime).unwrap();
-        let soc_manifest = std::fs::read(soc_manifest).unwrap();
+        //let caliptra_rom = std::fs::read(caliptra_rom).unwrap();
+        //let caliptra_fw = std::fs::read(caliptra_fw).unwrap();
+        //let mcu_rom = std::fs::read(mcu_rom).unwrap();
+        //let mcu_runtime = std::fs::read(mcu_runtime).unwrap();
+        //let soc_manifest = std::fs::read(soc_manifest).unwrap();
 
-        // //let caliptra_rom = vec![0u8; 1024];
-        // let caliptra_fw = vec![0u8; 1024];
-        // //let mcu_rom = vec![0u8; 1024];
-        // let mcu_runtime = vec![0u8; 1024];
-        // let soc_manifest = vec![0u8; 1024];
+        let caliptra_rom = vec![0u8; 1024];
+        let caliptra_fw = vec![0u8; 1024];
+        let mcu_rom = vec![0u8; 1024];
+        let mcu_runtime = vec![0u8; 1024];
+        let soc_manifest = vec![0u8; 1024];
 
         let mut model = DefaultHwModel::new_unbooted(InitParams {
             caliptra_rom: &caliptra_rom,
@@ -1396,7 +1454,7 @@ mod test {
         .unwrap();
         println!("Waiting on I3C target to be configured");
         let mut xi3c_configured = false;
-        for _ in 0..2_000_000 {
+        for _ in 0..1_000_000 {
             model.step();
             if !xi3c_configured && model.i3c_target_configured() {
                 xi3c_configured = true;
