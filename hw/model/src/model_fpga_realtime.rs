@@ -403,7 +403,7 @@ impl ModelFpgaRealtime {
         }
         for i in (0..data.len()).step_by(4) {
             self.write_otp_word(
-                i / 4,
+                offset + i / 4,
                 u32::from_le_bytes(data[i..i + 4].try_into().unwrap()),
             );
         }
@@ -1063,51 +1063,51 @@ impl McuHwModel for ModelFpgaRealtime {
         // Set generic input wires.
         let input_wires = [(!params.uds_granularity_64 as u32) << 31, 0];
         m.set_generic_input_wires(&input_wires);
-        println!("Writing to OTP backdoor");
-        let otp = m.otp_ram_backdoor as *mut u32;
-        unsafe {
-            let otp = core::slice::from_raw_parts_mut(m.otp_ram_backdoor as *mut u32, 16384 / 4);
-            otp.fill(0);
-            let otp = m.otp_ram_backdoor as *mut u32;
-            // println!(
-            //     "Read OTP RAM backdoor at {}: {:x}",
-            //     0,
-            //     core::ptr::read_volatile(otp.offset(0))
-            // );
-            // println!(
-            //     "Read OTP RAM backdoor at {}: {:x}",
-            //     1,
-            //     core::ptr::read_volatile(otp.offset(1))
-            // );
-            // println!(
-            //     "Read OTP RAM backdoor at {}: {:x}",
-            //     2,
-            //     core::ptr::read_volatile(otp.offset(2))
-            // );
+        // println!("Writing to OTP backdoor");
+        // let otp = m.otp_ram_backdoor as *mut u32;
+        // unsafe {
+        //     let otp = core::slice::from_raw_parts_mut(m.otp_ram_backdoor as *mut u32, 16384 / 4);
+        //     otp.fill(0);
+        //     let otp = m.otp_ram_backdoor as *mut u32;
+        //     // println!(
+        //     //     "Read OTP RAM backdoor at {}: {:x}",
+        //     //     0,
+        //     //     core::ptr::read_volatile(otp.offset(0))
+        //     // );
+        //     // println!(
+        //     //     "Read OTP RAM backdoor at {}: {:x}",
+        //     //     1,
+        //     //     core::ptr::read_volatile(otp.offset(1))
+        //     // );
+        //     // println!(
+        //     //     "Read OTP RAM backdoor at {}: {:x}",
+        //     //     2,
+        //     //     core::ptr::read_volatile(otp.offset(2))
+        //     // );
 
-            // println!("Write OTP RAM backdoor at {}: {:x}", 0, 10);
-            // core::ptr::write_volatile(otp.offset(0), 10);
-            // println!("Write OTP RAM backdoor at {}: {:x}", 1, 11);
-            // core::ptr::write_volatile(otp.offset(1), 11);
-            // println!("Write OTP RAM backdoor at {}: {:x}", 2, 12);
-            // core::ptr::write_volatile(otp.offset(2), 12);
+        //     // println!("Write OTP RAM backdoor at {}: {:x}", 0, 10);
+        //     // core::ptr::write_volatile(otp.offset(0), 10);
+        //     // println!("Write OTP RAM backdoor at {}: {:x}", 1, 11);
+        //     // core::ptr::write_volatile(otp.offset(1), 11);
+        //     // println!("Write OTP RAM backdoor at {}: {:x}", 2, 12);
+        //     // core::ptr::write_volatile(otp.offset(2), 12);
 
-            println!(
-                "Read OTP RAM backdoor at {}: {:x}",
-                0,
-                core::ptr::read_volatile(otp.offset(0))
-            );
-            println!(
-                "Read OTP RAM backdoor at {}: {:x}",
-                1,
-                core::ptr::read_volatile(otp.offset(1))
-            );
-            println!(
-                "Read OTP RAM backdoor at {}: {:x}",
-                2,
-                core::ptr::read_volatile(otp.offset(2))
-            );
-        }
+        //     println!(
+        //         "Read OTP RAM backdoor at {}: {:x}",
+        //         0,
+        //         core::ptr::read_volatile(otp.offset(0))
+        //     );
+        //     println!(
+        //         "Read OTP RAM backdoor at {}: {:x}",
+        //         1,
+        //         core::ptr::read_volatile(otp.offset(1))
+        //     );
+        //     println!(
+        //         "Read OTP RAM backdoor at {}: {:x}",
+        //         2,
+        //         core::ptr::read_volatile(otp.offset(2))
+        //     );
+        // }
 
         // Set Security State signal wires
         println!("Set security state");
@@ -1141,20 +1141,20 @@ impl McuHwModel for ModelFpgaRealtime {
         // Currently not using strap UDS and FE
         m.set_secrets_valid(false);
 
+        println!("Putting subsystem into reset");
         m.set_subsystem_reset(true);
 
-        println!("Putting subsystem into reset");
-        for i in (256..2000).step_by(256) {
-            let offset = i;
-            unsafe {
-                core::ptr::write_volatile(otp.offset(offset), 0x2);
-                println!(
-                    "OTP data read back {}: {:x}",
-                    i,
-                    core::ptr::read_volatile(otp.offset(offset))
-                );
-            }
-        }
+        // for i in (256..2000).step_by(256) {
+        //     let offset = i;
+        //     unsafe {
+        //         core::ptr::write_volatile(otp.offset(offset), 0x2);
+        //         println!(
+        //             "OTP data read back {}: {:x}",
+        //             i,
+        //             core::ptr::read_volatile(otp.offset(offset))
+        //         );
+        //     }
+        // }
 
         // set the reset vector to point to the ROM backdoor
         println!("Writing MCU reset vector");
@@ -1223,6 +1223,12 @@ impl McuHwModel for ModelFpgaRealtime {
             VENDOR_TEST_PARTITION_BYTE_SIZE,
         );
         println!("After: {:?}", vendor_data);
+        // let otp =
+        //     unsafe { core::slice::from_raw_parts_mut(m.otp_ram_backdoor as *mut u32, 16384 / 4) };
+        // println!("Finding non-zero data");
+        // if let Some((i, x)) = otp.iter().enumerate().find(|(_, &x)| x != 0) {
+        //     println!("Found non-zero OTP data at {}: {:x}", i, *x);
+        // }
 
         panic!("Exiting early");
 
