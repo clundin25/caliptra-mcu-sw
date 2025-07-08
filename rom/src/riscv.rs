@@ -279,6 +279,10 @@ pub fn rom_start() {
     romtime::println!("[mcu-rom] Locking Caliptra mailbox user 0");
     soc.registers.cptra_mbox_axi_user_lock[0].set(1);
 
+    romtime::println!("[mcu-rom] Setting fuse user");
+    soc.registers.cptra_fuse_valid_axi_user.set(0xcccc_cccc);
+    romtime::println!("[mcu-rom] Locking fuse user");
+    soc.registers.cptra_fuse_axi_user_lock.set(1);
     romtime::println!("[mcu-rom] Setting TRNG user");
     soc.registers.cptra_trng_valid_axi_user.set(0xcccc_cccc);
     romtime::println!("[mcu-rom] Locking TRNG user");

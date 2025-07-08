@@ -14,6 +14,7 @@ use registers_generated::fuses::{
 use registers_generated::i3c::bits::DeviceStatus0;
 use registers_generated::mci::bits::Go::Go;
 use registers_generated::otp_ctrl::bits::OtpStatus;
+use registers_generated::soc::bits::CptraFlowStatus;
 use registers_generated::{i3c, otp_ctrl};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
@@ -293,8 +294,66 @@ impl ModelFpgaRealtime {
         unsafe { &*(self.i3c_mmio as *const i3c::regs::I3c) }
     }
 
-    pub fn otp(&mut self) -> &otp_ctrl::regs::OtpCtrl {
+    pub fn otp(&self) -> &otp_ctrl::regs::OtpCtrl {
         unsafe { &*(self.otp_mmio as *const otp_ctrl::regs::OtpCtrl) }
+    }
+
+    fn print_otp_error(&self) {
+        let otp = self.otp();
+        if otp.err_code_rf_err_code_0.get() != 0 {
+            println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
+        }
+        if otp.err_code_rf_err_code_1.get() != 0 {
+            println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
+        }
+        if otp.err_code_rf_err_code_2.get() != 0 {
+            println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
+        }
+        if otp.err_code_rf_err_code_3.get() != 0 {
+            println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
+        }
+        if otp.err_code_rf_err_code_4.get() != 0 {
+            println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
+        }
+        if otp.err_code_rf_err_code_5.get() != 0 {
+            println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
+        }
+        if otp.err_code_rf_err_code_6.get() != 0 {
+            println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
+        }
+        if otp.err_code_rf_err_code_7.get() != 0 {
+            println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
+        }
+        if otp.err_code_rf_err_code_8.get() != 0 {
+            println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
+        }
+        if otp.err_code_rf_err_code_9.get() != 0 {
+            println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
+        }
+        if otp.err_code_rf_err_code_10.get() != 0 {
+            println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
+        }
+        if otp.err_code_rf_err_code_11.get() != 0 {
+            println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
+        }
+        if otp.err_code_rf_err_code_12.get() != 0 {
+            println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
+        }
+        if otp.err_code_rf_err_code_13.get() != 0 {
+            println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
+        }
+        if otp.err_code_rf_err_code_14.get() != 0 {
+            println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
+        }
+        if otp.err_code_rf_err_code_15.get() != 0 {
+            println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
+        }
+        if otp.err_code_rf_err_code_16.get() != 0 {
+            println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
+        }
+        if otp.err_code_rf_err_code_17.get() != 0 {
+            println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
+        }
     }
 
     fn read_otp_word(&mut self, word_offset: usize) -> u32 {
@@ -332,25 +391,7 @@ impl ModelFpgaRealtime {
         println!("OTP status: {:x}", otp.otp_status.get());
         if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
             println!("OTP status: {:x}", otp.otp_status.get());
-            println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
-            println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
-            println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
-            println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
-            println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
-            println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
-            println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
-            println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
-            println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
-            println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
-            println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
-            println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
-            println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
-            println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
-            println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
-            println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
-            println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
-            println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
-
+            self.print_otp_error();
             //panic!("OTP write error: {:x}", otp.otp_status.get());
         }
 
@@ -364,25 +405,7 @@ impl ModelFpgaRealtime {
         while !otp.otp_status.is_set(OtpStatus::DaiIdle) {}
         if otp.otp_status.get() & ((1 << 22) - 1) != 0 {
             println!("OTP status: {:x}", otp.otp_status.get());
-            println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
-            println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
-            println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
-            println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
-            println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
-            println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
-            println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
-            println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
-            println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
-            println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
-            println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
-            println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
-            println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
-            println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
-            println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
-            println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
-            println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
-            println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
-
+            self.print_otp_error();
             //panic!("OTP write error: {:x}", otp.otp_status.get());
         }
     }
@@ -943,6 +966,13 @@ impl ModelFpgaRealtime {
         );
         // println!("Acknowledge received");
     }
+
+    fn ready_for_fuses(&mut self) -> bool {
+        self.caliptra_mmio
+            .soc()
+            .cptra_flow_status
+            .is_set(CptraFlowStatus::ReadyForFuses)
+    }
 }
 
 impl McuHwModel for ModelFpgaRealtime {
@@ -1171,11 +1201,38 @@ impl McuHwModel for ModelFpgaRealtime {
         let mcu_rom_slice =
             unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
 
-        println!("Write blank ROM into MCU while we provision OTP");
+        println!("Write blank ROM into MCU and Caliptra while we provision OTP");
         mcu_rom_slice.fill(0);
+
+        // copy the ROM data
+        let mut caliptra_rom_data = params.caliptra_rom.to_vec();
+        while caliptra_rom_data.len() % 8 != 0 {
+            caliptra_rom_data.push(0);
+        }
+        let caliptra_rom_slice = unsafe {
+            core::slice::from_raw_parts_mut(m.caliptra_rom_backdoor, caliptra_rom_data.len())
+        };
 
         println!("Taking subsystem out of reset");
         m.set_subsystem_reset(false);
+        caliptra_rom_slice.fill(0);
+
+        // Set initial PAUSER
+        m.set_axi_user(DEFAULT_AXI_PAUSER);
+        println!("AXI user written {:x}", DEFAULT_AXI_PAUSER);
+
+        println!("Setting caliptra boot go");
+        m.set_caliptra_boot_go(true);
+
+        println!("Waiting for Caliptra to be ready for fuses");
+        while !m.ready_for_fuses() {}
+
+        println!("Setting fuse valid user");
+        m.caliptra_mmio
+            .soc()
+            .cptra_fuse_valid_axi_user
+            .set(DEFAULT_AXI_PAUSER);
+        m.caliptra_mmio.soc().cptra_fuse_axi_user_lock.set(1);
 
         println!("Wait for OTP to be idle");
 
@@ -1189,24 +1246,7 @@ impl McuHwModel for ModelFpgaRealtime {
                     cnt,
                     otp.otp_status.get()
                 );
-                println!("OTP error code 0: {:x}", otp.err_code_rf_err_code_0.get());
-                println!("OTP error code 1: {:x}", otp.err_code_rf_err_code_1.get());
-                println!("OTP error code 2: {:x}", otp.err_code_rf_err_code_2.get());
-                println!("OTP error code 3: {:x}", otp.err_code_rf_err_code_3.get());
-                println!("OTP error code 4: {:x}", otp.err_code_rf_err_code_4.get());
-                println!("OTP error code 5: {:x}", otp.err_code_rf_err_code_5.get());
-                println!("OTP error code 6: {:x}", otp.err_code_rf_err_code_6.get());
-                println!("OTP error code 7: {:x}", otp.err_code_rf_err_code_7.get());
-                println!("OTP error code 8: {:x}", otp.err_code_rf_err_code_8.get());
-                println!("OTP error code 9: {:x}", otp.err_code_rf_err_code_9.get());
-                println!("OTP error code 10: {:x}", otp.err_code_rf_err_code_10.get());
-                println!("OTP error code 11: {:x}", otp.err_code_rf_err_code_11.get());
-                println!("OTP error code 12: {:x}", otp.err_code_rf_err_code_12.get());
-                println!("OTP error code 13: {:x}", otp.err_code_rf_err_code_13.get());
-                println!("OTP error code 14: {:x}", otp.err_code_rf_err_code_14.get());
-                println!("OTP error code 15: {:x}", otp.err_code_rf_err_code_15.get());
-                println!("OTP error code 16: {:x}", otp.err_code_rf_err_code_16.get());
-                println!("OTP error code 17: {:x}", otp.err_code_rf_err_code_17.get());
+                m.print_otp_error();
             }
         }
         println!("OTP is idle; programming some bytes");
@@ -1248,17 +1288,8 @@ impl McuHwModel for ModelFpgaRealtime {
 
         println!("new_unbooted");
 
-        // Set initial PAUSER
-        m.set_axi_user(DEFAULT_AXI_PAUSER);
-
-        println!("AXI user written {:x}", DEFAULT_AXI_PAUSER);
-
         // Write ROM images over backdoors
         // ensure that they are 8-byte aligned to write to AXI
-        let mut caliptra_rom_data = params.caliptra_rom.to_vec();
-        while caliptra_rom_data.len() % 8 != 0 {
-            caliptra_rom_data.push(0);
-        }
 
         // copy the ROM data
         let caliptra_rom_slice = unsafe {
