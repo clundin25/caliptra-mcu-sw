@@ -35,12 +35,9 @@ impl<'a> SpdmContext<'a> {
         supported_versions: &'a [SpdmVersion],
         spdm_transport: &'a mut dyn SpdmTransport,
         local_capabilities: DeviceCapabilities,
-        local_algorithms: LocalDeviceAlgorithms<'a>,
         device_certs_store: &'a dyn SpdmCertStore,
     ) -> SpdmResult<Self> {
         validate_supported_versions(supported_versions)?;
-
-        validate_device_algorithms(&local_algorithms)?;
 
         validate_cert_store(device_certs_store)?;
 
@@ -50,7 +47,7 @@ impl<'a> SpdmContext<'a> {
             state: State::new(),
             transcript_mgr: TranscriptManager::new(),
             local_capabilities,
-            local_algorithms,
+            local_algorithms: LocalDeviceAlgorithms::default(),
             device_certs_store,
             measurements: SpdmMeasurements::default(),
             large_resp_context: LargeResponseCtx::default(),

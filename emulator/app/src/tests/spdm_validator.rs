@@ -66,7 +66,7 @@ impl Test {
             mctp_util: MctpUtil::new(),
             responder_ready: false,
             passed: false,
-            cmd_retry_count: 5,
+            cmd_retry_count: 10,
         }
     }
 

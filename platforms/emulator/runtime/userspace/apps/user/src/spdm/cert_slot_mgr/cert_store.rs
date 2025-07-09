@@ -3,17 +3,12 @@
 extern crate alloc;
 
 use crate::spdm::cert_slot_mgr::device_cert::{DeviceCertIndex, DpeCertChain};
-use crate::spdm::cert_slot_mgr::endorsement_cert::{
-    EndorsementCertChain, EndorsementCertChainTrait,
-};
+use crate::spdm::cert_slot_mgr::endorsement_cert::EndorsementCertChainTrait;
 use crate::spdm::cert_slot_mgr::leaf_cert::DpeLeafCert;
-use crate::spdm::config;
 use alloc::boxed::Box;
 use async_trait::async_trait;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
-use libapi_caliptra::certificate::CertContext;
-use libapi_caliptra::error::CaliptraApiError;
 use spdm_lib::cert_store::{
     CertStoreError, CertStoreResult, SpdmCertStore, MAX_CERT_SLOTS_SUPPORTED,
 };
@@ -25,37 +20,9 @@ use spdm_lib::protocol::{
 static SHARED_CERT_STORE: Mutex<CriticalSectionRawMutex, Option<Box<DeviceCertStore>>> =
     Mutex::new(None);
 
-pub async fn initialize_shared_cert_store() -> CertStoreResult<()> {
-    // populate signed idev cert into the device.
-    populate_idev_cert().await?;
-
-    // Initialize the certificate store
-    let mut cert_store = DeviceCertStore::new();
-
-    // Initialize slot 0 certificate chain
-    let slot0_endorsement = EndorsementCertChain::new(config::SLOT0_ECC_ROOT_CERT_CHAIN).await?;
-    let slot0_cert_chain = CertChain::new(slot0_endorsement, DeviceCertIndex::IdevId);
-    cert_store.set_cert_chain(0, slot0_cert_chain)?;
-
-    // Store the initialized cert store in static storage
+pub async fn initialize_shared_cert_store(cert_store: DeviceCertStore) -> CertStoreResult<()> {
     let mut shared_store = SHARED_CERT_STORE.lock().await;
     *shared_store = Some(Box::new(cert_store));
-    Ok(())
-}
-
-async fn populate_idev_cert() -> CertStoreResult<()> {
-    let mut cert_ctx = CertContext::new();
-
-    while let Err(e) = cert_ctx
-        .populate_idev_ecc384_cert(&config::SLOT0_ECC_DEVID_CERT_DER)
-        .await
-    {
-        match e {
-            CaliptraApiError::MailboxBusy => continue, // Retry if the mailbox is busy
-            _ => Err(CertStoreError::CaliptraApi(e))?,
-        }
-    }
-
     Ok(())
 }
 
@@ -162,7 +129,7 @@ impl SpdmCertStore for SharedCertStore {
 }
 
 pub struct DeviceCertStore {
-    pub(crate) cert_chains: [Option<CertChain>; MAX_CERT_SLOTS_SUPPORTED as usize],
+    cert_chains: [Option<CertChain>; MAX_CERT_SLOTS_SUPPORTED as usize],
 }
 
 impl DeviceCertStore {
@@ -172,7 +139,7 @@ impl DeviceCertStore {
         }
     }
 
-    fn set_cert_chain(&mut self, slot: u8, cert_chain: CertChain) -> CertStoreResult<()> {
+    pub fn set_cert_chain(&mut self, slot: u8, cert_chain: CertChain) -> CertStoreResult<()> {
         if slot >= MAX_CERT_SLOTS_SUPPORTED {
             return Err(CertStoreError::InvalidSlotId);
         }
