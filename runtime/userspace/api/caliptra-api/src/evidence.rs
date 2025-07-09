@@ -86,7 +86,8 @@ impl Evidence {
         if size != quote_len {
             return Err(CaliptraApiError::InvalidResponse);
         }
-        let resp = QuotePcrsEcc384Resp::ref_from_bytes(&buffer[..quote_len])
+
+        let resp = QuotePcrsEcc384Resp::read_from_bytes(&buffer[..quote_len])
             .map_err(|_| CaliptraApiError::InvalidResponse)?;
 
         if resp.nonce != req.nonce {
