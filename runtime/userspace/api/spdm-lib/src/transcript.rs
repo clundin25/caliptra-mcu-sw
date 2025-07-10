@@ -52,6 +52,7 @@ pub enum TranscriptContext {
     Vca,
     M1,
     L1,
+    FinishRspResponderOnly,
 }
 
 /// Transcript management for the SPDM responder.
@@ -72,15 +73,72 @@ pub(crate) struct TranscriptManager {
     // where
     // M = Concatenate (GET_MEASUREMENTS, MEASUREMENTS\signature)
     hash_ctx_l1: Option<HashContext>,
+
+    // KEY_EXCHANGE_RSP transcript contexts:
+    // Hash Context for KEY_EXCHANGE_RSP signature transcript
+    // KRS = Concatenate(A, B, C)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP excluding signature and ResponderVerifyData)
+    hash_ctx_kex_rsp_sig: Option<HashContext>,
+    // Hash Context for KEY_EXCHANGE_RSP HMAC transcript
+    // KRH = Concatenate(A, B, C)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP excluding ResponderVerifyData)
+    hash_ctx_kex_rsp_hmac: Option<HashContext>,
+
+    // FINISH transcript contexts:
+    // Hash Context for FINISH Mutual Authentication signature transcript
+    // FMAS = Concatenate(A, B, C, D, E)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP)
+    // D = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key)) if encapsulated DIGESTS is issued and MULTI_KEY_CONN_REQ is true
+    // E = Finish SPDM Header Fields
+    hash_ctx_finish_mutual_auth_signature: Option<HashContext>,
+    // Hash Context for FINISH Responder Only HMAC transcript
+    // FROH = Concatenate(A, B, C, D)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP)
+    // D = Finish SPDM Header Fields
+    hash_ctx_finish_responder_only_hmac: Option<HashContext>,
+    // Hash Context for FINISH Mutual Authentication HMAC transcript
+    // FMAH = Concatenate(A, B, C, D, E, F)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP)
+    // D = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key)) if encapsulated DIGESTS is issued and MULTI_KEY_CONN_REQ is true
+    // E = Finish SPDM Header Fields
+    // F = Finish SPDM Signature
+    hash_ctx_finish_mutual_auth_hmac: Option<HashContext>,
+
+    // FINISH_RSP transcript contexts:
+    // Hash Context for FINISH_RSP Responder Only HMAC transcript
+    // FRRO = Concatenate(A, B, C, D, E)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP)
+    // D = FINISH
+    // E = FINISH_RSP SPDM Header Fields
+    hash_ctx_finish_rsp_responder_only: Option<HashContext>,
+    // Hash Context for FINISH_RSP Mutual Authentication HMAC transcript
+    // FRMA = Concatenate(A, B, C, D, E, F)
+    // where
+    // B = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key))
+    // C = Concatenate(KEY_EXCHANGE, KEY_EXCHANGE_RSP)
+    // D = Concatenate(DIGESTS, Hash(cert chain DER) or Hash(pub key)) if encapsulated DIGESTS is issued and MULTI_KEY_CONN_REQ is true
+    // E = FINISH
+    // F = FINISH_RSP SPDM Header Fields
+    hash_ctx_finish_rsp_mutual_auth: Option<HashContext>,
 }
 
 impl TranscriptManager {
     pub fn new() -> Self {
         Self {
             spdm_version: SpdmVersion::V10,
-            vca_buf: VcaBuffer::default(),
-            hash_ctx_m1: None,
-            hash_ctx_l1: None,
+            ..Default::default()
         }
     }
 
@@ -112,6 +170,9 @@ impl TranscriptManager {
             TranscriptContext::Vca => self.vca_buf.reset(),
             TranscriptContext::M1 => self.hash_ctx_m1 = None,
             TranscriptContext::L1 => self.hash_ctx_l1 = None,
+            TranscriptContext::FinishRspResponderOnly => {
+                self.hash_ctx_finish_rsp_responder_only = None
+            }
         }
     }
 
@@ -132,6 +193,9 @@ impl TranscriptManager {
             TranscriptContext::Vca => self.vca_buf.append(data),
             TranscriptContext::M1 => self.append_m1(data).await,
             TranscriptContext::L1 => self.append_l1(self.spdm_version, data).await,
+            TranscriptContext::FinishRspResponderOnly => {
+                self.append_hash_ctx_finish_rsp_responder_only(data).await
+            }
         }
     }
 
@@ -150,8 +214,9 @@ impl TranscriptManager {
     ) -> TranscriptResult<()> {
         let hash_ctx = match context {
             TranscriptContext::Vca => return Err(TranscriptError::InvalidState),
-            TranscriptContext::M1 => self.hash_ctx_m1.as_mut(),
-            TranscriptContext::L1 => self.hash_ctx_l1.as_mut(),
+            TranscriptContext::M1 => self.hash_ctx_m1.as_mut().take(),
+            TranscriptContext::L1 => self.hash_ctx_l1.as_mut().take(),
+            TranscriptContext::FinishRspResponderOnly => self.hash_ctx_kex_rsp_sig.as_mut().take(),
         };
 
         if let Some(ctx) = hash_ctx {
@@ -160,12 +225,6 @@ impl TranscriptManager {
                 .map_err(TranscriptError::CaliptraApi)?;
         } else {
             return Err(TranscriptError::InvalidState);
-        }
-
-        match context {
-            TranscriptContext::M1 => self.hash_ctx_m1 = None,
-            TranscriptContext::L1 => self.hash_ctx_l1 = None,
-            _ => {}
         }
 
         Ok(())
@@ -205,6 +264,26 @@ impl TranscriptManager {
                 .await
                 .map_err(TranscriptError::CaliptraApi)?;
             self.hash_ctx_l1 = Some(ctx);
+            Ok(())
+        }
+    }
+
+    // TODO: add wrapper function or macro for this
+    async fn append_hash_ctx_finish_rsp_responder_only(
+        &mut self,
+        data: &[u8],
+    ) -> TranscriptResult<()> {
+        if let Some(ctx) = &mut self.hash_ctx_finish_rsp_responder_only {
+            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+        } else {
+            let mut ctx = HashContext::new();
+            ctx.init(HashAlgoType::SHA384, Some(self.vca_buf.data()))
+                .await
+                .map_err(TranscriptError::CaliptraApi)?;
+            ctx.update(data)
+                .await
+                .map_err(TranscriptError::CaliptraApi)?;
+            self.hash_ctx_finish_rsp_responder_only = Some(ctx);
             Ok(())
         }
     }

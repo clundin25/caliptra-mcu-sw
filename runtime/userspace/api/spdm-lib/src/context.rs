@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+use libapi_caliptra::crypto::ecdh::Cmk;
+
 // use crate::cert_mgr::DeviceCertsManager;
 use crate::cert_store::*;
 use crate::chunk_ctx::LargeResponseCtx;
@@ -7,7 +9,7 @@ use crate::codec::{Codec, MessageBuf};
 use crate::commands::error_rsp::{encode_error_response, ErrorCode};
 use crate::commands::{
     algorithms_rsp, capabilities_rsp, certificate_rsp, challenge_auth_rsp, chunk_get_rsp,
-    digests_rsp, measurements_rsp, version_rsp,
+    digests_rsp, key_exchange_rsp, measurements_rsp, version_rsp,
 };
 use crate::error::*;
 use crate::measurements::common::SpdmMeasurements;
@@ -29,6 +31,7 @@ pub struct SpdmContext<'a> {
     pub(crate) device_certs_store: &'a mut dyn SpdmCertStore,
     pub(crate) measurements: SpdmMeasurements,
     pub(crate) large_resp_context: LargeResponseCtx,
+    pub(crate) shared_key: Option<Cmk>,
 }
 
 impl<'a> SpdmContext<'a> {
@@ -55,6 +58,7 @@ impl<'a> SpdmContext<'a> {
             device_certs_store,
             measurements: SpdmMeasurements::default(),
             large_resp_context: LargeResponseCtx::default(),
+            shared_key: None,
         })
     }
 
@@ -119,6 +123,12 @@ impl<'a> SpdmContext<'a> {
             }
             ReqRespCode::ChunkGet => {
                 chunk_get_rsp::handle_chunk_get(self, req_msg_header, req).await?
+            }
+            ReqRespCode::KeyExchange => {
+                key_exchange_rsp::handle_key_exchange(self, req_msg_header, req).await?
+            }
+            ReqRespCode::Finish => {
+                key_exchange_rsp::handle_finish(self, req_msg_header, req).await?
             }
 
             _ => Err((false, CommandError::UnsupportedRequest))?,
@@ -239,5 +249,17 @@ impl<'a> SpdmContext<'a> {
             .append(transcript_context, msg)
             .await
             .map_err(|e| (false, CommandError::Transcript(e)))
+    }
+
+    /// True if both requester and responder require handshake in the clear.
+    pub(crate) fn handshake_in_the_clear(&self) -> bool {
+        self.local_capabilities.flags.handshake_in_the_clear_cap() == 1
+            && self
+                .state
+                .connection_info
+                .peer_capabilities()
+                .flags
+                .handshake_in_the_clear_cap()
+                == 1
     }
 }

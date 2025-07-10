@@ -175,8 +175,11 @@ async fn generate_digests_response<'a>(
     rsp.push_data(payload_len)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
 
-    // Append the response message to the M1 transcript
+    // Append the response message to the M1 and KexRspSig transcripts
     ctx.append_message_to_transcript(rsp, TranscriptContext::M1)
+        .await?;
+    // TODO: check if issued and multi_key_conn_rsp is true
+    ctx.append_message_to_transcript(rsp, TranscriptContext::FinishRspResponderOnly)
         .await
 }
 
