@@ -9,7 +9,7 @@ use crate::codec::{Codec, MessageBuf};
 use crate::commands::error_rsp::{encode_error_response, ErrorCode};
 use crate::commands::{
     algorithms_rsp, capabilities_rsp, certificate_rsp, challenge_auth_rsp, chunk_get_rsp,
-    digests_rsp, key_exchange_rsp, measurements_rsp, version_rsp,
+    digests_rsp, finish_rsp, key_exchange_rsp, measurements_rsp, version_rsp,
 };
 use crate::error::*;
 use crate::measurements::common::SpdmMeasurements;
@@ -127,9 +127,7 @@ impl<'a> SpdmContext<'a> {
             ReqRespCode::KeyExchange => {
                 key_exchange_rsp::handle_key_exchange(self, req_msg_header, req).await?
             }
-            ReqRespCode::Finish => {
-                key_exchange_rsp::handle_finish(self, req_msg_header, req).await?
-            }
+            ReqRespCode::Finish => finish_rsp::handle_finish(self, req_msg_header, req).await?,
 
             _ => Err((false, CommandError::UnsupportedRequest))?,
         }

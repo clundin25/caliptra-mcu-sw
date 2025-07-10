@@ -120,7 +120,6 @@ fn device_capability_flags() -> CapabilityFlags {
     capability_flags.set_encap_cap(0);
     capability_flags.set_hbeat_cap(0);
     capability_flags.set_key_upd_cap(0);
-    // we do support encryption and authentication during the session handshake, so this is set to 0
     capability_flags.set_handshake_in_the_clear_cap(0);
     capability_flags.set_pub_key_id_cap(0);
     capability_flags.set_chunk_cap(1);
