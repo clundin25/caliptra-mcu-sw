@@ -1233,6 +1233,10 @@ impl McuHwModel for ModelFpgaRealtime {
             .cptra_fuse_valid_axi_user
             .set(DEFAULT_AXI_PAUSER);
         m.caliptra_mmio.soc().cptra_fuse_axi_user_lock.set(1);
+        m.caliptra_mmio.soc().cptra_fuse_wr_done.set(1);
+
+        println!("Waiting for Caliptra to be NOT ready for fuses");
+        while m.ready_for_fuses() {}
 
         println!("Wait for OTP to be idle");
 
