@@ -1,8 +1,5 @@
 // Licensed under the Apache-2.0 license
 
-use libapi_caliptra::crypto::ecdh::Cmk;
-
-// use crate::cert_mgr::DeviceCertsManager;
 use crate::cert_store::*;
 use crate::chunk_ctx::LargeResponseCtx;
 use crate::codec::{Codec, MessageBuf};
@@ -20,6 +17,7 @@ use crate::protocol::DeviceCapabilities;
 use crate::state::{ConnectionState, State};
 use crate::transcript::{TranscriptContext, TranscriptManager};
 use crate::transport::SpdmTransport;
+use caliptra_api::mailbox::Cmk;
 
 pub struct SpdmContext<'a> {
     transport: &'a mut dyn SpdmTransport,

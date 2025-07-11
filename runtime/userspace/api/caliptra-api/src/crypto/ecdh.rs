@@ -3,17 +3,14 @@
 use crate::error::CaliptraApiResult;
 use crate::mailbox_api::execute_mailbox_cmd;
 use caliptra_api::mailbox::{
-    CmEcdhFinishReq, CmEcdhFinishResp, CmEcdhGenerateReq, CmEcdhGenerateResp, MailboxReqHeader,
-    Request, CMK_SIZE_BYTES,
+    CmEcdhFinishReq, CmEcdhFinishResp, CmEcdhGenerateReq, CmEcdhGenerateResp, Cmk,
+    MailboxReqHeader, Request,
 };
 use libsyscall_caliptra::mailbox::Mailbox;
 use zerocopy::IntoBytes;
 
 // re-export
 pub use caliptra_api::mailbox::{CmKeyUsage, CMB_ECDH_EXCHANGE_DATA_MAX_SIZE};
-
-#[allow(dead_code)]
-pub struct Cmk([u8; CMK_SIZE_BYTES]);
 
 pub struct Ecdh;
 

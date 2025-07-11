@@ -12,6 +12,7 @@ use crate::state::ConnectionState;
 use crate::transcript::TranscriptContext;
 use bitfield::bitfield;
 use libapi_caliptra::crypto::ecdh::{CmKeyUsage, Ecdh, CMB_ECDH_EXCHANGE_DATA_MAX_SIZE};
+use libapi_caliptra::crypto::hmac::Hmac;
 use libapi_caliptra::crypto::rng::Rng;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -186,6 +187,25 @@ async fn encode_key_exchange_rsp_base<'a>(
         .map_err(|e| (false, CommandError::Codec(e)))
 }
 
+async fn sign_transcript(
+    ctx: &mut SpdmContext<'_>,
+    slot_id: u8,
+    transcript_ctx: TranscriptContext,
+) -> CommandResult<[u8; ECDSA384_SIGNATURE_LEN]> {
+    let mut hash_to_sign = [0u8; SHA384_HASH_SIZE];
+    ctx.transcript_mgr
+        .hash(transcript_ctx, &mut hash_to_sign)
+        .await
+        .map_err(|e| (false, CommandError::Transcript(e)))?;
+
+    let mut signature = [0u8; ECDSA384_SIGNATURE_LEN];
+    ctx.device_certs_store
+        .sign_hash(slot_id, &hash_to_sign, &mut signature)
+        .await
+        .map_err(|e| (false, CommandError::CertStore(e)))?;
+    Ok(signature)
+}
+
 async fn generate_key_exchange_response<'a>(
     ctx: &mut SpdmContext<'a>,
     slot_id: u8,
@@ -213,41 +233,38 @@ async fn generate_key_exchange_response<'a>(
     // Encode the Opaque data length = 0
     encode_opaque_data(rsp)?;
 
-    // TODO: generate transcript signature and responder verify data
     // Update transcript
     ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspSignature)
         .await?;
 
-    // TODO: check if we need to generate signature
-    if generate_signature {
-        let mut hash_to_sign = [0u8; SHA384_HASH_SIZE];
-        ctx.transcript_mgr
-            .hash(
-                TranscriptContext::KeyExchangeRspSignature,
-                &mut hash_to_sign,
-            )
-            .await
-            .map_err(|e| (false, CommandError::Transcript(e)))?;
-        // TODO: actually sign
-        let signature = [0u8; ECDSA384_SIGNATURE_LEN];
-        encode_u8_slice(&signature, rsp).map_err(|e| (false, CommandError::Codec(e)))?;
+    // Add signature
+    let signature =
+        sign_transcript(ctx, slot_id, TranscriptContext::KeyExchangeRspSignature).await?;
+    encode_u8_slice(&signature, rsp).map_err(|e| (false, CommandError::Codec(e)))?;
 
-        // Append to HMAC transcript
-        ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspHmac)
-            .await?;
-    }
     // we won't need this transcript any more
     ctx.transcript_mgr
         .disable_transcript(TranscriptContext::KeyExchangeRspSignature);
 
-    let mut hash_to_hmac = [0u8; SHA384_HASH_SIZE];
-    ctx.transcript_mgr
-        .hash(TranscriptContext::KeyExchangeRspHmac, &mut hash_to_hmac)
-        .await
-        .map_err(|e| (false, CommandError::Transcript(e)))?;
-    // TODO: actually hmac
-    let mac = [0u8; SHA384_HASH_SIZE];
-    encode_u8_slice(&mac, rsp).map_err(|e| (false, CommandError::Codec(e)))?;
+    let session_handshake_encrypted = false; // TODO: Need to figure this out
+    let session_handshake_message_authenated = false; // TODO: Need to figure this out
+    let generate_hmac = session_handshake_encrypted || session_handshake_message_authenated;
+    if generate_hmac {
+        // Append to HMAC transcript
+        ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspHmac)
+            .await?;
+
+        let mut hash_to_hmac = [0u8; SHA384_HASH_SIZE];
+        ctx.transcript_mgr
+            .hash(TranscriptContext::KeyExchangeRspHmac, &mut hash_to_hmac)
+            .await
+            .map_err(|e| (false, CommandError::Transcript(e)))?;
+        let mac = Hmac::hmac(ctx.shared_key.as_ref().unwrap(), &hash_to_hmac)
+            .await
+            .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
+        encode_u8_slice(&mac.mac[..mac.hdr.data_len as usize], rsp)
+            .map_err(|e| (false, CommandError::Codec(e)))?;
+    }
 
     // We won't need this transcript any more.
     ctx.transcript_mgr
