@@ -249,6 +249,21 @@ impl<'a> SpdmContext<'a> {
             .map_err(|e| (false, CommandError::Transcript(e)))
     }
 
+    pub(crate) async fn append_message_to_transcripts(
+        &mut self,
+        msg_buf: &mut MessageBuf<'_>,
+        transcript_contexts: &[TranscriptContext],
+    ) -> CommandResult<()> {
+        let msg = msg_buf
+            .message_data()
+            .map_err(|e| (false, CommandError::Codec(e)))?;
+
+        self.transcript_mgr
+            .append_multiple(transcript_contexts, msg)
+            .await
+            .map_err(|e| (false, CommandError::Transcript(e)))
+    }
+
     /// True if both requester and responder require handshake in the clear.
     pub(crate) fn handshake_in_the_clear(&self) -> bool {
         self.local_capabilities.flags.handshake_in_the_clear_cap() == 1

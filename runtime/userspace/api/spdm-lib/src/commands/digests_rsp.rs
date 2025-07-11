@@ -175,12 +175,22 @@ async fn generate_digests_response<'a>(
     rsp.push_data(payload_len)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
 
-    // Append the response message to the M1 and KexRspSig transcripts
-    ctx.append_message_to_transcript(rsp, TranscriptContext::M1)
-        .await?;
-    // TODO: check if issued and multi_key_conn_rsp is true
-    ctx.append_message_to_transcript(rsp, TranscriptContext::FinishRspResponderOnly)
-        .await
+    // Append the response message transcripts
+    ctx.append_message_to_transcripts(
+        rsp,
+        &[
+            TranscriptContext::M1,
+            // TODO: check if issued and multi_key_conn_rsp is true
+            TranscriptContext::KeyExchangeRspSignature,
+            TranscriptContext::KeyExchangeRspHmac,
+            TranscriptContext::FinishMutualAuthSignaure,
+            TranscriptContext::FinishResponderOnlyHmac,
+            TranscriptContext::FinishMutualAuthHmac,
+            TranscriptContext::FinishRspResponderOnly,
+            TranscriptContext::FinishRspMutualAuth,
+        ],
+    )
+    .await
 }
 
 fn encode_multi_key_conn_rsp_data(

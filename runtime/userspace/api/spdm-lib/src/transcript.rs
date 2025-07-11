@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-use crate::protocol::{SpdmVersion, SHA384_HASH_SIZE};
+use crate::context;
+use crate::protocol::{CapabilityFlags, SpdmVersion, SHA384_HASH_SIZE};
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 use libapi_caliptra::error::CaliptraApiError;
 
@@ -48,17 +49,28 @@ impl VcaBuffer {
     }
 }
 
+#[derive(Clone, Copy)]
+#[repr(u32)]
 pub enum TranscriptContext {
-    Vca,
-    M1,
-    L1,
-    FinishRspResponderOnly,
+    Vca = 1 << 0,
+    M1 = 1 << 1,
+    L1 = 1 << 2,
+    KeyExchangeRspSignature = 1 << 3,
+    KeyExchangeRspHmac = 1 << 4,
+    FinishMutualAuthSignaure = 1 << 5,
+    FinishResponderOnlyHmac = 1 << 6,
+    FinishMutualAuthHmac = 1 << 7,
+    FinishRspResponderOnly = 1 << 8,
+    FinishRspMutualAuth = 1 << 9,
 }
 
 /// Transcript management for the SPDM responder.
 #[derive(Default)]
 pub(crate) struct TranscriptManager {
     spdm_version: SpdmVersion,
+    // bit mask of enabled transcripts
+    enabled_transcripts: u32,
+
     // Buffer for storing `VCA`
     // VCA or A = Concatenate (GET_VERSION, VERSION, GET_CAPABILITIES, CAPABILITIES, NEGOTIATE_ALGORITHMS, ALGORITHMS)
     vca_buf: VcaBuffer,
@@ -74,7 +86,7 @@ pub(crate) struct TranscriptManager {
     // M = Concatenate (GET_MEASUREMENTS, MEASUREMENTS\signature)
     hash_ctx_l1: Option<HashContext>,
 
-    // KEY_EXCHANGE_RSP transcript contexts:
+    // KEY_EXCHANGE_RSP contexts:
     // Hash Context for KEY_EXCHANGE_RSP signature transcript
     // KRS = Concatenate(A, B, C)
     // where
@@ -136,9 +148,41 @@ pub(crate) struct TranscriptManager {
 
 impl TranscriptManager {
     pub fn new() -> Self {
+        let enabled_transcripts = (TranscriptContext::Vca as u32)
+            | (TranscriptContext::M1 as u32)
+            | (TranscriptContext::L1 as u32);
         Self {
             spdm_version: SpdmVersion::V10,
+            enabled_transcripts,
             ..Default::default()
+        }
+    }
+
+    pub fn update_capabilities(
+        &mut self,
+        capabilities: CapabilityFlags,
+        peer_capabilities: CapabilityFlags,
+    ) {
+        // Since each transcript context takes SHA calls to maintain after each message,
+        // we only enable the ones that are possible based on our joint capabilities.
+        let key_ex = (capabilities.key_ex_cap() & peer_capabilities.key_ex_cap()) != 0;
+        if !key_ex {
+            return;
+        }
+        self.enabled_transcripts |= TranscriptContext::KeyExchangeRspSignature as u32;
+        self.enabled_transcripts |= TranscriptContext::KeyExchangeRspHmac as u32;
+
+        let mutual_auth = (capabilities.mut_auth_cap() & peer_capabilities.mut_auth_cap()) != 0;
+        if mutual_auth {
+            // no mutual authentication will be possible, so we only enable responder-only transcripts
+            self.enabled_transcripts |= TranscriptContext::FinishResponderOnlyHmac as u32;
+            self.enabled_transcripts |= TranscriptContext::FinishRspResponderOnly as u32;
+        } else {
+            // mutual authentication will be requested, so we enable those transcripts
+            // TODO: determine which of signature or HMAC will be used
+            self.enabled_transcripts |= TranscriptContext::FinishMutualAuthSignaure as u32;
+            self.enabled_transcripts |= TranscriptContext::FinishMutualAuthHmac as u32;
+            self.enabled_transcripts |= TranscriptContext::FinishRspMutualAuth as u32;
         }
     }
 
@@ -170,6 +214,16 @@ impl TranscriptManager {
             TranscriptContext::Vca => self.vca_buf.reset(),
             TranscriptContext::M1 => self.hash_ctx_m1 = None,
             TranscriptContext::L1 => self.hash_ctx_l1 = None,
+            TranscriptContext::KeyExchangeRspSignature => self.hash_ctx_kex_rsp_hmac = None,
+            TranscriptContext::KeyExchangeRspHmac => self.hash_ctx_kex_rsp_hmac = None,
+            TranscriptContext::FinishMutualAuthSignaure => {
+                self.hash_ctx_finish_mutual_auth_signature = None
+            }
+            TranscriptContext::FinishResponderOnlyHmac => {
+                self.hash_ctx_finish_responder_only_hmac = None
+            }
+            TranscriptContext::FinishMutualAuthHmac => self.hash_ctx_finish_mutual_auth_hmac = None,
+            TranscriptContext::FinishRspMutualAuth => self.hash_ctx_finish_rsp_mutual_auth = None,
             TranscriptContext::FinishRspResponderOnly => {
                 self.hash_ctx_finish_rsp_responder_only = None
             }
@@ -189,14 +243,76 @@ impl TranscriptManager {
         context: TranscriptContext,
         data: &[u8],
     ) -> TranscriptResult<()> {
-        match context {
-            TranscriptContext::Vca => self.vca_buf.append(data),
-            TranscriptContext::M1 => self.append_m1(data).await,
-            TranscriptContext::L1 => self.append_l1(self.spdm_version, data).await,
+        let ctx = match context {
+            TranscriptContext::Vca => {
+                self.vca_buf.append(data)?;
+                return Ok(());
+            }
+            TranscriptContext::M1 => &mut self.hash_ctx_m1,
+            TranscriptContext::L1 => &mut self.hash_ctx_l1,
+            TranscriptContext::KeyExchangeRspSignature => &mut self.hash_ctx_kex_rsp_sig,
+            TranscriptContext::KeyExchangeRspHmac => &mut self.hash_ctx_kex_rsp_hmac,
+            TranscriptContext::FinishMutualAuthSignaure => {
+                &mut self.hash_ctx_finish_mutual_auth_signature
+            }
+            TranscriptContext::FinishResponderOnlyHmac => {
+                &mut self.hash_ctx_finish_responder_only_hmac
+            }
+            TranscriptContext::FinishMutualAuthHmac => &mut self.hash_ctx_finish_mutual_auth_hmac,
             TranscriptContext::FinishRspResponderOnly => {
-                self.append_hash_ctx_finish_rsp_responder_only(data).await
+                &mut self.hash_ctx_finish_rsp_responder_only
+            }
+            TranscriptContext::FinishRspMutualAuth => &mut self.hash_ctx_finish_rsp_mutual_auth,
+        };
+
+        if let Some(ctx) = ctx {
+            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
+        } else {
+            let mut hash_ctx = HashContext::new();
+            hash_ctx
+                .init(HashAlgoType::SHA384, Some(self.vca_buf.data()))
+                .await
+                .map_err(TranscriptError::CaliptraApi)?;
+            hash_ctx
+                .update(data)
+                .await
+                .map_err(TranscriptError::CaliptraApi)?;
+            ctx.replace(hash_ctx);
+            Ok(())
+        }
+    }
+
+    /// Append data to multiple transcript contexts.
+    ///
+    /// # Arguments
+    /// * `contexts` - The contexts to append data to.
+    /// * `data` - The data to append.
+    ///
+    /// # Returns
+    /// * `TranscriptResult<()>` - Result indicating success or failure.
+    pub async fn append_multiple(
+        &mut self,
+        contexts: &[TranscriptContext],
+        data: &[u8],
+    ) -> TranscriptResult<()> {
+        for context in contexts.iter().copied() {
+            if self.is_transcript_enabled(context) {
+                self.append(context, data).await?;
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn enable_transcript(&mut self, context: TranscriptContext) {
+        self.enabled_transcripts |= context as u32;
+    }
+
+    pub(crate) fn disable_transcript(&mut self, context: TranscriptContext) {
+        self.enabled_transcripts &= !(context as u32);
+    }
+
+    pub(crate) fn is_transcript_enabled(&self, context: TranscriptContext) -> bool {
+        self.enabled_transcripts & (context as u32) != 0
     }
 
     /// Finalize the hash for a given context.
@@ -216,7 +332,23 @@ impl TranscriptManager {
             TranscriptContext::Vca => return Err(TranscriptError::InvalidState),
             TranscriptContext::M1 => self.hash_ctx_m1.as_mut().take(),
             TranscriptContext::L1 => self.hash_ctx_l1.as_mut().take(),
-            TranscriptContext::FinishRspResponderOnly => self.hash_ctx_kex_rsp_sig.as_mut().take(),
+            TranscriptContext::FinishMutualAuthSignaure => {
+                self.hash_ctx_finish_mutual_auth_signature.as_mut().take()
+            }
+            TranscriptContext::FinishResponderOnlyHmac => {
+                self.hash_ctx_finish_responder_only_hmac.as_mut().take()
+            }
+            TranscriptContext::FinishMutualAuthHmac => {
+                self.hash_ctx_finish_mutual_auth_hmac.as_mut().take()
+            }
+            TranscriptContext::KeyExchangeRspSignature => self.hash_ctx_kex_rsp_sig.as_mut().take(),
+            TranscriptContext::KeyExchangeRspHmac => self.hash_ctx_kex_rsp_hmac.as_mut().take(),
+            TranscriptContext::FinishRspMutualAuth => {
+                self.hash_ctx_finish_rsp_mutual_auth.as_mut().take()
+            }
+            TranscriptContext::FinishRspResponderOnly => {
+                self.hash_ctx_finish_rsp_responder_only.as_mut().take()
+            }
         };
 
         if let Some(ctx) = hash_ctx {
@@ -228,63 +360,5 @@ impl TranscriptManager {
         }
 
         Ok(())
-    }
-
-    async fn append_m1(&mut self, data: &[u8]) -> TranscriptResult<()> {
-        if let Some(ctx) = &mut self.hash_ctx_m1 {
-            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
-        } else {
-            let vca_data = self.vca_buf.data();
-            let mut ctx = HashContext::new();
-            ctx.init(HashAlgoType::SHA384, Some(vca_data))
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            ctx.update(data)
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            self.hash_ctx_m1 = Some(ctx);
-            Ok(())
-        }
-    }
-
-    async fn append_l1(&mut self, spdm_version: SpdmVersion, data: &[u8]) -> TranscriptResult<()> {
-        if let Some(ctx) = &mut self.hash_ctx_l1 {
-            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
-        } else {
-            let vca_data = if spdm_version >= SpdmVersion::V12 {
-                Some(self.vca_buf.data())
-            } else {
-                None
-            };
-            let mut ctx = HashContext::new();
-            ctx.init(HashAlgoType::SHA384, vca_data)
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            ctx.update(data)
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            self.hash_ctx_l1 = Some(ctx);
-            Ok(())
-        }
-    }
-
-    // TODO: add wrapper function or macro for this
-    async fn append_hash_ctx_finish_rsp_responder_only(
-        &mut self,
-        data: &[u8],
-    ) -> TranscriptResult<()> {
-        if let Some(ctx) = &mut self.hash_ctx_finish_rsp_responder_only {
-            ctx.update(data).await.map_err(TranscriptError::CaliptraApi)
-        } else {
-            let mut ctx = HashContext::new();
-            ctx.init(HashAlgoType::SHA384, Some(self.vca_buf.data()))
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            ctx.update(data)
-                .await
-                .map_err(TranscriptError::CaliptraApi)?;
-            self.hash_ctx_finish_rsp_responder_only = Some(ctx);
-            Ok(())
-        }
     }
 }
