@@ -406,6 +406,8 @@ pub fn start_spdm_device_validator() -> io::Result<Child> {
     println!("Starting spdm_device_validator_sample process");
 
     Command::new(utility_path)
+        .arg("--pcap")
+        .arg("caliptra_spdm_validator.pcap")
         .stdout(Stdio::from(output_file))
         .stderr(Stdio::from(output_file_clone))
         .spawn()

@@ -91,10 +91,9 @@ impl DpeLeafCertBuf {
         }
 
         let mut cert_ctx = CertContext::new();
-        let mut cert = self.buffer;
 
         let size = cert_ctx
-            .certify_key(&mut cert, Some(&DPE_LEAF_CERT_LABEL), None, None)
+            .certify_key(&mut self.buffer, Some(&DPE_LEAF_CERT_LABEL), None, None)
             .await
             .map_err(CertStoreError::CaliptraApi)?;
 
