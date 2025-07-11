@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::cert_store::MAX_CERT_SLOTS_SUPPORTED;
-use crate::codec::{Codec, CommonCodec, MessageBuf};
+use crate::codec::{encode_u8_slice, Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::challenge_auth_rsp::{encode_measurement_summary_hash, encode_opaque_data};
 use crate::commands::error_rsp::ErrorCode;
@@ -142,6 +142,21 @@ async fn process_key_exchange<'a>(
         }
     }
 
+    // Update transcripts
+    ctx.append_message_to_transcripts(
+        req_payload,
+        &[
+            TranscriptContext::KeyExchangeRspHmac,
+            TranscriptContext::KeyExchangeRspSignature,
+            TranscriptContext::FinishMutualAuthSignaure,
+            TranscriptContext::FinishResponderOnlyHmac,
+            TranscriptContext::FinishMutualAuthHmac,
+            TranscriptContext::FinishRspResponderOnly,
+            TranscriptContext::FinishRspMutualAuth,
+        ],
+    )
+    .await?;
+
     Ok((
         exch_req.slot_id,
         exch_req.measurement_hash_type,
@@ -199,6 +214,57 @@ async fn generate_key_exchange_response<'a>(
     encode_opaque_data(rsp)?;
 
     // TODO: generate transcript signature and responder verify data
+    // Update transcript
+    ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspSignature)
+        .await?;
+
+    // TODO: check if we need to generate signature
+    if generate_signature {
+        let mut hash_to_sign = [0u8; SHA384_HASH_SIZE];
+        ctx.transcript_mgr
+            .hash(
+                TranscriptContext::KeyExchangeRspSignature,
+                &mut hash_to_sign,
+            )
+            .await
+            .map_err(|e| (false, CommandError::Transcript(e)))?;
+        // TODO: actually sign
+        let signature = [0u8; ECDSA384_SIGNATURE_LEN];
+        encode_u8_slice(&signature, rsp).map_err(|e| (false, CommandError::Codec(e)))?;
+
+        // Append to HMAC transcript
+        ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspHmac)
+            .await?;
+    }
+    // we won't need this transcript any more
+    ctx.transcript_mgr
+        .disable_transcript(TranscriptContext::KeyExchangeRspSignature);
+
+    let mut hash_to_hmac = [0u8; SHA384_HASH_SIZE];
+    ctx.transcript_mgr
+        .hash(TranscriptContext::KeyExchangeRspHmac, &mut hash_to_hmac)
+        .await
+        .map_err(|e| (false, CommandError::Transcript(e)))?;
+    // TODO: actually hmac
+    let mac = [0u8; SHA384_HASH_SIZE];
+    encode_u8_slice(&mac, rsp).map_err(|e| (false, CommandError::Codec(e)))?;
+
+    // We won't need this transcript any more.
+    ctx.transcript_mgr
+        .disable_transcript(TranscriptContext::KeyExchangeRspHmac);
+
+    // Append the final key exchange response to the finish response transcripts.
+    ctx.append_message_to_transcripts(
+        rsp,
+        &[
+            TranscriptContext::FinishMutualAuthHmac,
+            TranscriptContext::FinishRspMutualAuth,
+            TranscriptContext::FinishRspResponderOnly,
+            TranscriptContext::FinishMutualAuthSignaure,
+        ],
+    )
+    .await?;
+
     Ok(())
 }
 
