@@ -158,7 +158,7 @@ fn handle_i3c_socket_connection(
     }
 }
 
-pub(crate) trait TestTrait {
+pub(crate) trait MctpTransportTest {
     fn run_test(&mut self, stream: &mut TcpStream, target_addr: u8);
     fn is_passed(&self) -> bool;
 }
@@ -166,7 +166,7 @@ pub(crate) trait TestTrait {
 pub(crate) fn run_tests(
     port: u16,
     target_addr: DynamicI3cAddress,
-    tests: Vec<Box<dyn TestTrait + Send>>,
+    tests: Vec<Box<dyn MctpTransportTest + Send>>,
     test_timeout_seconds: Option<Duration>,
 ) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -190,7 +190,7 @@ pub(crate) fn run_tests(
         test_runner.run_tests();
     });
 
-    if cfg!(feature = "test-spdm-validator") {
+    if cfg!(feature = "test-mctp-spdm-responder-conformance") {
         execute_spdm_validator();
     }
 }
@@ -209,11 +209,15 @@ struct MctpTestRunner {
     stream: TcpStream,
     target_addr: u8,
     passed: usize,
-    tests: Vec<Box<dyn TestTrait + Send>>,
+    tests: Vec<Box<dyn MctpTransportTest + Send>>,
 }
 
 impl MctpTestRunner {
-    pub fn new(stream: TcpStream, target_addr: u8, tests: Vec<Box<dyn TestTrait + Send>>) -> Self {
+    pub fn new(
+        stream: TcpStream,
+        target_addr: u8,
+        tests: Vec<Box<dyn MctpTransportTest + Send>>,
+    ) -> Self {
         Self {
             stream,
             target_addr,

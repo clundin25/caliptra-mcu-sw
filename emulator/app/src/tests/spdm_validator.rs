@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::i3c_socket::{MctpTestState, TestTrait};
+use crate::i3c_socket::{MctpTestState, MctpTransportTest};
 use crate::tests::mctp_util::common::MctpUtil;
 use crate::{wait_for_runtime_start, EMULATOR_RUNNING};
 use std::fs::File;
@@ -18,8 +18,8 @@ pub const SOCKET_SPDM_COMMAND_STOP: u32 = 0xFFFE;
 pub const SOCKET_SPDM_COMMAND_TEST: u32 = 0xDEAD;
 pub const SOCKET_HEADER_LEN: usize = 12;
 
-pub fn generate_tests() -> Vec<Box<dyn TestTrait + Send>> {
-    vec![Box::new(Test::new("SpdmValidatorTests")) as Box<dyn TestTrait + Send>]
+pub fn generate_tests() -> Vec<Box<dyn MctpTransportTest + Send>> {
+    vec![Box::new(Test::new("SpdmValidatorTests")) as Box<dyn MctpTransportTest + Send>]
 }
 
 #[derive(Debug, Clone)]
@@ -323,7 +323,7 @@ impl Test {
     }
 }
 
-impl TestTrait for Test {
+impl MctpTransportTest for Test {
     fn is_passed(&self) -> bool {
         self.passed
     }

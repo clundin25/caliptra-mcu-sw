@@ -704,7 +704,7 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             spdm_loopback_tests,
             None,
         );
-    } else if cfg!(feature = "test-spdm-validator") {
+    } else if cfg!(feature = "test-mctp-spdm-responder-conformance") {
         if std::env::var("SPDM_VALIDATOR_DIR").is_err() {
             println!("SPDM_VALIDATOR_DIR environment variable is not set. Skipping test");
             exit(0);
