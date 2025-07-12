@@ -176,7 +176,6 @@ impl<'a, F: Flash + 'static> Log<'a, F> {
                 const ID_SIZE: usize = size_of::<EntryID>();
                 let mut id_bytes = [0u8; ID_SIZE];
                 read_volatile_slice!(self.volume, header_pos, &mut id_bytes);
-                let id_bytes = <[u8; ID_SIZE]>::try_from(id_bytes).unwrap();
                 usize::from_ne_bytes(id_bytes)
             };
 
@@ -209,7 +208,6 @@ impl<'a, F: Flash + 'static> Log<'a, F> {
                     const LENGTH_SIZE: usize = size_of::<usize>();
                     let mut length_bytes = [0u8; LENGTH_SIZE];
                     read_volatile_slice!(self.volume, volume_offset, &mut length_bytes);
-                    let length_bytes = <[u8; LENGTH_SIZE]>::try_from(length_bytes).unwrap();
                     usize::from_ne_bytes(length_bytes)
                 } + ENTRY_HEADER_SIZE;
 

@@ -451,8 +451,8 @@ pub fn runtime_ld_script(
     );
 
     // use hardcoded values for the flash memory offsets and sizes temporarily
-    let flash_offset = emulator_consts::DIRECT_READ_FLASH_ORG as u32;
-    let flash_size = emulator_consts::DIRECT_READ_FLASH_SIZE as u32;
+    let flash_offset = emulator_consts::DIRECT_READ_FLASH_ORG;
+    let flash_size = emulator_consts::DIRECT_READ_FLASH_SIZE;
     let logging_flash_size = 128 * 1024; // 128KB reserved for logging at the end of flash
     let logging_flash_offset = flash_offset + flash_size - logging_flash_size;
     map.insert(
