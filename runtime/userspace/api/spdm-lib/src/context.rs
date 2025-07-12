@@ -15,9 +15,11 @@ use crate::protocol::common::{ReqRespCode, SpdmMsgHdr};
 use crate::protocol::version::*;
 use crate::protocol::DeviceCapabilities;
 use crate::state::{ConnectionState, State};
-use crate::transcript::{TranscriptContext, TranscriptManager};
+use crate::transcript::{TranscriptContext, TranscriptError, TranscriptManager};
 use crate::transport::SpdmTransport;
-use caliptra_api::mailbox::Cmk;
+use caliptra_api::mailbox::{CmKeyUsage, Cmk};
+use libapi_caliptra::crypto::hmac::{HkdfSalt, Hmac};
+use libapi_caliptra::crypto::import::Import;
 
 pub struct SpdmContext<'a> {
     transport: &'a mut dyn SpdmTransport,
@@ -29,7 +31,17 @@ pub struct SpdmContext<'a> {
     pub(crate) device_certs_store: &'a mut dyn SpdmCertStore,
     pub(crate) measurements: SpdmMeasurements,
     pub(crate) large_resp_context: LargeResponseCtx,
-    pub(crate) shared_key: Option<Cmk>,
+    pub(crate) secrets: Secrets,
+}
+
+#[derive(Default)]
+pub(crate) struct Secrets {
+    pub(crate) request_direction_handshake: Option<Cmk>,
+    pub(crate) response_direction_handshake: Option<Cmk>,
+    pub(crate) request_direction_data: Option<Cmk>,
+    pub(crate) response_direction_data: Option<Cmk>,
+    pub(crate) export_master: Option<Cmk>,
+    pub(crate) finished_key: Option<Cmk>,
 }
 
 impl<'a> SpdmContext<'a> {
@@ -56,7 +68,7 @@ impl<'a> SpdmContext<'a> {
             device_certs_store,
             measurements: SpdmMeasurements::default(),
             large_resp_context: LargeResponseCtx::default(),
-            shared_key: None,
+            secrets: Secrets::default(),
         })
     }
 
@@ -272,5 +284,126 @@ impl<'a> SpdmContext<'a> {
                 .flags
                 .handshake_in_the_clear_cap()
                 == 1
+    }
+
+    /// Derive handshake and master secrets from the DHE secret.
+    pub(crate) async fn derive_secrets(
+        &mut self,
+        dhe_secret: Cmk,
+        handshake: Handshake,
+    ) -> CommandResult<()> {
+        let salt_0 = match handshake {
+            Handshake::KeyExchange => [0u8; SHA384_HASH_SIZE],
+            Handshake::PskExchange => [0xffu8; SHA384_HASH_SIZE],
+        };
+        let handshake_secret = Hmac::hkdf_extract(HkdfSalt::Data(&salt_0), &dhe_secret)
+            .await
+            .map_err(|e| (false, CommandError::CaliptraApi(e)))?
+            .prk;
+
+        // bin_str0 = BinConcat(Hash.Length, Version, "derived", null)
+        let mut bin_str0 = [0u8; 10 + SHA384_HASH_SIZE + "derived".len()];
+        bin_concat(
+            SHA384_HASH_SIZE as u16,
+            self.state.connection_info.version_number(),
+            "derived",
+            &[0u8; SHA384_HASH_SIZE],
+            &mut bin_str0,
+        )?;
+
+        let salt_1 = Hmac::hkdf_expand(
+            &handshake_secret,
+            CmKeyUsage::Hmac,
+            SHA384_HASH_SIZE as u32,
+            &bin_str0,
+        )
+        .await
+        .map_err(|e| (false, CommandError::CaliptraApi(e)))?
+        .okm;
+
+        let zero_filled = Import::import(CmKeyUsage::Hmac, &[0u8; SHA384_HASH_SIZE])
+            .await
+            .map_err(|e| (false, CommandError::CaliptraApi(e)))?
+            .cmk;
+
+        let master_secret = Hmac::hkdf_extract(HkdfSalt::Cmk(&salt_1), &zero_filled)
+            .await
+            .map_err(|e| (false, CommandError::CaliptraApi(e)))?
+            .prk;
+
+        let Some(th2) = self.transcript_mgr.th2.as_ref() else {
+            return Err((
+                false,
+                CommandError::Transcript(TranscriptError::InvalidState),
+            ));
+        };
+        // bin_str3 = BinConcat(Hash.Length, Version, "req app data", TH2)
+        let mut bin_str3 = [0u8; 10 + SHA384_HASH_SIZE + "req app data".len()];
+        bin_concat(
+            SHA384_HASH_SIZE as u16,
+            self.state.connection_info.version_number(),
+            "req app data",
+            th2,
+            &mut bin_str3,
+        )?;
+        let request_direction_handshake_secret = Hmac::hkdf_expand(
+            &master_secret,
+            CmKeyUsage::Hmac,
+            SHA384_HASH_SIZE as u32,
+            &bin_str3,
+        )
+        .await
+        .map_err(|e| (false, CommandError::CaliptraApi(e)))?
+        .okm;
+
+        self.secrets
+            .request_direction_handshake
+            .replace(request_direction_handshake_secret);
+
+        // TODO: do the rest of the derivations
+
+        // hkdf_extract(&dhe_secret, &mut self.secrets.request_direction_handshake)
+        //     .await
+        //     .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
+
+        Ok(())
+    }
+}
+
+pub enum Handshake {
+    KeyExchange,
+    PskExchange,
+}
+
+// 1. Length   Binary  Little           16 bits
+// 2. Version  Text    Text             8 bytes
+// 3. Label    Text    Text             Variable
+// 4. Context  Binary  Hash byte order  Hash.Length
+fn bin_concat(
+    length: u16,
+    version: SpdmVersion,
+    text: &str,
+    context: &[u8; SHA384_HASH_SIZE],
+    output: &mut [u8],
+) -> CommandResult<()> {
+    if 10 + text.len() + context.len() > output.len() {
+        return Err((false, CommandError::BufferTooSmall));
+    }
+    output[0..2].copy_from_slice(&length.to_le_bytes());
+    output[2..10].copy_from_slice(version_str(version));
+    let text_bytes = text.as_bytes();
+    output[10..10 + text_bytes.len()].copy_from_slice(text_bytes);
+    output[10 + text_bytes.len()..10 + text_bytes.len() + context.len()].copy_from_slice(context);
+    Ok(())
+}
+
+const fn version_str(version: SpdmVersion) -> &'static [u8; 8] {
+    match version {
+        // SPDM 1.0 does not support key exchange so has no need of this, but we include it anyway for completeness sake
+        SpdmVersion::V10 => b"spdm1.0 ",
+        SpdmVersion::V11 => b"spdm1.1 ",
+        SpdmVersion::V12 => b"spdm1.2 ",
+        SpdmVersion::V13 => b"spdm1.3 ",
+        //SpdmVersion::V14 => b"spdm1.4 ", // technically not in the spec but we include it because it was likely an oversight
     }
 }

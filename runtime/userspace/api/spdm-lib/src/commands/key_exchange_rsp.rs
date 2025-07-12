@@ -5,7 +5,7 @@ use crate::codec::{encode_u8_slice, Codec, CommonCodec, MessageBuf};
 use crate::commands::algorithms_rsp::selected_measurement_specification;
 use crate::commands::challenge_auth_rsp::{encode_measurement_summary_hash, encode_opaque_data};
 use crate::commands::error_rsp::ErrorCode;
-use crate::context::SpdmContext;
+use crate::context::{Handshake, SpdmContext};
 use crate::error::{CommandError, CommandResult};
 use crate::protocol::*;
 use crate::state::ConnectionState;
@@ -259,7 +259,7 @@ async fn generate_key_exchange_response<'a>(
             .hash(TranscriptContext::KeyExchangeRspHmac, &mut hash_to_hmac)
             .await
             .map_err(|e| (false, CommandError::Transcript(e)))?;
-        let mac = Hmac::hmac(ctx.shared_key.as_ref().unwrap(), &hash_to_hmac)
+        let mac = Hmac::hmac(ctx.secrets.finished_key.as_ref().unwrap(), &hash_to_hmac)
             .await
             .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
         encode_u8_slice(&mac.mac[..mac.hdr.data_len as usize], rsp)
@@ -308,7 +308,7 @@ pub(crate) async fn handle_key_exchange<'a>(
         .await
         .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
-    let shared_key = Ecdh::ecdh_finish(CmKeyUsage::Hmac, &generate_resp, &exchange_data)
+    let dhe_secret = Ecdh::ecdh_finish(CmKeyUsage::Hmac, &generate_resp, &exchange_data)
         .await
         .map_err(|e| (false, CommandError::CaliptraApi(e)))?;
 
@@ -323,7 +323,8 @@ pub(crate) async fn handle_key_exchange<'a>(
     )
     .await?;
 
-    // store the shared key
-    ctx.shared_key.replace(shared_key);
+    // derive the secrets
+    ctx.derive_secrets(dhe_secret, Handshake::KeyExchange)
+        .await?;
     Ok(())
 }

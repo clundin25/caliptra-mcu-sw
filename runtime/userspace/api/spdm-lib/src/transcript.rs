@@ -70,6 +70,10 @@ pub(crate) struct TranscriptManager {
     // bit mask of enabled transcripts
     enabled_transcripts: u32,
 
+    // TODO: compute these and keep them
+    pub(crate) th1: Option<[u8; SHA384_HASH_SIZE]>,
+    pub(crate) th2: Option<[u8; SHA384_HASH_SIZE]>,
+
     // Buffer for storing `VCA`
     // VCA or A = Concatenate (GET_VERSION, VERSION, GET_CAPABILITIES, CAPABILITIES, NEGOTIATE_ALGORITHMS, ALGORITHMS)
     vca_buf: VcaBuffer,

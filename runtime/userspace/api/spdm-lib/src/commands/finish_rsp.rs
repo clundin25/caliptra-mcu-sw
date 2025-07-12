@@ -172,7 +172,7 @@ pub(crate) async fn handle_finish<'a>(
     }
 
     // Check that we have started a key exchange
-    if ctx.shared_key.is_none() {
+    if ctx.secrets.request_direction_handshake.is_none() {
         Err(ctx.generate_error_response(req_payload, ErrorCode::UnexpectedRequest, 0, None))?;
     }
 
