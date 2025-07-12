@@ -38,6 +38,7 @@ pub struct StartCaliptraArgs {
     pub req_idevid_csr: Option<bool>,
     pub device_lifecycle: Option<String>,
     pub use_mcu_recovery_interface: bool,
+    pub use_mcu_mci: bool,
 }
 
 register_bitfields! [
@@ -64,6 +65,7 @@ pub fn start_caliptra(
     let unprovisioned = String::from("unprovisioned");
     let args_device_lifecycle = args.device_lifecycle.as_ref().unwrap_or(&unprovisioned);
     let args_use_mcu_recovery_interface = args.use_mcu_recovery_interface;
+    let args_use_mcu_mci = args.use_mcu_mci;
     if !args.rom.exists() {
         Err(io::Error::new(
             ErrorKind::NotFound,
@@ -131,6 +133,7 @@ pub fn start_caliptra(
         ),
         subsystem_mode: true,
         use_mcu_recovery_interface: args_use_mcu_recovery_interface,
+        use_mcu_mci: args_use_mcu_mci,
         ..Default::default()
     };
 

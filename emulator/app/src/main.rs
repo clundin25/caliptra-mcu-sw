@@ -446,11 +446,22 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         use_mcu_recovery_interface = false;
     }
 
+    let use_mcu_mci;
+    #[cfg(feature = "test-firmware-update")]
+    {
+        use_mcu_mci = true;
+    }
+    #[cfg(not(feature = "test-firmware-update"))]
+    {
+        use_mcu_mci = false;
+    }
+
     let (mut caliptra_cpu, soc_to_caliptra) = start_caliptra(&StartCaliptraArgs {
         rom: cli.caliptra_rom,
         device_lifecycle,
         req_idevid_csr,
         use_mcu_recovery_interface,
+        use_mcu_mci,
     })
     .expect("Failed to start Caliptra CPU");
 
