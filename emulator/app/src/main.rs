@@ -710,13 +710,17 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
             exit(0);
         }
         i3c_controller.start();
-        let spdm_validator_tests = tests::spdm_validator::generate_tests();
-        i3c_socket::run_tests(
+        crate::tests::spdm_responder_validator::mctp::run_mctp_spdm_conformance_test(
             cli.i3c_port.unwrap(),
             i3c.get_dynamic_address().unwrap(),
-            spdm_validator_tests,
-            Some(std::time::Duration::from_secs(4500)), // timeout in seconds
+            std::time::Duration::from_secs(4500), // timeout in seconds
         );
+        // i3c_socket::run_tests(
+        //     cli.i3c_port.unwrap(),
+        //     i3c.get_dynamic_address().unwrap(),
+        //     spdm_validator_tests,
+        //     Some(std::time::Duration::from_secs(4500)), // timeout in seconds
+        // );
     }
 
     if cfg!(any(

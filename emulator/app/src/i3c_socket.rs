@@ -33,7 +33,6 @@ Abstract:
 
 --*/
 
-use crate::tests::spdm_validator::execute_spdm_validator;
 use crate::{wait_for_runtime_start, EMULATOR_RUNNING};
 use emulator_periph::{
     DynamicI3cAddress, I3cBusCommand, I3cBusResponse, I3cTcriCommand, I3cTcriCommandXfer,
@@ -189,10 +188,6 @@ pub(crate) fn run_tests(
         let mut test_runner = MctpTestRunner::new(stream, target_addr.into(), tests);
         test_runner.run_tests();
     });
-
-    if cfg!(feature = "test-mctp-spdm-responder-conformance") {
-        execute_spdm_validator();
-    }
 }
 
 #[derive(Debug, Clone)]
