@@ -38,7 +38,6 @@ pub struct SpdmValidatorRunner {
     responder_ready: bool,
     cur_req_msg: Vec<u8>,
     cur_rsp_msg: Vec<u8>,
-    cmd_retry_count: usize,
     state: SpdmServerState,
 }
 
@@ -51,7 +50,6 @@ impl SpdmValidatorRunner {
             responder_ready: false,
             cur_req_msg: Vec::new(),
             cur_rsp_msg: Vec::new(),
-            cmd_retry_count: 10,
             state: SpdmServerState::Start,
         }
     }

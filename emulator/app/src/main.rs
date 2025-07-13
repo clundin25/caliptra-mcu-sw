@@ -713,14 +713,19 @@ fn run(cli: Emulator, capture_uart_output: bool) -> io::Result<Vec<u8>> {
         crate::tests::spdm_responder_validator::mctp::run_mctp_spdm_conformance_test(
             cli.i3c_port.unwrap(),
             i3c.get_dynamic_address().unwrap(),
-            std::time::Duration::from_secs(4500), // timeout in seconds
+            std::time::Duration::from_secs(6000), // timeout in seconds
         );
-        // i3c_socket::run_tests(
-        //     cli.i3c_port.unwrap(),
-        //     i3c.get_dynamic_address().unwrap(),
-        //     spdm_validator_tests,
-        //     Some(std::time::Duration::from_secs(4500)), // timeout in seconds
-        // );
+    } else if cfg!(feature = "test-doe-spdm-responder-conformance") {
+        if std::env::var("SPDM_VALIDATOR_DIR").is_err() {
+            println!("SPDM_VALIDATOR_DIR environment variable is not set. Skipping test");
+            exit(0);
+        }
+        let (test_rx, test_tx) = doe_mbox_fsm.start();
+        crate::tests::spdm_responder_validator::doe::run_doe_spdm_conformance_test(
+            test_tx,
+            test_rx,
+            std::time::Duration::from_secs(6000), // timeout in seconds
+        );
     }
 
     if cfg!(any(

@@ -31,14 +31,14 @@ pub struct MctpTransport {
 }
 
 impl MctpTransport {
-    pub fn new(stream: TcpStream, target_addr: u8) -> Self {
+    pub fn new(stream: TcpStream, target_addr: u8, retry_count: usize) -> Self {
         Self {
             stream,
             mctp_util: MctpUtil::new(),
             target_addr,
             msg_tag: 0,
             tx_rx_state: TxRxState::Start,
-            retry_count: 10,
+            retry_count,
         }
     }
 
@@ -61,6 +61,7 @@ impl MctpTransport {
                         &mut self.stream,
                         self.target_addr,
                     );
+                    std::thread::sleep(std::time::Duration::from_secs(2));
                     self.tx_rx_state = TxRxState::ReceiveResp;
                 }
 
@@ -152,7 +153,7 @@ pub fn run_mctp_spdm_conformance_test(
 ) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let stream = TcpStream::connect(addr).unwrap();
-    let transport = MctpTransport::new(stream, target_addr.into());
+    let transport = MctpTransport::new(stream, target_addr.into(), 10);
 
     thread::spawn(move || {
         thread::sleep(test_timeout_seconds);

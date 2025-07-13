@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-use crate::doe_mbox_fsm::DoeTestState;
+use crate::tests::doe_util::common::DoeUtil;
+use crate::tests::doe_util::protocol::DataObjectType;
 use crate::tests::spdm_responder_validator::common::{execute_spdm_validator, SpdmValidatorRunner};
 use crate::tests::spdm_responder_validator::transport::{Transport, SOCKET_TRANSPORT_TYPE_PCI_DOE};
 use crate::{wait_for_runtime_start, EMULATOR_RUNNING};
@@ -13,36 +14,87 @@ use std::time::Duration;
 
 const TEST_NAME: &str = "DOE-SPDM-RESPONDER-VALIDATOR";
 
+enum TxRxState {
+    Start,
+    SendReq,
+    ReceiveResp,
+    Finish,
+}
+
 pub struct DoeTransport {
     tx: Sender<Vec<u8>>,
     rx: Receiver<Vec<u8>>,
-    tx_rx_state: DoeTestState,
+    tx_rx_state: TxRxState,
+    retry_count: usize,
 }
 
 impl DoeTransport {
-    pub fn new(tx: Sender<Vec<u8>>, rx: Receiver<Vec<u8>>) -> Self {
+    pub fn new(tx: Sender<Vec<u8>>, rx: Receiver<Vec<u8>>, retry_count: usize) -> Self {
         Self {
             tx,
             rx,
-            tx_rx_state: DoeTestState::Start,
+            tx_rx_state: TxRxState::Start,
+            retry_count,
         }
-    }
-    fn send_req_receive_resp(&mut self, _req: &[u8]) -> Option<Vec<u8>> {
-        todo!("Implement send_req_receive_resp for DoeTransport");
-    }
-
-    fn wait_for_responder(&mut self, _req: &[u8]) -> Option<Vec<u8>> {
-        todo!("Implement wait_for_responder for DoeTransport");
     }
 }
 
 impl Transport for DoeTransport {
     fn target_send_and_receive(&mut self, req: &[u8], wait_for_responder: bool) -> Option<Vec<u8>> {
-        if wait_for_responder {
-            self.wait_for_responder(req)
-        } else {
-            self.send_req_receive_resp(req)
+        self.tx_rx_state = TxRxState::Start;
+        let mut resp = None;
+
+        while EMULATOR_RUNNING.load(Ordering::Relaxed) {
+            match self.tx_rx_state {
+                TxRxState::Start => {
+                    if wait_for_responder {
+                        std::thread::sleep(std::time::Duration::from_secs(20));
+                    }
+                    self.tx_rx_state = TxRxState::SendReq;
+                }
+                TxRxState::SendReq => {
+                    if DoeUtil::send_data_object(req, DataObjectType::DoeSpdm, &mut self.tx).is_ok()
+                    {
+                        self.tx_rx_state = TxRxState::ReceiveResp;
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                    } else {
+                        println!("[{}]: Failed to send request", TEST_NAME);
+                        self.tx_rx_state = TxRxState::Finish;
+                    }
+                }
+                TxRxState::ReceiveResp => match DoeUtil::receive_data_object(&self.rx) {
+                    Ok(response) if !response.is_empty() => {
+                        resp = Some(response.clone());
+                        self.tx_rx_state = TxRxState::Finish;
+                    }
+                    Ok(_) => {
+                        if self.retry_count > 0 {
+                            self.retry_count -= 1;
+                            // Stay in ReceiveData state and yield for a bit
+                            std::thread::sleep(std::time::Duration::from_millis(300));
+                            println!(
+                                "[{}]: No response received, retrying... ({} retries left)",
+                                TEST_NAME, self.retry_count
+                            );
+                        } else {
+                            println!(
+                                "[{}]: No response received after retries, failing test",
+                                TEST_NAME
+                            );
+                            self.tx_rx_state = TxRxState::Finish;
+                        }
+                    }
+                    Err(e) => {
+                        println!("[{}]: Failed to receive response: {:?}", TEST_NAME, e);
+                        self.tx_rx_state = TxRxState::Finish;
+                    }
+                },
+                TxRxState::Finish => {
+                    break;
+                }
+            }
         }
+        resp
     }
 
     fn transport_type(&self) -> u32 {
@@ -55,21 +107,21 @@ pub fn run_doe_spdm_conformance_test(
     rx: Receiver<Vec<u8>>,
     test_timeout_seconds: Duration,
 ) {
+    let transport = DoeTransport::new(tx, rx, 10);
     // Spawn a thread to handle the timeout for the test
     thread::spawn(move || {
-        std::thread::sleep(test_timeout_seconds);
+        thread::sleep(test_timeout_seconds);
         println!(
-            "[{}]: Timeout after {:?} seconds",
+            "[{}] TIMED OUT AFTER {:?} SECONDS",
             TEST_NAME,
             test_timeout_seconds.as_secs()
         );
-        EMULATOR_RUNNING.store(false, Ordering::Relaxed);
+        exit(-1);
     });
 
     // Spawn a thread to run the tests
     thread::spawn(move || {
         wait_for_runtime_start();
-        let transport = DoeTransport::new(tx, rx);
 
         if !EMULATOR_RUNNING.load(Ordering::Relaxed) {
             exit(-1);
@@ -80,10 +132,10 @@ pub fn run_doe_spdm_conformance_test(
         println!("[{}]: Spdm Server Listening on port 2323", TEST_NAME);
 
         if let Some(spdm_stream) = listener.incoming().next() {
-            let mut spdm_client_stream = spdm_stream.expect("Failed to accept connection");
+            let mut spdm_stream = spdm_stream.expect("Failed to accept connection");
 
             let mut test = SpdmValidatorRunner::new(Box::new(transport), TEST_NAME);
-            test.run_test(&mut spdm_client_stream);
+            test.run_test(&mut spdm_stream);
             if !test.is_passed() {
                 println!("[{}]: Spdm Responder Conformance Test Failed", TEST_NAME);
                 exit(-1);
