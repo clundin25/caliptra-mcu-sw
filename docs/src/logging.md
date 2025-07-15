@@ -116,16 +116,16 @@ pub trait Logger {
     /// # Returns
     /// * `Ok(())` if the entry was successfully added.
     /// * `Err(LoggingError)` if the operation failed (e.g., insufficient space).
-    fn create_entry(&mut self, entry: &[u8]) -> Result<(), LoggingError>;
+    fn append_entry(&mut self, entry: &[u8]) -> Result<(), LoggingError>;
 
-    /// Flush the internal buffers to the underlying storage.
+    /// Sync the internal buffers to the underlying storage.
     ///
     /// Ensures that any buffered log data is written to persistent storage (if applicable).
     ///
     /// # Returns
-    /// * `Ok(())` if the flush was successful.
+    /// * `Ok(())` if the sync was successful.
     /// * `Err(LoggingError)` if the operation failed.
-    fn flush(&mut self) -> Result<(), LoggingError>;
+    fn sync(&mut self) -> Result<(), LoggingError>;
 
     /// Remove all data from the log.
     ///
