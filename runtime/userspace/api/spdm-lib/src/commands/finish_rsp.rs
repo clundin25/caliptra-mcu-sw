@@ -113,7 +113,7 @@ async fn generate_finish_response<'a>(
     // Prepare the response buffer
     // Spdm Header first
     let connection_version = ctx.state.connection_info.version_number();
-    let spdm_hdr = SpdmMsgHdr::new(connection_version, ReqRespCode::KeyExchange);
+    let spdm_hdr = SpdmMsgHdr::new(connection_version, ReqRespCode::Finish);
     spdm_hdr
         .encode(rsp)
         .map_err(|e| (false, CommandError::Codec(e)))?;
