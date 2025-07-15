@@ -1,23 +1,16 @@
 // Licensed under the Apache-2.0 license
 
-mod cert_slot_mgr;
-mod config;
+mod cert_store;
+mod device_cert_store;
+mod endorsement_certs;
 
-use cert_slot_mgr::cert_store::{
-    initialize_shared_cert_store, CertChain, DeviceCertStore, SharedCertStore,
-};
-use cert_slot_mgr::device_cert::DeviceCertIndex;
-use cert_slot_mgr::endorsement_cert::EndorsementCertChain;
 use core::fmt::Write;
+use device_cert_store::{initialize_cert_store, SharedCertStore};
 use embassy_executor::Spawner;
-use libapi_caliptra::certificate::CertContext;
-use libapi_caliptra::error::CaliptraApiError;
 use libsyscall_caliptra::doe;
 use libsyscall_caliptra::mctp;
 use libsyscall_caliptra::DefaultSyscalls;
 use libtock_console::Console;
-use spdm_lib::cert_store::CertStoreError;
-use spdm_lib::cert_store::CertStoreResult;
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::context::SpdmContext;
 use spdm_lib::protocol::*;
@@ -167,36 +160,4 @@ async fn spdm_doe_responder() {
             }
         }
     }
-}
-
-pub async fn initialize_cert_store() -> CertStoreResult<()> {
-    // populate signed idev cert into the device.
-    populate_idev_cert().await?;
-
-    // Initialize the certificate store
-    let mut cert_store = DeviceCertStore::new();
-
-    // Initialize slot 0 certificate chain
-    let slot0_endorsement = EndorsementCertChain::new(config::SLOT0_ECC_ROOT_CERT_CHAIN).await?;
-    let slot0_cert_chain = CertChain::new(slot0_endorsement, DeviceCertIndex::IdevId);
-    cert_store.set_cert_chain(0, slot0_cert_chain)?;
-
-    initialize_shared_cert_store(cert_store).await?;
-    Ok(())
-}
-
-async fn populate_idev_cert() -> CertStoreResult<()> {
-    let mut cert_ctx = CertContext::new();
-
-    while let Err(e) = cert_ctx
-        .populate_idev_ecc384_cert(&config::SLOT0_ECC_DEVID_CERT_DER)
-        .await
-    {
-        match e {
-            CaliptraApiError::MailboxBusy => continue, // Retry if the mailbox is busy
-            _ => Err(CertStoreError::CaliptraApi(e))?,
-        }
-    }
-
-    Ok(())
 }
