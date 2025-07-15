@@ -269,8 +269,8 @@ async fn generate_key_exchange_response<'a>(
     //     .disable_transcript(TranscriptContext::KeyExchangeRspSignature);
 
     let session_handshake_encrypted = false; // TODO: Need to figure this out
-    let session_handshake_message_authenated = false; // TODO: Need to figure this out
-    let generate_hmac = session_handshake_encrypted || session_handshake_message_authenated;
+    let session_handshake_message_authenticated = false; // TODO: Need to figure this out
+    let generate_hmac = session_handshake_encrypted || session_handshake_message_authenticated;
     if generate_hmac {
         // TODO: Append to HMAC transcript
         // ctx.append_message_to_transcript(rsp, TranscriptContext::KeyExchangeRspHmac)
