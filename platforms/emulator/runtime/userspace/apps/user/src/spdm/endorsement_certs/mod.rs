@@ -2,58 +2,16 @@
 
 extern crate alloc;
 
+mod slot0;
+
+use crate::spdm::cert_store::cert_chain::EndorsementCertChainTrait;
 use alloc::boxed::Box;
 use async_trait::async_trait;
+use libapi_caliptra::certificate::CertContext;
 use libapi_caliptra::crypto::hash::{HashAlgoType, HashContext};
 use libapi_caliptra::error::CaliptraApiError;
 use spdm_lib::cert_store::{CertStoreError, CertStoreResult};
-use spdm_lib::protocol::algorithms::AsymAlgo;
-use spdm_lib::protocol::SHA384_HASH_SIZE;
-
-#[async_trait]
-pub trait EndorsementCertChainTrait: Send + Sync {
-    /// Get the root cert hash of the endorsement cert chain.
-    ///
-    /// # Arguments
-    /// * `asym_algo` - The asymmetric algorithm to indicate the type of endorsement cert
-    ///
-    /// # Returns
-    /// The root cert hash as a byte array.
-    async fn root_cert_hash(
-        &self,
-        asym_algo: AsymAlgo,
-        root_hash: &mut [u8; SHA384_HASH_SIZE],
-    ) -> CertStoreResult<()>;
-
-    /// Refresh the cert chain portion if needed. This can be used to
-    /// reset the state of the cert chain or re-fetch the cert buffers.
-    async fn refresh(&mut self);
-
-    /// Get the size of the cert chain portion.
-    ///
-    /// # Arguments
-    /// * `asym_algo` - The asymmetric algorithm to indicate the type of cert chain
-    ///
-    /// # Returns
-    /// The size of the cert chain portion.
-    async fn size(&mut self, asym_algo: AsymAlgo) -> CertStoreResult<usize>;
-
-    /// Read cert chain portion into the provided buffer.
-    ///
-    /// # Arguments
-    /// * `asym_algo` - The asymmetric algorithm to indicate the type of cert chain.
-    /// * `offset` - The offset to start reading from.
-    /// * `buf` - The buffer to read the cert chain portion into.
-    ///
-    /// # Returns
-    /// The number of bytes read.
-    async fn read(
-        &mut self,
-        asym_algo: AsymAlgo,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> CertStoreResult<usize>;
-}
+use spdm_lib::protocol::{AsymAlgo, SHA384_HASH_SIZE};
 
 // Example implementation of Endorsement cert chain
 pub struct EndorsementCertChain<'b> {
@@ -62,8 +20,41 @@ pub struct EndorsementCertChain<'b> {
     root_cert_chain_len: usize,
 }
 
-impl<'b> EndorsementCertChain<'b> {
-    pub async fn new(root_cert_chain: &'b [&'b [u8]]) -> CertStoreResult<Self> {
+fn init_endorsement_cert_chain(slot_id: u8) -> CertStoreResult<&'static [&'static [u8]]> {
+    match slot_id {
+        0 => Ok(slot0::SLOT0_ECC_ROOT_CERT_CHAIN),
+        _ => Err(CertStoreError::InvalidSlotId),
+    }
+}
+
+async fn populate_idev_cert() -> CertStoreResult<()> {
+    let mut cert_ctx = CertContext::new();
+
+    while let Err(e) = cert_ctx
+        .populate_idev_ecc384_cert(&slot0::SLOT0_ECC_DEVID_CERT_DER)
+        .await
+    {
+        match e {
+            CaliptraApiError::MailboxBusy => continue, // Retry if the mailbox is busy
+            _ => Err(CertStoreError::CaliptraApi(e))?,
+        }
+    }
+
+    Ok(())
+}
+
+impl EndorsementCertChain<'_> {
+    pub async fn new(slot_id: u8) -> CertStoreResult<Self> {
+        if slot_id == 0 {
+            // populate signed idev cert into the device.
+            populate_idev_cert().await?;
+        }
+
+        let root_cert_chain = init_endorsement_cert_chain(slot_id)?;
+        if root_cert_chain.is_empty() {
+            return Err(CertStoreError::UnprovisionedSlot);
+        }
+
         let mut root_cert_chain_len = 0;
         for cert in root_cert_chain.iter() {
             root_cert_chain_len += cert.len();
