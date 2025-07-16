@@ -1,13 +1,13 @@
 // Licensed under the Apache-2.0 license
 
 use crate::tests::spdm_responder_validator::transport::Transport;
-use crate::{wait_for_runtime_start, EMULATOR_RUNNING};
+use crate::EMULATOR_RUNNING;
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use zerocopy::{transmute, FromBytes, Immutable, IntoBytes};
 
 const RECEIVER_BUFFER_SIZE: usize = 4160;
@@ -15,6 +15,8 @@ pub const SOCKET_SPDM_COMMAND_NORMAL: u32 = 0x0001;
 pub const SOCKET_SPDM_COMMAND_STOP: u32 = 0xFFFE;
 pub const SOCKET_SPDM_COMMAND_TEST: u32 = 0xDEAD;
 pub const SOCKET_HEADER_LEN: usize = 12;
+
+pub(crate) static SERVER_LISTENING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Copy, Clone, Default, FromBytes, IntoBytes, Immutable)]
 pub struct SpdmSocketHeader {
@@ -63,7 +65,6 @@ impl SpdmValidatorRunner {
                 SpdmServerState::ReceiveRequest => {
                     let result = self.receive_socket_message(stream);
                     if let Some((transport_type, command, buffer)) = result {
-                        println!("[{}]: Received message from SPDM client transport type {} command {} Buffer {:x?}", self.test_name, transport_type, command, buffer);
                         let result =
                             self.process_socket_message(stream, transport_type, command, buffer);
                         if !result {
@@ -130,7 +131,7 @@ impl SpdmValidatorRunner {
         }
 
         println!(
-            "read: {:02X?}{:02X?}",
+            "read from SPDM client: {:02X?}{:02X?}",
             &buffer[..SOCKET_HEADER_LEN],
             &buffer[SOCKET_HEADER_LEN..buffer_size]
         );
@@ -159,14 +160,14 @@ impl SpdmValidatorRunner {
         spdm_stream.write_all(payload).unwrap();
         spdm_stream.flush().unwrap();
         println!(
-            "write: {:02X?}{:02X?}",
+            "write to SPDM client: {:02X?}{:02X?}",
             &buffer[..SOCKET_HEADER_LEN],
             payload
         );
     }
 
     fn send_hello(&self, stream: &mut TcpStream, transport_type: u32) {
-        println!("[{}]: Got Client Hello", self.test_name);
+        println!("[{}]: Got Client Hello. Send Server Hello", self.test_name);
         let server_hello = b"Server Hello!\0";
         let hello_bytes = server_hello.as_bytes();
 
@@ -202,10 +203,7 @@ impl SpdmValidatorRunner {
 
         match socket_command {
             SOCKET_SPDM_COMMAND_TEST => {
-                println!(
-                    "[{}]: Received test command. Send Server Hello",
-                    self.test_name
-                );
+                println!("[{}]: Received test command", self.test_name);
                 self.send_hello(spdm_stream, transport_type);
                 self.state = SpdmServerState::ReceiveRequest;
                 true
@@ -249,8 +247,13 @@ impl SpdmValidatorRunner {
 
 pub fn execute_spdm_validator(transport: &'static str) {
     std::thread::spawn(move || {
-        println!("Starting spdm_device_validator_sample process. Waiting for runtime to start...");
-        wait_for_runtime_start();
+        println!(
+            "Starting spdm_device_validator_sample process. Waiting for SPDM listener to start..."
+        );
+        while !SERVER_LISTENING.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+
         match start_spdm_device_validator(transport) {
             Ok(mut child) => {
                 while EMULATOR_RUNNING.load(Ordering::Relaxed) {

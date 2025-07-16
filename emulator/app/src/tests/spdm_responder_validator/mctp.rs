@@ -1,8 +1,12 @@
 // Licensed under the Apache-2.0 license
 
 use crate::tests::mctp_util::common::MctpUtil;
-use crate::tests::spdm_responder_validator::common::{execute_spdm_validator, SpdmValidatorRunner};
-use crate::tests::spdm_responder_validator::transport::{Transport, SOCKET_TRANSPORT_TYPE_MCTP};
+use crate::tests::spdm_responder_validator::common::{
+    execute_spdm_validator, SpdmValidatorRunner, SERVER_LISTENING,
+};
+use crate::tests::spdm_responder_validator::transport::{
+    Transport, MAX_CMD_TIMEOUT_SECONDS, SOCKET_TRANSPORT_TYPE_MCTP,
+};
 use crate::{wait_for_runtime_start, EMULATOR_RUNNING};
 use emulator_periph::DynamicI3cAddress;
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -44,7 +48,7 @@ impl MctpTransport {
 
     fn send_req_receive_resp(&mut self, req: &[u8]) -> Option<Vec<u8>> {
         self.stream.set_nonblocking(true).unwrap();
-        println!("[{}]: Sending message to target {:x?}", TEST_NAME, req);
+        println!("[{}]: Sending message to target ", TEST_NAME);
         self.tx_rx_state = TxRxState::Start;
         let mut resp = None;
         let mut cur_retry_count = 0;
@@ -61,19 +65,15 @@ impl MctpTransport {
                         &mut self.stream,
                         self.target_addr,
                     );
-                    std::thread::sleep(std::time::Duration::from_secs(2));
                     self.tx_rx_state = TxRxState::ReceiveResp;
                 }
 
                 TxRxState::ReceiveResp => {
-                    println!(
-                        "[{}]: receive_response from target {:x?}",
-                        TEST_NAME, self.target_addr
-                    );
+                    println!("[{}]: receiving response from target", TEST_NAME);
                     let resp_msg = self.mctp_util.receive_response(
                         &mut self.stream,
                         self.target_addr,
-                        Some(25), // timeout in seconds
+                        Some(MAX_CMD_TIMEOUT_SECONDS), // timeout in seconds
                     );
                     if !resp_msg.is_empty() {
                         resp = Some(resp_msg);
@@ -132,10 +132,6 @@ impl Transport for MctpTransport {
             self.send_req_receive_resp(req)
         };
         if resp.is_some() {
-            println!(
-                "[{}]: Response received, msg_tag: {}",
-                TEST_NAME, self.msg_tag
-            );
             self.msg_tag = (self.msg_tag + 1) % 4;
         }
         resp
@@ -153,7 +149,7 @@ pub fn run_mctp_spdm_conformance_test(
 ) {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let stream = TcpStream::connect(addr).unwrap();
-    let transport = MctpTransport::new(stream, target_addr.into(), 10);
+    let transport = MctpTransport::new(stream, target_addr.into(), 1);
 
     thread::spawn(move || {
         thread::sleep(test_timeout_seconds);
@@ -174,6 +170,7 @@ pub fn run_mctp_spdm_conformance_test(
         let listener =
             TcpListener::bind("127.0.0.1:2323").expect("Could not bind to the SPDM listerner port");
         println!("[{}]: Spdm Server Listening on port 2323", TEST_NAME);
+        SERVER_LISTENING.store(true, Ordering::Relaxed);
 
         if let Some(spdm_stream) = listener.incoming().next() {
             let mut spdm_stream = spdm_stream.expect("Failed to accept connection");

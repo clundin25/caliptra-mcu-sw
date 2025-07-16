@@ -125,7 +125,7 @@ impl<'a, T: DoeTransport<'a>> DoeDriver<'a, T> {
     fn handle_doe_discovery(&self, doe_req: DoeDiscoveryRequest) {
         let data_object_protocol = DataObjectType::from(doe_req.index());
         if data_object_protocol == DataObjectType::Unsupported {
-            debug!("Unsupported DOE Discovery Request");
+            debug!("DOE_CAPSULE: Unsupported DOE Discovery Request");
             return;
         }
 
@@ -137,45 +137,46 @@ impl<'a, T: DoeTransport<'a>> DoeDriver<'a, T> {
         let discovery_response = DoeDiscoveryResponse::new(data_object_protocol as u8, next_index);
 
         // Prepare the response buffer
-        let doe_header = DoeDataObjectHeader::new(
-            data_object_protocol,
-            DOE_DISCOVERY_DATA_OBJECT_LEN_DW as u32,
-        );
+        let doe_header = DoeDataObjectHeader::new(DOE_DISCOVERY_DATA_OBJECT_LEN_DW as u32);
         if doe_header
             .encode(&mut doe_resp[..DOE_DATA_OBJECT_HEADER_LEN_DW])
             .is_err()
         {
-            debug!("Error encoding DOE header");
+            debug!("DOE_CAPSULE: Error encoding DOE header");
             return;
         }
         if discovery_response
             .encode(&mut doe_resp[DOE_DATA_OBJECT_HEADER_LEN_DW..])
             .is_err()
         {
-            debug!("Error encoding DOE discovery response");
+            debug!("DOE_CAPSULE: Error encoding DOE discovery response");
             return;
         }
 
         // Transmit the DOE Discovery Response
-
-        match self
+        if let Err(err) = self
             .doe_transport
             .transmit(doe_resp.iter().copied(), doe_resp.len())
         {
-            Ok(_) => debug!("DOE Discovery Response transmitted successfully"),
-            Err(err) => debug!("Error transmitting DOE Discovery Response: {:?}", err),
-        };
+            debug!(
+                "DOE_CAPSULE: Error transmitting DOE Discovery Response: {:?}",
+                err
+            );
+        }
     }
 
     fn handle_spdm_upcall(&self, rx_buf: &'static mut [u32], len_dw: usize) {
         // Handle SPDM Data Object
-        debug!("Handling SPDM Data Object with length: {} dwords", len_dw);
+        debug!(
+            "DOE_CAPSULE: Handling SPDM Data Object with length: {} dwords",
+            len_dw
+        );
 
         self.apps.each(|_, app, kernel_data| {
             if app.waiting_rx.get() {
                 app.waiting_rx.set(false);
             } else {
-                debug!("Application not waiting for Data Object");
+                debug!("DOE_CAPSULE: Application not waiting for Data Object");
                 return;
             }
 
