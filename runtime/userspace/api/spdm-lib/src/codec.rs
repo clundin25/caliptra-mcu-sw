@@ -181,7 +181,7 @@ impl<'a> MessageBuf<'a> {
     /// If the new length is greater than the current, the tail is increased (if within capacity).
     /// If the new length is less, the tail is reduced.
     pub fn resize(&mut self, len: usize) -> CodecResult<()> {
-        let new_tail = self.data + len;
+        let new_tail = len;
         if new_tail > self.buffer.len() {
             Err(CodecError::BufferOverflow)?;
         }
@@ -218,6 +218,7 @@ impl<'a> MessageBuf<'a> {
         self.buffer.fill(0);
         self.data = 0;
         self.tail = 0;
+        self.head = 0;
     }
 
     /// Returns the message buffer from the data pointer to the tail pointer

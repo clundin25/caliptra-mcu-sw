@@ -12,6 +12,10 @@ use bitfield::bitfield;
 use libsyscall_caliptra::doe::{driver_num, Doe};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
+use core::fmt::Write;
+use libsyscall_caliptra::DefaultSyscalls;
+use libtock_console::Console;
+
 const DOE_HEADER_SIZE: usize = 8;
 const DOE_PCI_SIG_VENDOR_ID: u16 = 0x0001; // PCI-SIG Vendor ID
 #[derive(Clone, Debug, PartialEq)]
@@ -47,7 +51,7 @@ bitfield! {
 
 impl DoeHeader<[u8; DOE_HEADER_SIZE]> {
     pub fn new(data_object_type: DataObjectType, length: u32) -> Self {
-        let len_dw = (length + DOE_HEADER_SIZE as u32) >> 2;
+        let len_dw = length >> 2;
         let mut header = DoeHeader([0u8; DOE_HEADER_SIZE]);
         header.set_vendor_id(DOE_PCI_SIG_VENDOR_ID);
         header.set_data_object_type(data_object_type as u8);
@@ -135,6 +139,7 @@ impl SpdmTransport for DoeTransport {
         } else {
             DataObjectType::DoeSpdm
         };
+        let mut cw = Console::<DefaultSyscalls>::writer();
 
         let msg_len = resp.msg_len();
         // Calculate padding size to align the message length to 4 bytes
@@ -148,6 +153,12 @@ impl SpdmTransport for DoeTransport {
 
         let msg_len = resp.msg_len();
         let rsp_buf = resp.data(msg_len).map_err(TransportError::Codec)?;
+        writeln!(
+            cw,
+            "[SPDM_LIB]: Sending DOE response with data object original len: {}, pad_size: {}, total length after pad: {} final len: {} data {}",
+            original_len, pad_size, total_len, msg_len, resp.data_offset()
+        )
+        .unwrap();
 
         self.doe
             .send_message(rsp_buf)

@@ -207,16 +207,19 @@ impl<'a, T: DoeTransport<'a>> DoeDriver<'a, T> {
 
             match read_len {
                 Ok(Ok(len)) => {
-                    println!("SPDM Data Object received successfully, length: {}", len);
+                    println!(
+                        "DOE_CAPSULE: SPDM Data Object received successfully, length: {}",
+                        len
+                    );
                     kernel_data
                         .schedule_upcall(upcall::MESSAGE_RECEIVED, (len, 0, 0))
                         .ok();
                 }
                 Ok(Err(err)) => {
-                    println!("Error copying data to app buffer: {:?}", err);
+                    println!("DOE_CAPSULE: Error copying data to app buffer: {:?}", err);
                 }
                 Err(err) => {
-                    println!("Error copying data to app buffer: {:?}", err);
+                    println!("DOE_CAPSULE: Error copying data to app buffer: {:?}", err);
                 }
             }
         });
