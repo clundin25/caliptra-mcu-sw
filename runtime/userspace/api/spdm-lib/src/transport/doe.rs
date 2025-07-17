@@ -121,8 +121,7 @@ impl SpdmTransport for DoeTransport {
 
         writeln!(
             cw,
-            "[SPDM_LIB]: Received DOE request with data object type: {}, length: {}, final len: {} data {}",
-            req.data_object_type(),
+            "[SPDM_LIB]: Received DOE request with length: {}, final len: {} data {}",
             msg_len,
             req.msg_len(),
             req.data_offset()
