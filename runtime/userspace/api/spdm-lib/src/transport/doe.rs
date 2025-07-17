@@ -99,6 +99,7 @@ impl SpdmTransport for DoeTransport {
     }
 
     async fn receive_request<'a>(&mut self, req: &mut MessageBuf<'a>) -> TransportResult<bool> {
+        let mut cw = Console::<DefaultSyscalls>::writer();
         req.reset();
         let max_len = req.capacity();
         req.put_data(max_len).map_err(TransportError::Codec)?;
@@ -117,6 +118,16 @@ impl SpdmTransport for DoeTransport {
 
         req.resize(msg_len as usize)
             .map_err(TransportError::Codec)?;
+
+        writeln!(
+            cw,
+            "[SPDM_LIB]: Received DOE request with data object type: {}, length: {}, final len: {} data {}",
+            req.data_object_type(),
+            msg_len,
+            req.msg_len(),
+            req.data_offset()
+        )
+        .unwrap();
 
         let header = DoeHeader::decode(req).map_err(TransportError::Codec)?;
         let data_object_type: DataObjectType = header
