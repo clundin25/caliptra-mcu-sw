@@ -221,12 +221,15 @@ impl<'a> MessageBuf<'a> {
         self.head = 0;
     }
 
-    /// Returns the message buffer from the data pointer to the tail pointer
-    pub fn message_data(&self) -> CodecResult<&[u8]> {
-        if self.head > self.tail || self.head > self.data {
+    /// Returns the message buffer up to the specified data offset.
+    pub fn message_slice(&self, offset: usize) -> CodecResult<&[u8]> {
+        if offset < self.head {
             Err(CodecError::BufferUnderflow)?;
         }
-        Ok(&self.buffer[self.head..self.tail])
+        if offset > self.tail {
+            Err(CodecError::BufferOverflow)?;
+        }
+        Ok(&self.buffer[self.head..offset])
     }
 
     /// For debug purposes

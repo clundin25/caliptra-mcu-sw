@@ -170,14 +170,15 @@ async fn generate_digests_response<'a>(
     if connection_version >= SpdmVersion::V13 && ctx.state.connection_info.multi_key_conn_rsp() {
         payload_len += encode_multi_key_conn_rsp_data(ctx, provisioned_slot_mask, rsp).await?;
     }
+    
+    // Append the response message to the M1 transcript
+    ctx.append_message_to_transcript(rsp, TranscriptContext::M1)
+        .await?;
 
     // Push data offset up by total payload length
     rsp.push_data(payload_len)
         .map_err(|_| (false, CommandError::BufferTooSmall))?;
-
-    // Append the response message to the M1 transcript
-    ctx.append_message_to_transcript(rsp, TranscriptContext::M1)
-        .await
+    Ok(())
 }
 
 async fn encode_multi_key_conn_rsp_data(

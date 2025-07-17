@@ -370,13 +370,14 @@ async fn generate_algorithms_response<'a>(
 
     // Fill the response buffer with selected algorithm structure table
     payload_len += encode_alg_struct_table(ctx, rsp, num_alg_struct_tables)?;
+    
+    // Add the ALGORITHMS to the transcript VCA context
+    ctx.append_message_to_transcript(rsp, TranscriptContext::Vca)
+        .await?;
 
     rsp.push_data(payload_len)
         .map_err(|_| ctx.generate_error_response(rsp, ErrorCode::InvalidRequest, 0, None))?;
-
-    // Add the ALGORITHMS to the transcript VCA context
-    ctx.append_message_to_transcript(rsp, TranscriptContext::Vca)
-        .await
+    Ok(())
 }
 
 fn encode_alg_struct_table(

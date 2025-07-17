@@ -276,14 +276,15 @@ async fn generate_capabilities_response<'a>(
             .encode(rsp_buf)
             .map_err(|e| (false, CommandError::Codec(e)))?;
     }
+    
+    // Append CAPABILITIES to the transcript VCA context
+    ctx.append_message_to_transcript(rsp_buf, TranscriptContext::Vca)
+        .await?;
 
     rsp_buf
         .push_data(payload_len)
         .map_err(|e| (false, CommandError::Codec(e)))?;
-
-    // Append CAPABILITIES to the transcript VCA context
-    ctx.append_message_to_transcript(rsp_buf, TranscriptContext::Vca)
-        .await
+    Ok(())
 }
 
 pub(crate) async fn handle_get_capabilities<'a>(
