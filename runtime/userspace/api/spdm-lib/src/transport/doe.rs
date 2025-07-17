@@ -155,8 +155,8 @@ impl SpdmTransport for DoeTransport {
         let rsp_buf = resp.data(msg_len).map_err(TransportError::Codec)?;
         writeln!(
             cw,
-            "[SPDM_LIB]: Sending DOE response with data object original len: {}, pad_size: {}, total length after pad: {} final len: {} data {}",
-            original_len, pad_size, total_len, msg_len, resp.data_offset()
+            "[SPDM_LIB]: Sending DOE response with data object pad_size: {}, total length after pad: {} final len: {} data {}",
+            pad_size, total_len, msg_len, resp.data_offset()
         )
         .unwrap();
 
