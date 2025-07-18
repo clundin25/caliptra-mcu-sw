@@ -100,6 +100,16 @@ jobs:
           cargo t -p tests-integration -- --test test_doe_spdm_responder_conformance --nocapture  --include-ignored
           sccache --show-stats
 
+      - name: Upload logs and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spdm-doe-validator-test-results
+          path: |
+            test.log
+            caliptra_spdm_validator.pcap
+            spdm_device_validator_output.txt
+
       - name: Display SPDM Validator test results on DOE transport
         run: |
           cat $GITHUB_WORKSPACE/test.log
