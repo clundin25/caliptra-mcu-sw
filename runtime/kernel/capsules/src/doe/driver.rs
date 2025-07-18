@@ -214,6 +214,10 @@ impl<'a, T: DoeTransport<'a>> DoeDriver<'a, T> {
                     kernel_data
                         .schedule_upcall(upcall::MESSAGE_RECEIVED, (len, 0, 0))
                         .ok();
+                    println!(
+                        "DOE_CAPSULE: Upcall scheduled for MESSAGE_RECEIVED with length: {}",
+                        len
+                    );
                 }
                 Ok(Err(err)) => {
                     println!("DOE_CAPSULE: Error copying data to app buffer: {:?}", err);
