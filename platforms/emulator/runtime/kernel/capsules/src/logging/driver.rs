@@ -10,7 +10,7 @@ use kernel::syscall::{CommandReturn, SyscallDriver};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::{ErrorCode, ProcessId};
 
-pub const LOGGING_FLASH_DRIVER_NUM: usize = 0x9000_0001;
+pub const LOGGING_FLASH_DRIVER_NUM: usize = 0x9001_0000;
 
 pub const BUF_LEN: usize = 512;
 
@@ -52,7 +52,7 @@ mod logging_cmd {
 
 // Define logging commands
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LoggingOps {
     Idle,
     Read,
@@ -116,95 +116,6 @@ impl<'a> LoggingFlashDriver<'a> {
         }
     }
 
-    // Check if any command is pending. If not, this command is executed.
-    // If so, this command is queued and will be run when the pending
-    // command is completed.
-    /*
-    fn enqueue_command(
-        &self,
-        command: FlashStorageCommand,
-        offset: usize,
-        length: usize,
-        processid: Option<ProcessId>,
-    ) -> Result<(), ErrorCode> {
-        // Do bounds check. Userspace sees memory that starts at address 0 even if it
-        // is offset in the physical memory.
-        if offset >= self.length || length > self.length || offset + length > self.length {
-            return Err(ErrorCode::INVAL);
-        }
-
-        if self.buffer.is_none() {
-            return Err(ErrorCode::RESERVE);
-        }
-
-        processid.map_or(Err(ErrorCode::FAIL), |processid| {
-            self.apps
-                .enter(processid, |app, kernel_data| {
-                    // Get the length of the correct allowed buffer.
-                    let allow_buf_len = match command {
-                        FlashStorageCommand::Read => kernel_data
-                            .get_readwrite_processbuffer(rw_allow::READ)
-                            .map_or(0, |read| read.len()),
-                        FlashStorageCommand::Write => kernel_data
-                            .get_readonly_processbuffer(ro_allow::WRITE)
-                            .map_or(0, |read| read.len()),
-                        _ => 0,
-                    };
-
-                    if command != FlashStorageCommand::Erase && allow_buf_len == 0 {
-                        return Err(ErrorCode::RESERVE);
-                    }
-
-                    // Shorten the length if the application gave us nowhere to
-                    // put it.
-                    let active_len = if let FlashStorageCommand::Erase = command {
-                        length
-                    } else {
-                        cmp::min(length, allow_buf_len)
-                    };
-
-                    // Check if this command can be executed immediately or queued.
-                    if self.current_app.is_none() {
-                        // No app is currently using the underlying storage.
-                        // Mark this app as active, and then execute the command.
-                        self.current_app.set(processid);
-
-                        // Need to copy bytes if this is a write.
-                        if command == FlashStorageCommand::Write {
-                            let _ = kernel_data
-                                .get_readonly_processbuffer(ro_allow::WRITE)
-                                .and_then(|write| {
-                                    write.enter(|app_buffer| {
-                                        self.buffer.map(|kernel_buffer| {
-                                            // Check that the internal buffer and the buffer that was
-                                            // allowed are long enough.
-                                            let write_len =
-                                                cmp::min(active_len, kernel_buffer.len());
-
-                                            let d = &app_buffer[0..write_len];
-                                            d.copy_to_slice(&mut kernel_buffer[0..write_len]);
-                                        });
-                                    })
-                                });
-                        }
-
-                        self.userspace_call_driver(command, offset, active_len)
-                    } else if app.pending_command {
-                        // No more room in the queue, nowhere to store this request.
-                        Err(ErrorCode::NOMEM)
-                    } else {
-                        // Queue this request.
-                        app.pending_command = true;
-                        app.command = command;
-                        app.offset = offset;
-                        app.length = active_len;
-                        Ok(())
-                    }
-                })
-                .unwrap_or_else(|err| Err(err.into()))
-        })
-    }*/
-
     // Enqueue a log command, following the pattern from flash_partition.rs
     fn enqueue_command(
         &self,
@@ -251,7 +162,16 @@ impl<'a> LoggingFlashDriver<'a> {
                                     })
                                 });
                         }
-                        self.userspace_call_driver(command, arg1, arg2)
+
+                        match self.userspace_call_driver(command, arg1, arg2) {
+                            Ok(()) => Ok(()),
+                            Err(e) => {
+                                // If the driver call failed immediately, clear current_app
+                                // so other apps can proceed.
+                                self.current_app.clear();
+                                Err(e)
+                            }
+                        }
                     } else if app.pending_command {
                         Err(ErrorCode::NOMEM)
                     } else {
@@ -273,6 +193,12 @@ impl<'a> LoggingFlashDriver<'a> {
         arg1: usize,
         _arg2: usize,
     ) -> Result<(), ErrorCode> {
+        romtime::println!(
+            "[xs debug] userspace_call_driver command: {:?}, arg1: {}, arg2: {}",
+            command,
+            arg1,
+            _arg2
+        );
         match command {
             LoggingOps::Read | LoggingOps::Apend => {
                 // At this point, buffer is guaranteed to be available and pre-filled if needed
@@ -291,7 +217,13 @@ impl<'a> LoggingFlashDriver<'a> {
                     }
                 }
             }
-            LoggingOps::Seek => self.driver.seek(arg1),
+            LoggingOps::Seek => match arg1 {
+                0 => self.driver.seek(self.driver.log_start()),
+                1 => self.driver.seek(self.driver.log_end()),
+                _ => {
+                    return Err(ErrorCode::INVAL);
+                }
+            },
             LoggingOps::Sync => self.driver.sync(),
             LoggingOps::Erase => self.driver.erase(),
             LoggingOps::Idle => Ok(()),
@@ -323,7 +255,7 @@ impl<'a> LoggingFlashDriver<'a> {
 impl<'a> LogReadClient for LoggingFlashDriver<'a> {
     fn read_done(&self, buffer: &'static mut [u8], length: usize, error: Result<(), ErrorCode>) {
         if let Some(pid) = self.current_app.take() {
-            let _ = self.apps.enter(pid, |_, kernel_data| {
+            let _ = self.apps.enter(pid, move |_, kernel_data| {
                 let _ = kernel_data
                     .get_readwrite_processbuffer(rw_allow::READ)
                     .and_then(|app_buf| {
@@ -344,6 +276,12 @@ impl<'a> LogReadClient for LoggingFlashDriver<'a> {
                         (length, error.err().map(|e| e as usize).unwrap_or(0), 0),
                     )
                     .ok();
+
+                romtime::println!(
+                    "[xs debug] read_done called: length: {}, error: {:?}",
+                    length,
+                    error
+                );
             });
         }
 
@@ -352,7 +290,7 @@ impl<'a> LogReadClient for LoggingFlashDriver<'a> {
 
     fn seek_done(&self, error: Result<(), ErrorCode>) {
         if let Some(pid) = self.current_app.take() {
-            let _ = self.apps.enter(pid, |_, kernel_data| {
+            let _ = self.apps.enter(pid, move |_, kernel_data| {
                 kernel_data
                     .schedule_upcall(
                         upcall::SEEK_DONE,
@@ -374,7 +312,7 @@ impl<'a> LogWriteClient for LoggingFlashDriver<'a> {
         error: Result<(), ErrorCode>,
     ) {
         if let Some(pid) = self.current_app.take() {
-            let _ = self.apps.enter(pid, |_, kernel_data| {
+            let _ = self.apps.enter(pid, move |_, kernel_data| {
                 self.buffer.replace(buffer);
                 kernel_data
                     .schedule_upcall(
@@ -394,7 +332,8 @@ impl<'a> LogWriteClient for LoggingFlashDriver<'a> {
 
     fn sync_done(&self, error: Result<(), ErrorCode>) {
         if let Some(pid) = self.current_app.take() {
-            let _ = self.apps.enter(pid, |_, kernel_data| {
+            romtime::println!("[xs debug] sync_done called");
+            let _ = self.apps.enter(pid, move |_, kernel_data| {
                 kernel_data
                     .schedule_upcall(
                         upcall::SYNC_DONE,
@@ -408,13 +347,14 @@ impl<'a> LogWriteClient for LoggingFlashDriver<'a> {
 
     fn erase_done(&self, error: Result<(), ErrorCode>) {
         if let Some(pid) = self.current_app.take() {
-            let _ = self.apps.enter(pid, |_, kernel_data| {
+            let _ = self.apps.enter(pid, move |_, kernel_data| {
                 kernel_data
                     .schedule_upcall(
                         upcall::ERASE_DONE,
                         (error.err().map(|e| e as usize).unwrap_or(0), 0, 0),
                     )
                     .ok();
+                romtime::println!("[xs debug] erase_done called");
             });
         }
         self.check_queue();
@@ -441,7 +381,10 @@ impl<'a> SyscallDriver for LoggingFlashDriver<'a> {
             logging_cmd::READ => {
                 match self.enqueue_command(LoggingOps::Read, Some(processid), arg1, arg2) {
                     Ok(()) => CommandReturn::success(),
-                    Err(e) => CommandReturn::failure(e),
+                    Err(e) => {
+                        romtime::println!("[xs debug]syscall driver: command READ: enqueue_command failed with error: {:?}", e);
+                        CommandReturn::failure(e)
+                    }
                 }
             }
             logging_cmd::APPEND => {

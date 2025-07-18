@@ -13,11 +13,15 @@ pub struct LoggingSyscall<S: Syscalls = DefaultSyscalls> {
 }
 
 impl<S: Syscalls> LoggingSyscall<S> {
-    pub fn new(driver_num: u32) -> Self {
+    pub fn new() -> Self {
         Self {
             syscall: PhantomData,
-            driver_num,
+            driver_num: driver_num::LOGGING_FLASH,
         }
+    }
+
+    pub fn exists(&self) -> Result<(), ErrorCode> {
+        S::command(self.driver_num, logging_cmd::EXISTS, 0, 0).to_result()
     }
 
     pub async fn append_entry(&self, entry: &[u8]) -> Result<(), ErrorCode> {
@@ -48,6 +52,12 @@ impl<S: Syscalls> LoggingSyscall<S> {
         sub.await.map(|_| Ok(()))?
     }
 
+    pub async fn seek_beginning(&self) -> Result<(), ErrorCode> {
+        let sub = TockSubscribe::subscribe::<S>(self.driver_num, subscribe::SEEK_DONE);
+        S::command(self.driver_num, logging_cmd::SEEK, 0, 0).to_result::<(), ErrorCode>()?;
+        sub.await.map(|_| Ok(()))?
+    }
+
     pub async fn clear(&self) -> Result<(), ErrorCode> {
         let sub = TockSubscribe::subscribe::<S>(self.driver_num, subscribe::ERASE_DONE);
         S::command(self.driver_num, logging_cmd::ERASE, 0, 0).to_result::<(), ErrorCode>()?;
@@ -60,11 +70,7 @@ impl<S: Syscalls> LoggingSyscall<S> {
             .map(|x: u32| x as usize)
     }
 
-    pub async fn read_contents(
-        &self,
-        offset: usize,
-        buffer: &mut [u8],
-    ) -> Result<usize, ErrorCode> {
+    pub async fn read_entry(&self, buffer: &mut [u8]) -> Result<usize, ErrorCode> {
         let result = share::scope::<(), _, _>(|_handle| {
             let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
                 self.driver_num,
@@ -72,13 +78,8 @@ impl<S: Syscalls> LoggingSyscall<S> {
                 rw_allow::READ,
                 buffer,
             );
-            if let Err(e) = S::command(
-                self.driver_num,
-                logging_cmd::READ,
-                offset as u32,
-                buffer.len() as u32,
-            )
-            .to_result::<(), ErrorCode>()
+            if let Err(e) = S::command(self.driver_num, logging_cmd::READ, buffer.len() as u32, 0)
+                .to_result::<(), ErrorCode>()
             {
                 S::unallow_rw(self.driver_num, rw_allow::READ);
                 sub.cancel();
@@ -90,6 +91,14 @@ impl<S: Syscalls> LoggingSyscall<S> {
         S::unallow_rw(self.driver_num, rw_allow::READ);
         result.map(|(len, _, _)| len as usize)
     }
+}
+
+// -----------------------------------------------------------------------------
+// Driver number and command IDs
+// -----------------------------------------------------------------------------
+
+pub mod driver_num {
+    pub const LOGGING_FLASH: u32 = 0x9001_0000;
 }
 
 mod subscribe {
@@ -109,6 +118,7 @@ mod rw_allow {
 }
 
 mod logging_cmd {
+    pub const EXISTS: u32 = 0;
     pub const READ: u32 = 1;
     pub const APPEND: u32 = 2;
     pub const SEEK: u32 = 3;
