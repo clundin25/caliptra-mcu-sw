@@ -8,6 +8,9 @@ use core::task::{Context, Poll, Waker};
 use libtock_platform::exit_on_drop::ExitOnDrop;
 use libtock_platform::*;
 
+use core::fmt::Write;
+use libtock_console::Console;
+
 /// TockSubscribe is a future implementation that performs a Tock subscribe call and
 /// is ready when the subscribe upcall happens.
 ///
@@ -41,10 +44,17 @@ impl TockSubscribe {
         buffer_num: u32,
         buffer: &mut [u8],
     ) -> Pin<Box<TockSubscribe>> {
+        let mut cw = Console::<S>::writer();
         // Pinning is necessary since we are passing a pointer to the TockSubscribe to the kernel.
         let mut f = Pin::new(Box::new(TockSubscribe::new()));
         let upcall_fcn = (kernel_upcall::<S> as *const ()) as usize;
         let upcall_data = (&*f as *const TockSubscribe) as usize;
+        writeln!(
+            cw,
+            "SPDM_LIB: SUBSCRIBE_ALLOW_RW: Creating subscription for driver_num={:X}, subscribe_num={:X} upcall_fcn={:X} upcall_data={:X}",
+            driver_num, subscribe_num, upcall_fcn, upcall_data
+        )
+            .unwrap();
 
         // Safety: we are passing in a fixed (safe) function pointer and a pointer to a pinned instance.
         // If the instance is dropped before the upcall comes in, then we panic in the Drop impl.
@@ -102,10 +112,17 @@ impl TockSubscribe {
         buffer_num: u32,
         buffer: &[u8],
     ) -> Pin<Box<TockSubscribe>> {
+        let mut cw = Console::<S>::writer();
         // Pinning is necessary since we are passing a pointer to the TockSubscribe to the kernel.
         let mut f = Pin::new(Box::new(TockSubscribe::new()));
         let upcall_fcn = (kernel_upcall::<S> as *const ()) as usize;
         let upcall_data = (&*f as *const TockSubscribe) as usize;
+        writeln!(
+            cw,
+            "SPDM_LIB: SUBSCRIBE_ALLOW_RO: Creating subscription for driver_num={:X}, subscribe_num={:X} upcall_fcn={:X} upcall_data={:X}",
+            driver_num, subscribe_num, upcall_fcn, upcall_data
+        )
+            .unwrap();
 
         // Safety: we are passing in a fixed (safe) function pointer and a pointer to a pinned instance.
         // If the instance is dropped before the upcall comes in, then we panic in the Drop impl.
@@ -295,6 +312,13 @@ impl TockSubscribe {
 extern "C" fn kernel_upcall<S: Syscalls>(arg0: u32, arg1: u32, arg2: u32, data: Register) {
     let exit: ExitOnDrop<S> = Default::default();
     let upcall: *mut TockSubscribe = data.into();
+    let mut cw = Console::<S>::writer();
+    writeln!(
+        cw,
+        "SPDM_LIB: KERNEL_UPCALL: Upcall received with arg0={:X}, arg1={:X}, arg2={:X}, upcall={:p} ",
+        arg0, arg1, arg2, upcall
+    )
+        .unwrap();
     // Safety: we set the pointer to a pinned TockSubscribe instance in the subscribe.
     // If the subscribe call had failed, then the error would have been set this upcall
     // will never be called.
@@ -303,19 +327,36 @@ extern "C" fn kernel_upcall<S: Syscalls>(arg0: u32, arg1: u32, arg2: u32, data: 
     unsafe { (*upcall).result.set(Some((arg0, arg1, arg2))) };
     if let Some(waker) = unsafe { (*upcall).waker.take() } {
         waker.wake();
+    } else {
+        writeln!(cw, "SPDM_LIB: KERNEL_UPCALL: No waker found, upcall will not wake future.").unwrap();
     }
     core::mem::forget(exit);
+    writeln!(
+        cw,
+        "SPDM_LIB: KERNEL_UPCALL: Upcall finished",
+    )
+        .unwrap();
 }
+
+
+#[cfg(target_arch = "riscv32")]
+pub type TempSyscalls = libtock_runtime::TockSyscalls;
+
+
 
 impl Future for TockSubscribe {
     type Output = Result<(u32, u32, u32), ErrorCode>;
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut cw = Console::<TempSyscalls>::writer();
         if let Some(err) = self.error {
+            writeln!(cw, "SPDM_LIB: TockSubscribe: Error occurred: {:?}", err).unwrap();
             return Poll::Ready(Err(err));
         }
         if let Some(ret) = self.result.get() {
+            writeln!(cw, "SPDM_LIB: TockSubscribe: Upcall finished with result: {:?}", ret).unwrap();
             Poll::Ready(Ok(ret))
         } else {
+            writeln!(cw, "SPDM_LIB: TockSubscribe: Waiting for upcall...").unwrap();
             // set ourselves to wake when the upcall happens
             self.waker.replace(Some(cx.waker().clone()));
             // we don't call yield ourself, but let the executor call yield

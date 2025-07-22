@@ -87,7 +87,7 @@ impl DoeUtil {
         for _ in 0..retry_count {
             match rx.try_recv() {
                 Ok(message) => {
-                    println!("DOE_UTIL: Received raw data object");
+                    println!("DOE_UTIL: Received raw data object with length: {}", message.len());
                     return Ok(message);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -99,6 +99,7 @@ impl DoeUtil {
                 }
             }
         }
+        println!("DOE_UTIL: No data received after {} retries.", retry_count);
         Ok(Vec::new())
     }
 }

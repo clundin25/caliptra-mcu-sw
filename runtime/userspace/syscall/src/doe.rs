@@ -6,6 +6,9 @@ use libtock_platform::share;
 use libtock_platform::{DefaultConfig, ErrorCode, Syscalls};
 use libtockasync::TockSubscribe;
 
+use core::fmt::Write;
+use libtock_console::Console;
+
 pub struct Doe<S: Syscalls = DefaultSyscalls> {
     _syscall: PhantomData<S>,
     driver_num: u32,
@@ -40,8 +43,16 @@ impl<S: Syscalls> Doe<S> {
         if buf.is_empty() {
             return Err(ErrorCode::Invalid);
         }
+        let mut cw = Console::<DefaultSyscalls>::writer();
 
         let (recv_len, _, _) = share::scope::<(), _, _>(|_handle| {
+            writeln!(
+                cw,
+                "SPDM_LIB: RECEIVE_MESSAGE: Creating subscription for driver_num={:X}, subscribe_num=MESSAGE_RECEIVED",
+                self.driver_num
+            )
+            .unwrap();
+
             let mut sub = TockSubscribe::subscribe_allow_rw::<S, DefaultConfig>(
                 self.driver_num,
                 subscribe::MESSAGE_RECEIVED,
@@ -49,17 +60,35 @@ impl<S: Syscalls> Doe<S> {
                 buf,
             );
 
-            if let Err(e) = S::command(self.driver_num, command::RECEIVE_MESSAGE, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
+            // writeln!(cw, "SPDM_LIB: RECEIVE_MESSAGE: Subscription created, issuing command").unwrap();
+
+            // Check if the subscription was successful by trying a different approach
+            let cmd_result = S::command(self.driver_num, command::RECEIVE_MESSAGE, 0, 0);
+            // writeln!(cw, "SPDM_LIB: RECEIVE_MESSAGE: Command result: {:?}", cmd_result).unwrap();
+
+            if let Err(e) = cmd_result.to_result::<(), ErrorCode>() {
+                writeln!(cw, "SPDM_LIB: RECEIVE_MESSAGE command failed: {:?}", e).unwrap();
                 // Cancel the future if the command fails
                 sub.cancel();
                 Err(e)?;
             }
 
+            writeln!(
+                cw,
+                "SPDM_LIB: RECEIVE_MESSAGE command succeeded, waiting for upcall"
+            )
+            .unwrap();
+
             Ok(TockSubscribe::subscribe_finish(sub))
         })?
         .await?;
+
+        writeln!(
+            cw,
+            "SPDM_LIB: RECEIVE_MESSAGE: Upcall received for driver_num {:X}! recv_len = {}",
+            self.driver_num, recv_len
+        )
+        .unwrap();
 
         Ok(recv_len)
     }
@@ -74,8 +103,18 @@ impl<S: Syscalls> Doe<S> {
         if buf.is_empty() {
             return Err(ErrorCode::Invalid);
         }
+        let mut cw = Console::<DefaultSyscalls>::writer();
+
+        // writeln!(cw, "SPDM_LIB: SEND_MESSAGE App called send_message").unwrap();
 
         let (_, _, _) = share::scope::<(), _, _>(|_handle| {
+            writeln!(
+                cw,
+                "SPDM_LIB: SEND_MESSAGE: Creating subscription for driver_num={:X}, subscribe_num=MESSAGE_TRANSMITTED",
+                self.driver_num,
+            )
+            .unwrap();
+
             let mut sub = TockSubscribe::subscribe_allow_ro::<S, DefaultConfig>(
                 self.driver_num,
                 subscribe::MESSAGE_TRANSMITTED,
@@ -83,18 +122,39 @@ impl<S: Syscalls> Doe<S> {
                 buf,
             );
 
-            if let Err(e) = S::command(self.driver_num, command::SEND_MESSAGE, 0, 0)
-                .to_result::<(), ErrorCode>()
-            {
+            // writeln!(cw, "SPDM_LIB: SEND_MESSAGE: Subscription for MESSAGE_TRANSMITTED created, issuing command").unwrap();
+
+            // Check if the subscription was successful by trying a different approach
+            let cmd_result = S::command(self.driver_num, command::SEND_MESSAGE, 0, 0);
+            // writeln!(cw, "SPDM_LIB: SEND_MESSAGE: Command result: {:?}", cmd_result).unwrap();
+
+            if let Err(e) = cmd_result.to_result::<(), ErrorCode>() {
+                writeln!(cw, "SPDM_LIB: SEND_MESSAGE command failed: {:?}", e).unwrap();
                 // Cancel the future if the command fails
                 sub.cancel();
                 Err(e)?;
             }
 
+            writeln!(
+                cw,
+                "SPDM_LIB: SEND_MESSAGE command succeeded, waiting for upcall"
+            )
+            .unwrap();
+
             Ok(TockSubscribe::subscribe_finish(sub))
+        })
+        .map_err(|e| {
+            writeln!(cw, "SPDM_LIB: SEND_MESSAGE: Error occurred in share scope: {:?}", e).unwrap();
+            e
         })?
         .await?;
 
+        writeln!(
+            cw,
+            "SPDM_LIB: SEND_MESSAGE: Upcall received for driver_num {:X}! MESSAGE_TRANSMITTED",
+            self.driver_num
+        )
+        .unwrap();
         Ok(())
     }
 

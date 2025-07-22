@@ -207,10 +207,7 @@ impl<'a, T: DoeTransport<'a>> DoeDriver<'a, T> {
 
             match read_len {
                 Ok(Ok(len)) => {
-                    println!(
-                        "DOE_CAPSULE: SPDM Data Object received successfully, length: {}",
-                        len
-                    );
+                    kernel_data.print_grants(upcall::MESSAGE_RECEIVED);
                     kernel_data
                         .schedule_upcall(upcall::MESSAGE_RECEIVED, (len, 0, 0))
                         .ok();
@@ -255,8 +252,13 @@ impl<'a, T: DoeTransport<'a>> SyscallDriver for DoeDriver<'a, T> {
             0 => CommandReturn::success(),
             1 => {
                 // Receive Request Message
-                let res = self.apps.enter(process_id, |app, _| {
+                let res = self.apps.enter(process_id, |app, kernel_data| {
                     app.waiting_rx.set(true);
+                    println!(
+                        "DOE_CAPSULE: Handling RECEIVE_MESSAGE command for process_id: {:?}",
+                        process_id
+                    );
+                    kernel_data.print_grants(upcall::MESSAGE_RECEIVED);
                 });
 
                 match res {
@@ -272,6 +274,11 @@ impl<'a, T: DoeTransport<'a>> SyscallDriver for DoeDriver<'a, T> {
                         if app.pending_tx.get() {
                             return Err(ErrorCode::BUSY);
                         }
+                        println!(
+                            "DOE_CAPSULE: Handling SEND_MESSAGE command for process_id: {:?}",
+                            process_id
+                        );
+                        kernel_data.print_grants(upcall::MESSAGE_TRANSMITTED);
 
                         self.send_app_data(process_id, app, kernel_data)
                     })
@@ -355,12 +362,26 @@ impl<'a, T: DoeTransport<'a>> DoeTransportTxClient<'a> for DoeDriver<'a, T> {
     fn send_done(&self, result: Result<(), ErrorCode>) {
         // Handle transmission completion
         if let Some(process_id) = self.current_app.get() {
+            let mut upcall_scheduled = false;
             let _ = self.apps.enter(process_id, |app, kernel_data| {
                 app.pending_tx.set(false);
-                kernel_data
-                    .schedule_upcall(upcall::MESSAGE_TRANSMITTED, (result.is_ok() as usize, 0, 0))
-                    .ok();
+                kernel_data.print_grants(upcall::MESSAGE_TRANSMITTED);
+                let res = kernel_data
+                    .schedule_upcall(upcall::MESSAGE_TRANSMITTED, (result.is_ok() as usize, 0, 0));
+                if res.is_ok() {
+                    upcall_scheduled = true;
+                    println!(
+                        "DOE_CAPSULE: Upcall scheduled for MESSAGE_TRANSMITTED with result: {:?}",
+                        result
+                    );
+                }
             });
+            if !upcall_scheduled {
+                println!("DOE_CAPSULE: No app has set up the subscription for MESSAGE_TRANSMITTED");
+            }
+        } else {
+            // If no app is currently set, we cannot schedule an upcall
+            println!("DOE_CAPSULE: No current app to send upcall for MESSAGE_TRANSMITTED");
         }
     }
 }

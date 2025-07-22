@@ -6,6 +6,7 @@ use doe_transport::hil::{DoeTransport, DoeTransportRxClient, DoeTransportTxClien
 
 use capsules_core::virtualizers::virtual_alarm::{MuxAlarm, VirtualMuxAlarm};
 use core::cell::Cell;
+use core::fmt::Write;
 use kernel::hil::time::{Alarm, AlarmClient, Time};
 use kernel::utilities::cells::{OptionalCell, TakeCell};
 use kernel::utilities::registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -14,6 +15,7 @@ use kernel::{debug, ErrorCode};
 use registers_generated::doe_mbox::bits::{DoeMboxEvent, DoeMboxStatus};
 use registers_generated::doe_mbox::regs::DoeMbox;
 use registers_generated::doe_mbox::DOE_MBOX_ADDR;
+use romtime::println;
 
 pub const DOE_MBOX_BASE: StaticRef<DoeMbox> =
     unsafe { StaticRef::new(DOE_MBOX_ADDR as *const DoeMbox) };
@@ -59,7 +61,7 @@ fn doe_mbox_sram_static_ref(len: usize) -> &'static mut [u32] {
 impl<'a, A: Alarm<'a>> EmulatedDoeTransport<'a, A> {
     // This is just to add a delay calling `send_done` to emulate the hardware behavior.
     // Number of ticks to defer send_done
-    const DEFER_SEND_DONE_TICKS: u32 = 1000;
+    const DEFER_SEND_DONE_TICKS: u32 = 500;
 
     const RECEIVE_RETRY_TICKS: u32 = 1000;
 
@@ -121,11 +123,13 @@ impl<'a, A: Alarm<'a>> EmulatedDoeTransport<'a, A> {
 
         // 1. Handle RESET_REQ regardless of current state
         if event.is_set(DoeMboxEvent::ResetReq) {
+            println!("DOE_MBOX_DRIVER: RESET_REQ event received");
             self.handle_reset_request();
         }
 
         // 2. Only handle DATA_READY if in RxWait state
         if event.is_set(DoeMboxEvent::DataReady) {
+            println!("DOE_MBOX_DRIVER: DATA_READY event received");
             self.handle_receive_data();
         }
     }
@@ -137,6 +141,7 @@ impl<'a, A: Alarm<'a>> EmulatedDoeTransport<'a, A> {
             .modify(DoeMboxEvent::ResetReq::SET);
         // If we are in TxInProgress state, we need to defer the reset
         if self.state.get() == DoeMboxState::TxInProgress {
+            println!("DOE_MBOX_DRIVER: RESET_REQ received while TxInProgress, deferring reset");
             self.pending_reset.set(true);
             return;
         }
@@ -207,17 +212,19 @@ impl<'a, A: Alarm<'a>> AlarmClient for EmulatedDoeTransport<'a, A> {
             }
             TimerMode::SendDoneDefer => {
                 self.tx_client.map(|client| {
+                    println!("DOE_MBOX_DRIVER: calling send_done after defer");
                     client.send_done(Ok(()));
                 });
-                self.registers
-                    .doe_mbox_status
-                    .write(DoeMboxStatus::DataReady::SET);
                 if self.pending_reset.get() {
                     // reset the state if we had a pending reset
                     self.reset_state();
                 } else {
                     // After send_done, go back to RxWait
                     self.state.set(DoeMboxState::RxWait);
+                    // Set the status to indicate data is ready for the next read
+                    self.registers
+                        .doe_mbox_status
+                        .write(DoeMboxStatus::DataReady::SET);
                 }
             }
         }
@@ -273,6 +280,7 @@ impl<'a, A: Alarm<'a>> DoeTransport<'a> for EmulatedDoeTransport<'a, A> {
         self.doe_data_buf.replace(doe_buf);
 
         // Set data len and data ready in the status register
+        println!("DOE_MBOX_DRIVER: In transmit: Set mbox_dlen to {}", len_dw);
         self.registers.doe_mbox_dlen.set(len_dw as u32);
 
         if let Some(_client) = self.tx_client.get() {
