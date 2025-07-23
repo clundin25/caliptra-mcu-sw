@@ -1,6 +1,6 @@
 /*++
 
-// Licensed under the Apache-2.0 license.
+Licensed under the Apache-2.0 license.
 
 File Name:
 
