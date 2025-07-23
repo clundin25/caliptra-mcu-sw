@@ -1,0 +1,23 @@
+name: FPGA Test Job
+
+on:
+  pull_request:
+jobs:
+  check_tools:
+    runs-on: [e2-standard-32, vck190-tools]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: Boot check
+        run: |
+          echo "Hello from image builder"
+
+  check-fpga:
+    runs-on: vck190
+    steps:
+      - name: FPGA hceck
+        run: |
+          echo "Hello from VCK190"
