@@ -302,6 +302,13 @@ pub fn runtime_build_with_apps_cached(
         platform, cached_values
     );
 
+    // if platform is emulator, log_flash_config uses default value
+    let log_flash_config = if platform == "emulator" {
+        Some(&mcu_config_emulator::flash::LOGGING_FLASH_CONFIG)
+    } else {
+        None
+    };
+
     // build once to get the size of the runtime binary without apps
     let (kernel_size, apps_memory_offset) = match runtime_build_no_apps_uncached(
         cached_values.kernel_size,
