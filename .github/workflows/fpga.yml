@@ -2,7 +2,6 @@ name: FPGA Test Job
 
 on:
   pull_request:
-  workflow_dispatch:
 jobs:
   build_test_binaries:
     runs-on: [e2-standard-8]
