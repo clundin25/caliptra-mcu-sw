@@ -1167,10 +1167,10 @@ impl McuHwModel for ModelFpgaRealtime {
         while caliptra_rom_data.len() % 8 != 0 {
             caliptra_rom_data.push(0);
         }
-        let mut mcu_rom_data = params.mcu_rom.to_vec();
-        while mcu_rom_data.len() % 8 != 0 {
-            mcu_rom_data.push(0);
-        }
+
+        let mut mcu_rom_data = vec![0; 0x00020000];
+        let mcu_rom_actual = params.mcu_rom.to_vec();
+        mcu_rom_data[..mcu_rom_actual.len()].clone_from_slice(&mcu_rom_actual);
 
         // copy the ROM data
         let caliptra_rom_slice = unsafe {
@@ -1180,7 +1180,7 @@ impl McuHwModel for ModelFpgaRealtime {
         caliptra_rom_slice.copy_from_slice(&caliptra_rom_data);
         println!("Writing MCU ROM");
         let mcu_rom_slice =
-            unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, mcu_rom_data.len()) };
+            unsafe { core::slice::from_raw_parts_mut(m.mcu_rom_backdoor, 0x00020000) };
         mcu_rom_slice.copy_from_slice(&mcu_rom_data);
 
         // set the reset vector to point to the ROM backdoor
