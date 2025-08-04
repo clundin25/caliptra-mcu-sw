@@ -1,14 +1,18 @@
 // Licensed under the Apache-2.0 license
 
 use anyhow::{bail, Result};
+use caliptra_image_types::ImageManifest;
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+use zerocopy::FromBytes;
 use zip::{
     write::{FileOptions, SimpleFileOptions},
     ZipWriter,
 };
+
+use crate::CaliptraBuilder;
 
 #[derive(Default)]
 pub struct FirmwareBinaries {
@@ -49,6 +53,14 @@ impl FirmwareBinaries {
 
         Ok(binaries)
     }
+
+    pub fn vendor_pk_hash(&self) -> Option<[u8; 48]> {
+        if let Ok((manifest, _)) = ImageManifest::ref_from_prefix(&self.caliptra_fw) {
+            CaliptraBuilder::vendor_pk_hash(manifest).ok()
+        } else {
+            None
+        }
+    }
 }
 
 /// Build Caliptra ROM and firmware bundle, MCU ROM and runtime, and SoC manifest, and package them all together in a ZIP file.
@@ -80,8 +92,16 @@ pub fn all_build(
     )?;
 
     let fpga = platform == "fpga";
-    let mut caliptra_builder =
-        crate::CaliptraBuilder::new(fpga, None, None, None, None, Some(mcu_runtime.into()), None);
+    let mut caliptra_builder = crate::CaliptraBuilder::new(
+        fpga,
+        None,
+        None,
+        None,
+        None,
+        Some(mcu_runtime.into()),
+        None,
+        None,
+    );
     let caliptra_rom = caliptra_builder.get_caliptra_rom()?;
     let caliptra_fw = caliptra_builder.get_caliptra_fw()?;
     let vendor_pk_hash = caliptra_builder.get_vendor_pk_hash()?;
