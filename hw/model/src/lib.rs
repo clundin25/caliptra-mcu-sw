@@ -557,7 +557,6 @@ pub trait McuHwModel {
     }
 }
 
-#[ignore]
 #[test]
 fn reg_access_test() {
     let binaries = mcu_builder::FirmwareBinaries::from_env().unwrap();
@@ -622,6 +621,8 @@ fn reg_access_test() {
     // Check the OTP periph reports idle
     assert!(mcu_mgr.otp_ctrl().status().read().dai_idle());
 
+    loop {}
+
     // TODO: Check the LC periph reports correct revision
     // assert_eq!(u32::from(mcu_mgr.lc_ctrl().hw_revision0().read()), 0x0);
 }
@@ -641,6 +642,7 @@ mod tests {
         let mut model = new(
             InitParams {
                 mcu_rom: &mcu_rom,
+                enable_mcu_uart_log: true,
                 ..Default::default()
             },
             BootParams::default(),
