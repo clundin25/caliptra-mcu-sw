@@ -297,6 +297,7 @@ impl McuHwModel for ModelFpgaRealtime {
             test_sram: None,
             mcu_rom: Some(params.mcu_rom),
             enable_mcu_uart_log: params.enable_mcu_uart_log,
+            ocp_lock_en: params.ocp_lock_en,
         };
         println!("Starting base model");
         let base = ModelFpgaSubsystem::new_unbooted(cptra_init)

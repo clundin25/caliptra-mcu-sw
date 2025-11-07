@@ -138,6 +138,7 @@ pub struct InitParams<'a> {
     pub dbg_manuf_service: DbgManufServiceRegReq,
 
     pub active_mode: bool,
+    pub ocp_lock_en: bool,
 
     // Keypairs for production debug unlock levels, from low to high
     // ECC384 and MLDSA87 keypairs
@@ -224,6 +225,7 @@ impl Default for InitParams<'_> {
             bootfsm_break: false,
             uds_program_req: false,
             active_mode: false,
+            ocp_lock_en: false,
             prod_dbg_unlock_keypairs: Default::default(),
             debug_intent: false,
             cptra_obf_key: DEFAULT_CPTRA_OBF_KEY,
