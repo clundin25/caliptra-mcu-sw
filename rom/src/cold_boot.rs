@@ -15,7 +15,9 @@ Abstract:
 #![allow(clippy::empty_loop)]
 
 use crate::boot_status::McuRomBootStatus;
-use crate::{fatal_error, BootFlow, McuBootMilestones, RomEnv, RomParameters, MCU_MEMORY_MAP};
+use crate::{
+    fatal_error, ocp_lock, BootFlow, McuBootMilestones, RomEnv, RomParameters, MCU_MEMORY_MAP,
+};
 use caliptra_api::mailbox::{CommandId, FeProgReq, MailboxReqHeader};
 use caliptra_api::CaliptraApiError;
 use caliptra_api::SocManager;
@@ -273,6 +275,16 @@ impl BootFlow for ColdBoot {
 
         romtime::println!("[mcu-rom] Caliptra is ready for mailbox commands",);
         mci.set_flow_checkpoint(McuRomBootStatus::CaliptraReadyForMailbox.into());
+
+        // #[cfg(feature = "ocp-lock")]
+        {
+            if let Err(e) = ocp_lock::report_hek_state(soc_manager) {
+                romtime::println!(
+                    "[mcu-rom] OCP LOCK: Failed to report HEK seed state {:?}",
+                    e
+                );
+            };
+        }
 
         // tell Caliptra to download firmware from the recovery interface
         romtime::println!("[mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command",);

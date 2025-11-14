@@ -22,6 +22,7 @@ mod fuses;
 pub use fuses::*;
 pub mod image_verifier;
 pub use image_verifier::ImageVerifier;
+mod ocp_lock;
 mod rom;
 pub use rom::*;
 mod rom_env;
