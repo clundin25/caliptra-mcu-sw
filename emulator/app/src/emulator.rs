@@ -360,6 +360,7 @@ impl Emulator {
             req_idevid_csr,
             use_mcu_recovery_interface,
             extra_soc_bus: None,
+            ..Default::default()
         })
         .expect("Failed to start Caliptra CPU");
 

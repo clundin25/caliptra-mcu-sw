@@ -271,6 +271,7 @@ impl McuHwModel for ModelEmulated {
                 device_lifecycle,
                 req_idevid_csr,
                 use_mcu_recovery_interface,
+                ocp_lock_en: params.ocp_lock_en,
                 extra_soc_bus: Some(
                     params
                         .caliptra_soc_axi_user

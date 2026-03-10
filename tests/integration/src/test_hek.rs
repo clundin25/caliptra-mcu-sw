@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod test {
-    use crate::test::{get_rom_with_feature, TEST_LOCK};
+    use crate::test::{start_runtime_hw_model, TestParams, TEST_LOCK};
     use caliptra_api::SocManager;
-    use mcu_hw_model::{InitParams, McuHwModel};
+    use mcu_hw_model::McuHwModel;
     use registers_generated::fuses;
     use zerocopy::IntoBytes;
 
@@ -44,14 +44,12 @@ mod test {
         set_hek_perma(&mut otp);
         setup_otp_hek(&mut otp, 0, false);
 
-        let mut hw = mcu_hw_model::new(InitParams {
-            mcu_rom: &std::fs::read(get_rom_with_feature("")).unwrap(),
-            otp_memory: Some(&otp),
-            check_booted_to_runtime: false,
-            enable_mcu_uart_log: true,
+        let mut hw = start_runtime_hw_model(TestParams {
+            otp_memory: Some(otp),
+            rom_only: true,
+            ocp_lock_en: true,
             ..Default::default()
-        })
-        .unwrap();
+        });
 
         hw.step_until(|m| {
             m.caliptra_soc_manager()
@@ -80,14 +78,12 @@ mod test {
         let active_slot = sanitized_slots.len();
         setup_otp_hek(&mut otp, active_slot, false);
 
-        let mut hw = mcu_hw_model::new(InitParams {
-            mcu_rom: &std::fs::read(get_rom_with_feature("")).unwrap(),
-            otp_memory: Some(&otp),
-            check_booted_to_runtime: false,
-            enable_mcu_uart_log: true,
+        let mut hw = start_runtime_hw_model(TestParams {
+            otp_memory: Some(otp),
+            rom_only: true,
+            ocp_lock_en: true,
             ..Default::default()
-        })
-        .unwrap();
+        });
 
         hw.step_until(|m| {
             m.caliptra_soc_manager()

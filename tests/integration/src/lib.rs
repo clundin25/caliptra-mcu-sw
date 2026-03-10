@@ -73,6 +73,7 @@ mod test {
         pub otp_memory: Option<Vec<u8>>,
         /// Enable FIPS zeroization PPD signal for cold boot testing.
         pub fips_zeroization: bool,
+        pub ocp_lock_en: bool,
     }
 
     static PROJECT_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
@@ -221,8 +222,12 @@ mod test {
         test_binaries
     }
 
-    fn build_test_binaries(feature: Option<&str>) -> TestBinaries {
-        let mcu_runtime = compile_runtime(feature, false);
+    fn build_test_binaries(feature: Option<&str>, rom_only: bool) -> TestBinaries {
+        let mcu_runtime = if rom_only {
+            compile_runtime(None, false)
+        } else {
+            compile_runtime(feature, false)
+        };
         let mut builder = CaliptraBuilder::new(
             cfg!(feature = "fpga_realtime"),
             None,
@@ -250,7 +255,12 @@ mod test {
         )
         .unwrap();
 
-        let mcu_rom = std::fs::read(&*ROM).unwrap();
+        let mcu_rom_path = if let Some(f) = feature {
+            compile_rom(f)
+        } else {
+            ROM.to_path_buf()
+        };
+        let mcu_rom = std::fs::read(mcu_rom_path).unwrap();
         let soc_manifest = std::fs::read(
             builder
                 .get_soc_manifest(None)
@@ -294,7 +304,7 @@ mod test {
             Ok(binaries) => prebuilt_binaries(params.feature, binaries),
             _ => {
                 println!("Could not find prebuilt firmware binaries, building firmware...");
-                build_test_binaries(params.feature)
+                build_test_binaries(params.feature, params.rom_only)
             }
         };
 
@@ -378,6 +388,7 @@ mod test {
             otp_memory: otp_memory.as_deref(),
             primary_flash_initial_contents: flash_image,
             flash_boot: params.flash_boot,
+            ocp_lock_en: params.ocp_lock_en,
             fips_zeroization: params.fips_zeroization,
             ..Default::default()
         })
