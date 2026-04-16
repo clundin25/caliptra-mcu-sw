@@ -33,11 +33,51 @@ jobs:
           cp caliptra_build/*.xsa /tmp/ || true
           cp caliptra_build/*.pdi /tmp/ || true
 
+      - name: Bundle bitstream
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          XSA_FILE=$(find /tmp -name "*.xsa" -printf "%f\n" | head -n 1)
+          PDI_FILE=$(find /tmp -name "*.pdi" -printf "%f\n" | head -n 1)
+          DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          COMMIT_HASH=${{ github.sha }}
+          CALIPTRA_SS_COMMIT=$(git -C hw/caliptra-ss rev-parse HEAD)
+          JOB_ID=${{ github.run_id }}
+
+          {
+            echo "# Licensed under the Apache-2.0 license"
+            echo ""
+            echo "[bitstream]"
+            echo "repository = \"chipsalliance/caliptra-mcu-sw\""
+            echo "hw_major_version = \"2.0\""
+            echo "target_branch = \"main\""
+            echo "caliptra_variant = \"subsystem\""
+            echo "date = \"$DATE\""
+            echo "commit_hash = \"$COMMIT_HASH\""
+            echo "caliptra_ss_commit = \"$CALIPTRA_SS_COMMIT\""
+            echo "job_id = \"$JOB_ID\""
+            echo "segmented = ${{ matrix.segmented }}"
+            if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+              echo "github_pr = $PR_NUMBER"
+            fi
+            if [ -n "$XSA_FILE" ]; then
+              echo "xsa_file = \"$XSA_FILE\""
+            fi
+            if [ -n "$PDI_FILE" ]; then
+              echo "pdi_file = \"$PDI_FILE\""
+            fi
+          } > /tmp/manifest.toml
+
+          FILES_TO_BUNDLE=("manifest.toml")
+          [ -n "$XSA_FILE" ] && FILES_TO_BUNDLE+=("$XSA_FILE")
+          [ -n "$PDI_FILE" ] && FILES_TO_BUNDLE+=("$PDI_FILE")
+          
+          tar -cvzf bitstream-bundle.tar.gz -C /tmp "${FILES_TO_BUNDLE[@]}"
+
       - name: 'Upload bitstream'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
         with:
           name: caliptra-bitstream-${{ matrix.segmented }}
-          path: |
-            /tmp/*.xsa
-            /tmp/*.pdi
+          path: bitstream-bundle.tar.gz
           retention-days: 7
