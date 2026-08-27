@@ -363,14 +363,20 @@ impl<'a> OcpLock<'a> {
         tbs: &TbsCertificate,
         digest: &mut [u8; SHA384_HASH_SIZE],
     ) -> CaliptraApiResult<()> {
-        let tbs_len: usize = tbs.encoded_len()?.try_into()?;
-        let mut tbs_der = alloc::vec![0u8; tbs_len];
-        let mut writer = der::SliceWriter::new(&mut tbs_der);
-        writer.encode(tbs)?;
+        struct DigestWriter<'a, D: sha2::Digest>(&'a mut D);
 
+        impl<'a, D: sha2::Digest> der::Writer for DigestWriter<'a, D> {
+            fn write(&mut self, slice: &[u8]) -> der::Result<()> {
+                self.0.update(slice);
+                Ok(())
+            }
+        }
+
+        use der::Encode;
         use sha2::{Digest, Sha384};
         let mut hasher = Sha384::new();
-        hasher.update(&tbs_der);
+        let mut writer = DigestWriter(&mut hasher);
+        tbs.encode(&mut writer)?;
         digest.copy_from_slice(&hasher.finalize());
         Ok(())
     }
