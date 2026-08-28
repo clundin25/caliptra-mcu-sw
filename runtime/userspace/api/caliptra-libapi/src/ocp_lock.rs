@@ -513,19 +513,21 @@ impl<'a> OcpLock<'a> {
         Self::serialize_and_hash_tbs(&tbs, &mut digest)?;
 
         let sig_len = signer.signature_size();
-
-        let mut signature_bytes = alloc::vec![0u8; sig_len];
+        if cert_buf.len() < sig_len {
+            return Err(CaliptraApiError::InvalidArgBufferTooSmall);
+        }
+        let (out_buf, sig_buf) = cert_buf.split_at_mut(cert_buf.len() - sig_len);
 
         signer
-            .sign(Self::DPE_LABEL, &digest, &mut signature_bytes)
+            .sign(Self::DPE_LABEL, &digest, sig_buf)
             .await?;
 
         let mut sig_der = [0u8; Self::SIGNATURE_DER_BUF_SIZE];
         let cert = match signer.algorithm() {
             EndorsementAlgorithm::EcdsaP384Sha384 => {
-                let r_stripped = strip_leading_zeros(&signature_bytes[..Self::P384_SCALAR_SIZE]);
+                let r_stripped = strip_leading_zeros(&sig_buf[..Self::P384_SCALAR_SIZE]);
                 let s_stripped = strip_leading_zeros(
-                    &signature_bytes[Self::P384_SCALAR_SIZE..Self::P384_SIGNATURE_SIZE],
+                    &sig_buf[Self::P384_SCALAR_SIZE..Self::P384_SIGNATURE_SIZE],
                 );
 
                 let r = der::asn1::UintRef::new(r_stripped)?;
@@ -553,11 +555,11 @@ impl<'a> OcpLock<'a> {
                     oid: ID_ML_DSA_87,
                     parameters: None,
                 },
-                signature: BitStringRef::new(0, &signature_bytes[..sig_len])?,
+                signature: BitStringRef::new(0, &sig_buf[..sig_len])?,
             },
         };
 
-        let mut writer = der::SliceWriter::new(cert_buf);
+        let mut writer = der::SliceWriter::new(out_buf);
         writer.encode(&cert)?;
 
         let cert_len: usize = cert.encoded_len()?.try_into()?;
