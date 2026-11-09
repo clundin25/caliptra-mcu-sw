@@ -61,6 +61,7 @@ caliptra-mcu-mbox-common.workspace = true
 caliptra-mcu-debug-unlock-signer.workspace = true
 caliptra-mcu-rom-common.workspace = true
 caliptra-mcu-ocp.workspace = true
+caliptra-mcu-usb-recovery.workspace = true
 caliptra-mcu-testing-common.workspace = true
 caliptra-mcu-network-config.workspace = true
 openssl.workspace = true

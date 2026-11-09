@@ -15,6 +15,19 @@ Abstract:
 #![cfg_attr(target_arch = "riscv32", no_std)]
 #![no_main]
 
+#[cfg(all(feature = "test-lpcip-usb-enumeration", not(hw_rev = "latest")))]
+compile_error!("LPCIP USB enumeration requires CALIPTRA_HW_REV=latest");
+
+#[cfg(all(
+    target_arch = "riscv32",
+    hw_rev = "latest",
+    any(
+        feature = "test-lpcip-usb-enumeration",
+        feature = "test-lpcip-usb-ocp-recovery"
+    )
+))]
+mod usb;
+
 #[cfg(target_arch = "riscv32")]
 mod io;
 #[cfg(target_arch = "riscv32")]

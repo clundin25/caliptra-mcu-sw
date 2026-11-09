@@ -132,7 +132,7 @@ close $xdc_fd
 #### Add AXI Infrastructure
 create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 axi_interconnect_0
 set_property -dict [list \
-  CONFIG.NUM_MI {14} \
+  CONFIG.NUM_MI {16} \
   CONFIG.NUM_SI {6} \
   CONFIG.NUM_CLKS {2} \
   ] [get_bd_cells axi_interconnect_0]
@@ -164,13 +164,15 @@ register_axi_subordinate axi_interconnect_0 M02_AXI  0xA4040000 0x00002000 calip
 register_axi_subordinate axi_interconnect_0 M03_AXI  0xA8000000 0x01000000 caliptra_package_top_0/S_AXI_MCI       reg0    S_AXI_MCI          TRUE   "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M04_AXI  0xB0040000 0x00020000 caliptra_package_top_0/S_AXI_MCU_ROM   reg0    S_AXI_MCU_ROM      TRUE   "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M05_AXI  0xA4060000 0x00002000 caliptra_package_top_0/S_AXI_OTP       reg0    S_AXI_OTP          TRUE   "/ps_0/pl0_ref_clk"
-register_axi_subordinate axi_interconnect_0 M06_AXI  0xA4010000 0x00004000 caliptra_package_top_0/S_AXI_WRAPPER   reg0    S_AXI_WRAPPER      FALSE  "/ps_0/pl0_ref_clk"
+register_axi_subordinate axi_interconnect_0 M06_AXI  0xA4010000 0x00008000 caliptra_package_top_0/S_AXI_WRAPPER   reg0    S_AXI_WRAPPER      FALSE  "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M07_AXI  0xB0080000 0x00010000 otp_ram_bram_ctrl_0/S_AXI              Mem0    S_AXI_OTP_RAM      TRUE   "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M08_AXI  0xB00C0000 0x00040000 staging_sram_bram_ctrl_0/S_AXI         Mem0    S_AXI_STAGING_SRAM FALSE  "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M09_AXI  0xA4080000 0x00001000 xilinx_i3c_0/S_AXI                     Reg     S_AXI_XILINX_I3C   FALSE  "/ps_0/pl1_ref_clk"
 register_axi_subordinate axi_interconnect_0 M10_AXI  0xA4081000 0x00001000 axi_cdma_0/S_AXI_LITE                  Reg     S_AXI_XILINX_DMA   FALSE  "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M11_AXI  0xB0000000 0x00018000 cptra_rom_backdoor_bram_0/S_AXI        Mem0    S_AXI_CALIPTRA_ROM FALSE  "/ps_0/pl0_ref_clk"
 register_axi_subordinate axi_interconnect_0 M12_AXI  0xB0020000 0x00020000 mcu_rom_backdoor_bram_0/S_AXI          Mem0    S_AXI_SS_ROM       FALSE  "/ps_0/pl0_ref_clk"
+register_axi_subordinate axi_interconnect_0 M14_AXI  0xA4200000 0x00010000 caliptra_package_top_0/S_AXI_USB_COMBO    reg0 S_AXI_USB_COMBO    FALSE  "/ps_0/pl0_ref_clk"
+register_axi_subordinate axi_interconnect_0 M15_AXI  0xA4300000 0x00010000 caliptra_package_top_0/S_AXI_USB_DEV0_MEM reg0 S_AXI_USB_DEV0_MEM FALSE  "/ps_0/pl0_ref_clk"
 
 # Create reset block
 create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0
@@ -453,7 +455,11 @@ if {$SEGMENTED} {
 
 # Set place design directives to avoid SLICE overlaps
 set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE Explore [get_runs impl_1]
-set_property STEPS.PLACE_DESIGN.ARGS.SUBDIRECTIVE { Floorplan.ForceSpreading.high GPlace.ForceSpreading.high GPlace.ReduceCongestion.high DPlace.ReducePinDensity.med} [get_runs impl_1]
+if {[lsearch -exact [list_property [get_runs impl_1]] STEPS.PLACE_DESIGN.ARGS.SUBDIRECTIVE] >= 0} {
+  set_property STEPS.PLACE_DESIGN.ARGS.SUBDIRECTIVE { Floorplan.ForceSpreading.high GPlace.ForceSpreading.high GPlace.ReduceCongestion.high DPlace.ReducePinDensity.med} [get_runs impl_1]
+} else {
+  puts stderr "WARNING: This Vivado version does not support placement SUBDIRECTIVE; using Explore without the additional spreading and congestion settings. Check implementation placement and timing results."
+}
 
 # Load a previous NCR
 if {$SEGMENTED} {

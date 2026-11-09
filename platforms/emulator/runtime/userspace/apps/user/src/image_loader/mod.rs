@@ -461,7 +461,9 @@ async fn image_loading<D: DMAMapping>(
             #[cfg(not(feature = "flash-boot"))]
             return Err(ErrorCode::NoSupport);
         }
-        FirmwareBootType::Network => return Err(ErrorCode::NoSupport),
+        FirmwareBootType::Network
+        | FirmwareBootType::HwOcpUsb
+        | FirmwareBootType::UsbStreaming => return Err(ErrorCode::NoSupport),
     }
 
     #[cfg(any(

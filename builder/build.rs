@@ -3,6 +3,14 @@
 use std::{path::Path, process::Command};
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=CALIPTRA_SW_REVISION");
+    if let Ok(rev) = std::env::var("CALIPTRA_SW_REVISION") {
+        let rev = rev.trim();
+        if !rev.is_empty() {
+            println!("cargo:rustc-env=CALIPTRA_SW_REVISION={rev}");
+            return;
+        }
+    }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/caliptra-sw");
     assert!(
         root.join(".git").exists(),

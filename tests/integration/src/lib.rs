@@ -50,6 +50,8 @@ mod test_svn_manifest;
 mod test_sw_pcr_store;
 mod test_timer_alarm;
 mod test_usb_ocp_recovery;
+#[cfg(all(feature = "fpga_realtime", hw_rev = "latest"))]
+mod test_fpga_usb_arch_b;
 
 pub fn platform() -> &'static str {
     if cfg!(feature = "fpga_realtime") {

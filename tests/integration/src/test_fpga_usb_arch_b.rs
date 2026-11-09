@@ -1,0 +1,291 @@
+// Licensed under the Apache-2.0 license
+
+//! End-to-End Hardware Verification on VCK-190 FPGA for "Architecture B":
+//! Zero-cable internal ULPI USB3320 PHY + USB 2.0 High-Speed Host Loopback
+//! (`caliptra_fpga_ulpi_host` at `0xA401_4000`) connected to Caliptra 2.2's
+//! `ip_xxx_3511_hs_mem_compound_wrapper` (`0xA420_0000` / `0xA430_0000`).
+
+#[cfg(test)]
+mod test {
+    use crate::test::TEST_LOCK;
+    use anyhow::Result;
+    use caliptra_image_types::FwVerificationPqcKeyType;
+    use caliptra_mcu_builder::FirmwareBinaries;
+    use caliptra_mcu_hw_model::fpga_ulpi_usb::{FpgaUlpiUsbHost, ULPI_HOST_MAGIC};
+    use caliptra_mcu_hw_model::{
+        new, new_unbooted, DefaultHwModel, Fuses, InitParams, McuHwModel,
+    };
+    use caliptra_mcu_ocp::protocol::RecoveryCommand;
+    use caliptra_mcu_romtime::McuBootMilestones;
+    use caliptra_mcu_usb_recovery::{
+        RecoveryAgent, RecoveryImages, RecoveryOptions, RecoveryOutcome, RecoveryTransport,
+        CONTROL_MAX_BYTES,
+    };
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+
+    struct FpgaUlpiRecoveryTransport<'a> {
+        hw: &'a mut DefaultHwModel,
+        host: FpgaUlpiUsbHost,
+    }
+
+    impl RecoveryTransport for FpgaUlpiRecoveryTransport<'_> {
+        fn read(
+            &mut self,
+            command: RecoveryCommand,
+            response: &mut [u8; CONTROL_MAX_BYTES],
+            timeout: Duration,
+        ) -> Result<usize> {
+            let addr = self.host.device_address();
+            let ifc = u16::from(self.host.ocp_interface());
+            let hw = &mut *self.hw;
+            self.host.control_read_raw(
+                addr,
+                0xA1,
+                0x00,
+                command as u16,
+                ifc,
+                CONTROL_MAX_BYTES as u16,
+                response,
+                || hw.step(),
+                timeout,
+            )
+        }
+
+        fn write(&mut self, command: RecoveryCommand, data: &[u8], timeout: Duration) -> Result<()> {
+            let addr = self.host.device_address();
+            let ifc = u16::from(self.host.ocp_interface());
+            let hw = &mut *self.hw;
+            self.host.control_write_raw(
+                addr,
+                0x21,
+                0x00,
+                command as u16,
+                ifc,
+                data,
+                || hw.step(),
+                timeout,
+            )
+        }
+
+        fn wait(&mut self, duration: Duration) -> Result<()> {
+            let start = Instant::now();
+            while start.elapsed() < duration {
+                self.hw.step();
+                std::thread::sleep(Duration::from_millis(1).min(duration));
+            }
+            Ok(())
+        }
+    }
+
+    fn vendor_pk_hash_words(bytes: &[u8; 48]) -> [u32; 12] {
+        let mut out = [0u32; 12];
+        for (idx, chunk) in bytes.chunks_exact(4).enumerate() {
+            out[idx] = u32::from_be_bytes(chunk.try_into().unwrap());
+        }
+        out
+    }
+
+    #[test]
+    fn test_fpga_usb_arch_b_enumeration() {
+        let lock = TEST_LOCK.lock().unwrap();
+        let binaries = FirmwareBinaries::from_env().expect("CPTRA_FIRMWARE_BUNDLE must be set");
+        assert!(
+            binaries.has_test_feature_rom("test-lpcip-usb-enumeration"),
+            "all-fw.zip missing prebuilt test-lpcip-usb-enumeration MCU ROM"
+        );
+        let mcu_rom = binaries.test_feature_rom("test-lpcip-usb-enumeration");
+        let vpk = binaries
+            .vendor_pk_hash()
+            .expect("missing vendor_pk_hash in firmware bundle");
+
+        let mut hw = new_unbooted(InitParams {
+            fuses: Fuses {
+                fuse_pqc_key_type: FwVerificationPqcKeyType::LMS as u32,
+                vendor_pk_hash: vendor_pk_hash_words(&vpk),
+                ..Default::default()
+            },
+            caliptra_rom: &binaries.caliptra_rom,
+            mcu_rom: &mcu_rom,
+            vendor_pk_hash: Some(vpk),
+            vendor_pqc_type: Some(FwVerificationPqcKeyType::LMS),
+            active_mode: true,
+            enable_mcu_uart_log: true,
+            check_booted_to_runtime: false,
+            ..Default::default()
+        })
+        .expect("Failed to initialize ModelFpgaRealtime for USB enumeration");
+
+        let fpga_version = unsafe { hw.base.wrapper.ptr.add(1).read_volatile() };
+        println!("[arch-b-enum] FPGA wrapper version = 0x{fpga_version:08x}");
+
+        let mut host = hw
+            .ulpi_usb_host()
+            .expect("Failed to attach to caliptra_fpga_ulpi_host at 0xA401_4000");
+        assert_eq!(host.magic(), ULPI_HOST_MAGIC);
+        println!(
+            "[arch-b-enum] Initial ULPI host status={:?}, diag={:?}",
+            host.status(),
+            host.diag()
+        );
+
+        let enum_dev = host
+            .wait_and_enumerate(7, || hw.step(), Duration::from_secs(15))
+            .expect("USB 2.0 High-Speed enumeration failed on FPGA");
+
+        println!(
+            "[arch-b-enum] Enumerated Caliptra 2.2 USB Device at addr={} VID:PID={:04x}:{:04x} bcdDevice=0x{:04x} ocp_ifc={} status={:?} diag={:?}",
+            enum_dev.address,
+            enum_dev.vendor_id,
+            enum_dev.product_id,
+            enum_dev.bcd_device,
+            enum_dev.ocp_interface,
+            host.status(),
+            host.diag()
+        );
+        assert_eq!(enum_dev.address, 7);
+        assert_eq!(enum_dev.vendor_id, 0xffff);
+        assert_eq!(enum_dev.product_id, 0xffff);
+        assert_eq!(enum_dev.bcd_device, 0x0100);
+        assert_eq!(enum_dev.ocp_interface, 0);
+        assert!(host.status().hs_active, "Expected High-Speed mode active");
+        assert!(
+            host.diag().sof_count > 0,
+            "Expected Auto-SOF microframes to be transmitted"
+        );
+
+        // Step briefly so `[usb-enumeration-test] configured` flushes to console output
+        let flush_start = Instant::now();
+        while flush_start.elapsed() < Duration::from_millis(50) {
+            hw.step();
+        }
+        assert_eq!(
+            hw.mci_fw_fatal_error(),
+            None,
+            "MCU ROM reported fatal error during USB enumeration"
+        );
+
+        lock.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn test_fpga_usb_arch_b_ocp_recovery_boot() {
+        let lock = TEST_LOCK.lock().unwrap();
+        let binaries = FirmwareBinaries::from_env().expect("CPTRA_FIRMWARE_BUNDLE must be set");
+        assert!(
+            binaries.has_test_feature_rom("test-lpcip-usb-ocp-recovery"),
+            "all-fw.zip missing prebuilt test-lpcip-usb-ocp-recovery MCU ROM"
+        );
+        let mcu_rom = binaries.test_feature_rom("test-lpcip-usb-ocp-recovery");
+        let vpk = binaries
+            .vendor_pk_hash()
+            .expect("missing vendor_pk_hash in firmware bundle");
+
+        // Pass empty firmware slices + flash_boot=false so ModelFpgaRealtime::boot()
+        // sets mci_generic_input_wires=[0, 0xc000_0000] and skips I3C recovery,
+        // allowing our internal FPGA ULPI USB 2.0 High-Speed host to drive the entire
+        // hardware-assisted OCP Recovery v1.1 boot!
+        let mut hw = new(InitParams {
+            fuses: Fuses {
+                fuse_pqc_key_type: FwVerificationPqcKeyType::LMS as u32,
+                vendor_pk_hash: vendor_pk_hash_words(&vpk),
+                ..Default::default()
+            },
+            caliptra_rom: &binaries.caliptra_rom,
+            mcu_rom: &mcu_rom,
+            caliptra_firmware: &[],
+            soc_manifest: &[],
+            mcu_firmware: &[],
+            vendor_pk_hash: Some(vpk),
+            vendor_pqc_type: Some(FwVerificationPqcKeyType::LMS),
+            active_mode: true,
+            enable_mcu_uart_log: true,
+            flash_boot: false,
+            check_booted_to_runtime: false,
+            ..Default::default()
+        })
+        .expect("Failed to boot ModelFpgaRealtime into USB OCP recovery mode");
+
+        let fpga_version = unsafe { hw.base.wrapper.ptr.add(1).read_volatile() };
+        println!("[arch-b-recovery] FPGA wrapper version = 0x{fpga_version:08x}");
+
+        let mut host = hw
+            .ulpi_usb_host()
+            .expect("Failed to attach to caliptra_fpga_ulpi_host at 0xA401_4000");
+
+        let enum_dev = host
+            .wait_and_enumerate(7, || hw.step(), Duration::from_secs(20))
+            .expect("USB 2.0 High-Speed enumeration failed during OCP recovery boot");
+        println!(
+            "[arch-b-recovery] Enumerated Caliptra USB Device at addr={} ocp_ifc={} diag={:?}",
+            enum_dev.address,
+            enum_dev.ocp_interface,
+            host.diag()
+        );
+
+        let options = RecoveryOptions {
+            cms: 0,
+            transfer_timeout: Duration::from_secs(5),
+            progress_timeout: Duration::from_secs(45),
+            overall_timeout: Duration::from_secs(180),
+            poll_interval: Duration::from_millis(5),
+        };
+        let transport = FpgaUlpiRecoveryTransport {
+            hw: &mut hw,
+            host,
+        };
+        let mut agent = RecoveryAgent::new(transport, options).expect("RecoveryAgent::new");
+
+        let discovery = agent.probe().expect("OCP Recovery probe (PROT_CAP + DEVICE_STATUS) failed");
+        println!("[arch-b-recovery] OCP Discovery = {discovery:?}");
+
+        let images = RecoveryImages {
+            caliptra_fmc_rt: &binaries.caliptra_fw,
+            soc_manifest: &binaries.soc_manifest,
+            mcu_runtime: &binaries.mcu_runtime,
+        };
+        println!(
+            "[arch-b-recovery] Streaming 3 signed images over internal FPGA ULPI High-Speed USB: caliptra_fw={}B, soc_manifest={}B, mcu_runtime={}B",
+            images.caliptra_fmc_rt.len(),
+            images.soc_manifest.len(),
+            images.mcu_runtime.len()
+        );
+
+        let start = Instant::now();
+        let outcome = agent
+            .run(&images)
+            .expect("Hardware-assisted USB 2.2 OCP Recovery failed on FPGA");
+        let elapsed = start.elapsed();
+        let transport = agent.into_transport();
+        println!(
+            "[arch-b-recovery] RecoveryAgent outcome={outcome:?} in {elapsed:.2?}, final ULPI diag={:?}",
+            transport.host.diag()
+        );
+        assert_eq!(outcome, RecoveryOutcome::Confirmed);
+
+        // Wait for MCU ROM to jump into the authenticated MCU Runtime in SRAM (0xA8C0_0000)
+        let boot_deadline = Instant::now() + Duration::from_secs(20);
+        hw.step_until(|m| {
+            m.mci_boot_milestones()
+                .contains(McuBootMilestones::FIRMWARE_BOOT_FLOW_COMPLETE)
+                || Instant::now() >= boot_deadline
+        });
+
+        assert_eq!(
+            hw.mci_fw_fatal_error(),
+            None,
+            "MCU reported fatal error after USB recovery"
+        );
+        assert!(
+            hw.mci_boot_milestones()
+                .contains(McuBootMilestones::FIRMWARE_BOOT_FLOW_COMPLETE),
+            "Expected FIRMWARE_BOOT_FLOW_COMPLETE after USB OCP Recovery boot; milestones=0x{:04x}",
+            u16::from(hw.mci_boot_milestones())
+        );
+        println!(
+            "[arch-b-recovery] SUCCESS! Caliptra FMC+RT + SoC Manifest + MCU Runtime booted end-to-end over Architecture B internal FPGA USB 2.2!"
+        );
+
+        lock.fetch_add(1, Ordering::Relaxed);
+    }
+}

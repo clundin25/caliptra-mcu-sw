@@ -1070,10 +1070,13 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
     std::fs::copy(&mcu_rom, mcu_rom_preserved.path())?;
     let mcu_rom = mcu_rom_preserved.path().to_path_buf();
 
+    let latest_rom_features =
+        crate::features::latest_rom_only_test_features(crate::hardware_revision()?, platform);
     let rom_features_to_build: Vec<&str> = separate_features
         .iter()
         .copied()
         .chain(crate::features::ROM_ONLY_TEST_FEATURES.iter().copied())
+        .chain(latest_rom_features.iter().copied())
         .collect();
     let feature_roms: Result<Vec<(PathBuf, String)>> = maybe_par_iter(&rom_features_to_build)
         .filter_map(|feature| {
@@ -1093,6 +1096,7 @@ pub fn all_build(args: AllBuildArgs) -> Result<()> {
                     println!("Built feature ROM: {rom_path:?} -> {}", rom_name);
                     Some(Ok((rom_path, rom_name)))
                 }
+                Err(e) if latest_rom_features.contains(feature) => Some(Err(e)),
                 Err(e) => {
                     println!(
                         "Skipping feature ROM for {}: {} (will use generic ROM)",

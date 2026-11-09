@@ -15,6 +15,19 @@ fn main() {
     let expected = versions["versions"][revision.as_str()]
         .as_str()
         .expect("Missing Caliptra software pin");
+    println!("cargo:rerun-if-env-changed=CALIPTRA_SW_REVISION");
+    if let Ok(actual) = std::env::var("CALIPTRA_SW_REVISION") {
+        let actual = actual.trim();
+        if !actual.is_empty() {
+            assert_eq!(
+                actual, expected,
+                "CALIPTRA_HW_REV={revision} requires the matching Caliptra software pin. \
+                 Run cargo xtask switch-version {revision} before building ROM."
+            );
+            revision.emit_build_configuration();
+            return;
+        }
+    }
     let core = root.join("core/caliptra-sw");
     assert!(
         core.join(".git").exists(),
