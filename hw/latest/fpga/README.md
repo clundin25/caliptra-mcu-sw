@@ -101,17 +101,17 @@ Vivado exposes the `STEPS.PLACE_DESIGN.ARGS.SUBDIRECTIVE` run property. Otherwis
 it prints a warning and uses the `Explore` directive alone. Check placement and
 timing results before using the generated image.
 
-This checkout uses Caliptra SS `main` at `726db5ba` and its pinned submodules.
-The FPGA wrapper preserves the existing I3C and backdoor ROM/OTP interfaces,
-provides the new 4 KiB MCU ROM-patch SRAM, and uses TRNG source 0 with source 1
-disabled. The USB PHY and USB memory interfaces are inactive: no ULPI daughter
-card is required or supported by this configuration, and USB recovery is not
-available. The subsystem SPI host and UART are disabled; the existing external
-flash controllers and Versal console are unchanged. USB RTL is included to
-resolve the subsystem's instances, but its AXI ports accept no requests and its
-PHY is held disabled. ROM/firmware compatibility with this SS revision still
-requires separate runtime validation.
-The IP packager also preserves the `lib/` and `generated/` header paths used by
+This checkout uses Caliptra SS `cadc77b6` and its pinned `third_party/usb2`
+(`97aa9616`) submodule. The FPGA wrapper preserves the existing I3C and backdoor
+ROM/OTP interfaces, provides the 4 KiB MCU ROM-patch SRAM, and uses TRNG source 0
+with source 1 disabled. In **Architecture B**, the FPGA fabric also instantiates
+`caliptra_fpga_ulpi_host` (`0xA401_4000`), an internal synthesizable ULPI USB3320
+PHY responder + USB 2.0 High-Speed (`480 Mbps`) Host loopback wired directly to
+the Caliptra 2.2 USB Compound Wrapper (`0xA420_0000`, OCP Recovery at `0xA420_0800`)
+and 64 KiB `dev0_mem` Block RAM (`0xA430_0000`). No external ULPI FMC/PMOD daughter
+card or loopback cable is required on the VCK-190 to run High-Speed USB 2.0
+enumeration or hardware-assisted OCP USB Recovery v1.1 alongside I3C recovery.
+The IP packager preserves the `lib/` and `generated/` header paths used by
 the Core RTL and USB sources, so their relative includes resolve during synthesis.
 
 ### Build boot.bin: ###
@@ -177,13 +177,16 @@ Caliptra Subsystem toplevel. To add additional registers simply:
 | MCU ROM Backdoor                    | Always               | 128 KiB      | 0xB002_0000   | 0xB003_FFFF |
 | MCU ROM AXI Sub (provided by SS)    | cptra_ss_rst_b       | 128 KiB      | 0xB004_0000   | 0xB005_FFFF |
 | MCU SRAM                            | Always               | 96 KiB       | 0xB008_0000   | 0xB005_FFFF |
-| FPGA Wrapper Registers              | Always               | 8 KiB        | 0xA401_0000   | 0xA401_1FFF |
+| FPGA Wrapper Registers              | Always               | 16 KiB       | 0xA401_0000   | 0xA401_3FFF |
+| FPGA Internal ULPI USB 2.0 HS Host  | Always               | 16 KiB       | 0xA401_4000   | 0xA401_7FFF |
 | SS I3C                              | cptra_ss_rst_b       | 8 KiB        | 0xA403_0000   | 0xA403_1FFF |
 | LCC                                 | cptra_ss_rst_b       | 8 KiB        | 0xA404_0000   | 0xA404_1FFF |
 | OTP                                 | cptra_ss_rst_b       | 8 KiB        | 0xA406_0000   | 0xA406_1FFF |
 | Xilinx I3C                          | cptra_ss_rst_b       | 4 KiB        | 0xA408_0000   | 0xA408_0FFF |
 | AXI Firewall Control                | Always               | 4 KiB        | 0xA409_0000   | 0xA409_0FFF |
 | Caliptra                            | SS reset to Caliptra | 1 MiB        | 0xA410_0000   | 0xA41F_FFFF |
+| Caliptra 2.2 USB Combo + OCP Recv   | cptra_ss_rst_b       | 64 KiB       | 0xA420_0000   | 0xA420_FFFF |
+| Caliptra 2.2 USB Dev0 Block RAM     | cptra_ss_rst_b       | 64 KiB       | 0xA430_0000   | 0xA430_FFFF |
 | MCI                                 | cptra_ss_rst_b       | 16 MiB       | 0xA800_0000   | 0xA8FF_FFFF |
 
 ### Waveform Debug ###
