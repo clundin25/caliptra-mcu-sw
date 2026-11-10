@@ -199,6 +199,7 @@ impl<'a> ActionHandler<'a> for Subsystem {
             args.bitstream.as_deref(),
             &subsystem_bitstream_manifest_path(&PROJECT_ROOT)?,
         )?;
+        sync_fpga_hcd_module(target_host)?;
         Ok(())
     }
 
@@ -524,6 +525,38 @@ fn subsystem_bitstream_manifest_path(root: &std::path::Path) -> Result<std::path
     Ok(root
         .join(caliptra_mcu_builder::hardware_revision()?.fpga_path())
         .join("bitstream_manifests/subsystem.toml"))
+}
+
+/// Copy the prebuilt `caliptra_fpga_hcd.ko` (Linux USB host controller driver
+/// for the in-fabric USB 2.0 host, see `hw/<rev>/fpga/kernel-modules/`) to the
+/// FPGA home directory so the Linux-enumerated USB tests can `insmod` it.
+///
+/// The module must be cross-compiled against the FPGA image's kernel tree;
+/// `CPTRA_FPGA_HCD_KO` points at the built artifact. If unset, a `.ko` next to
+/// the sources is used; if neither exists this is a no-op.
+fn sync_fpga_hcd_module(target_host: Option<&str>) -> Result<()> {
+    let ko = match std::env::var("CPTRA_FPGA_HCD_KO") {
+        Ok(p) => std::path::PathBuf::from(p),
+        Err(_) => PROJECT_ROOT
+            .join(caliptra_mcu_builder::hardware_revision()?.fpga_path())
+            .join("kernel-modules/caliptra_fpga_hcd.ko"),
+    };
+    if !ko.is_file() {
+        return Ok(());
+    }
+    println!("Syncing Linux USB HCD module {}", ko.display());
+    if let Some(target_host) = target_host {
+        rsync_file(
+            target_host,
+            &ko.display().to_string(),
+            "caliptra_fpga_hcd.ko",
+            false,
+        )
+        .context("failed to copy caliptra_fpga_hcd.ko to fpga")?;
+    } else {
+        std::fs::copy(&ko, "caliptra_fpga_hcd.ko").context("copy caliptra_fpga_hcd.ko")?;
+    }
+    Ok(())
 }
 
 fn bitstream_manifest_path(root: &std::path::Path, toml_name: &str) -> std::path::PathBuf {

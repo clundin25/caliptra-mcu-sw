@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 default = []
-fpga_realtime = ["dep:uio", "caliptra-mcu-hw-model/fpga_realtime"]
+fpga_realtime = ["dep:uio", "caliptra-mcu-hw-model/fpga_realtime", "caliptra-mcu-usb-recovery/libusb", "dep:rusb"]
 itrng = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -62,6 +62,10 @@ caliptra-mcu-debug-unlock-signer.workspace = true
 caliptra-mcu-rom-common.workspace = true
 caliptra-mcu-ocp.workspace = true
 caliptra-mcu-usb-recovery.workspace = true
+# FPGA-only: the Linux-enumerated USB recovery test (caliptra_ulpi_hcd) uses the
+# stock libusb transport; `vendored` builds libusb from source so the aarch64
+# cross-compile in the caliptra-builder container needs no system libusb.
+rusb = { workspace = true, optional = true, features = ["vendored"] }
 caliptra-mcu-testing-common.workspace = true
 caliptra-mcu-network-config.workspace = true
 openssl.workspace = true

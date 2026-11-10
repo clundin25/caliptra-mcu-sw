@@ -2717,6 +2717,7 @@ dependencies = [
  "p384",
  "rand 0.8.5",
  "random-port",
+ "rusb",
  "sha2",
  "simple_logger",
  "tempfile",
