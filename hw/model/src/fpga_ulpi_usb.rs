@@ -106,6 +106,14 @@ pub struct FpgaUlpiUsbHost {
     base: *mut u32,
     device_addr: u8,
     ocp_interface: u8,
+    /// Data PID (`PID_NIB_DATA0`/`PID_NIB_DATA1`) of the first DATA packet the
+    /// device returned on the most recent control-read DATA stage. USB 2.0
+    /// requires DATA1 here; `DATA0` is a device-side toggle anomaly that a strict
+    /// host controller would reject. Exposed for triage via
+    /// [`Self::last_data_in_pid`].
+    last_data_in_pid: std::cell::Cell<u8>,
+    /// Count of control-read DATA stages that began with DATA0.
+    data0_first_count: std::cell::Cell<u32>,
 }
 
 // Safety: `base` points into the process-wide `Wrapper` UIO mapping owned by `ModelFpgaSubsystem`.
@@ -122,6 +130,8 @@ impl FpgaUlpiUsbHost {
             base,
             device_addr: 0,
             ocp_interface: 0,
+            last_data_in_pid: std::cell::Cell::new(0),
+            data0_first_count: std::cell::Cell::new(0),
         };
         let magic = host.magic();
         ensure!(
@@ -155,6 +165,18 @@ impl FpgaUlpiUsbHost {
 
     pub fn device_address(&self) -> u8 {
         self.device_addr
+    }
+
+    /// PID nibble of the first DATA packet of the last control-read DATA stage
+    /// (`0x3` = DATA0, `0xB` = DATA1).
+    pub fn last_data_in_pid(&self) -> u8 {
+        self.last_data_in_pid.get()
+    }
+
+    /// Number of control reads whose DATA stage started with DATA0 (spec
+    /// violation; see `last_data_in_pid`).
+    pub fn data0_first_count(&self) -> u32 {
+        self.data0_first_count.get()
     }
 
     pub fn ocp_interface(&self) -> u8 {
@@ -241,7 +263,10 @@ impl FpgaUlpiUsbHost {
             self.diag()
         );
         self.write_reg(REG_CTRL, CTRL_VBUS_VALID | CTRL_AUTO_SOF_EN);
-        // Allow MCU ROM LpcipUsbDriver::poll() to service DresC (~1 ms = 18,000 cycles).
+        // Allow MCU ROM LpcipUsbDriver::poll() to service DresC (~1 ms).
+        // The ULPI host now runs on the 60 MHz PHY clock and drives spec-timed
+        // Auto-SOF microframes (125 us) itself, so this is purely a software
+        // settle delay for the MCU side.
         let wait_start = Instant::now();
         while wait_start.elapsed() < Duration::from_millis(2) {
             step_fn();
@@ -320,6 +345,11 @@ impl FpgaUlpiUsbHost {
             if !st.timeout_err {
                 match st.rx_pid {
                     PID_NIB_DATA1 | PID_NIB_DATA0 => {
+                        self.last_data_in_pid.set(st.rx_pid);
+                        if st.rx_pid == PID_NIB_DATA0 {
+                            self.data0_first_count
+                                .set(self.data0_first_count.get().wrapping_add(1));
+                        }
                         self.read_rx_buf(out, st.rx_len);
                         break st.rx_len;
                     }
@@ -484,6 +514,10 @@ impl FpgaUlpiUsbHost {
             (1..=127).contains(&assigned_addr),
             "invalid USB address {assigned_addr}"
         );
+        // Ensure VBUS is asserted (e.g. if `caliptra_fpga_hcd` `cfhcd_stop()`
+        // cleared `CTRL` on module unload prior to this test).
+        self.write_reg(REG_CTRL, CTRL_VBUS_VALID);
+        self.write_reg(REG_TIMEOUT, 200_000);
         let start = Instant::now();
         while !self.status().dev_connected {
             step_fn();

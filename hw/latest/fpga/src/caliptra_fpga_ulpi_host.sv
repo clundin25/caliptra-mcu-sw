@@ -3,13 +3,25 @@
 // Internal FPGA ULPI USB3320 PHY + USB 2.0 High-Speed Host Transceiver
 // ("Architecture B" zero-cable fabric loopback for Caliptra 2.2 USB).
 //
-// Connects directly to caliptra_ss_top's synchronous ULPI interface on core_clk
-// and exposes an AXI4-Lite MMIO control/buffer aperture to the Versal ARM PS
+// Connects directly to caliptra_ss_top's synchronous ULPI interface and
+// exposes an AXI4-Lite MMIO control/buffer aperture to the Versal ARM PS
 // at S_AXI_WRAPPER + 0x4000 (0xA401_4000).
+//
+// Clocking: the whole module (AXI4-Lite subordinate, ULPI bus engine and
+// host sequencer) runs on `clk`, which is the ULPI PHY clock. Per the ULPI
+// specification this is 60 MHz, which is also the frequency every
+// `usb_pie.m.vhdl` timer constant is written for. The wrapper bridges the
+// ARM-side AXI4-Lite (core_clk) into this domain with `axil_cdc_bridge`.
+// `CLK_HZ` scales every wall-clock-derived timer (SOF period, Chirp K/J
+// hold, end-of-reset SE0) so the host stays USB 2.0 spec-compliant at
+// any PHY clock.
 
 `default_nettype wire
 
-module caliptra_fpga_ulpi_host (
+module caliptra_fpga_ulpi_host #(
+    parameter int unsigned CLK_HZ      = 60_000_000,
+    parameter int unsigned CORE_CLK_HZ = 18_000_000
+) (
     input  logic        clk,
     input  logic        rst_n,
 
@@ -40,10 +52,56 @@ module caliptra_fpga_ulpi_host (
     output logic        ulpi_dir_o,
     output logic        ulpi_nxt_o,
 
-    // Sideband status inputs from caliptra_ss_top
+    // Sideband status inputs from caliptra_ss_top (core_clk domain, synchronized here)
     input  logic        usb_recovery_payload_available_i,
     input  logic        usb_recovery_image_activated_i
 );
+
+    // -------------------------------------------------------------------------
+    // Wall-clock derived timing (USB 2.0 §7.1.7.5 High-Speed Detection Handshake)
+    // -------------------------------------------------------------------------
+    // SOF / microframe period: 125 us.
+    localparam int unsigned SOF_INTERVAL_CYC   = CLK_HZ / 8_000;
+    // Host Chirp K / Chirp J hold: 40..60 us each (we use 50 us). usb_pie only
+    // needs > MAX_LINESTATE_DBC_CNT (192 cycles) so clamp to a safe minimum.
+    localparam int unsigned CHIRP_KJ_HOLD_CALC = CLK_HZ / 20_000;
+    localparam int unsigned CHIRP_KJ_HOLD_CYC  = (CHIRP_KJ_HOLD_CALC < 256) ? 256 : CHIRP_KJ_HOLD_CALC;
+    // SE0 after the last Chirp J before HS idle: 100..500 us (we use 200 us).
+    localparam int unsigned RST_END_SE0_CALC   = CLK_HZ / 5_000;
+    localparam int unsigned RST_END_SE0_CYC    = (RST_END_SE0_CALC < 300) ? 300 : RST_END_SE0_CALC;
+    // Wait for the device Chirp K to start+end: T_CHIRP_DELAY (125 us) +
+    // T_UCH (up to 7 ms, 3.072 ms in usb_pie). Allow 20 ms.
+    localparam int unsigned RST_CHIRP_WAIT_CYC = CLK_HZ / 50;
+
+    // When the ULPI PHY clock runs faster than the subsystem AHB/DMA clock
+    // (`hclk` = CORE_CLK_HZ = 18 MHz on VCK-190), `usb_pie` exchanges 64-bit
+    // (8-byte) words with `usb_dma` across `usb_synchronizer` (~4.5 hclk
+    // cycles per 8-byte word). Standard ULPI 1.1 `NXT` flow control paces
+    // multi-byte DATA packets at 1 byte per 4 ULPI clocks (32 ulpi_clk cycles
+    // = 9.6 hclk cycles per 8 bytes at 60/18 MHz) and allows 16 ULPI clocks
+    // before consuming the first DATAx PID byte so `epinfo_txdata_valid` is
+    // always ready without DMA underrun/overrun.
+    localparam int unsigned RX_PID_STARTUP_CYC       = (CLK_HZ > CORE_CLK_HZ) ? 16 : 0;
+    localparam int unsigned BYTE_PACE_WAIT_CYC       = (CLK_HZ > CORE_CLK_HZ) ? 3  : 0;
+    localparam int unsigned TOK_TO_DATA_GAP_CYC      = (CLK_HZ > CORE_CLK_HZ) ? 40 : 24;
+    localparam int unsigned DEFAULT_RESP_TIMEOUT_CYC = (CLK_HZ > CORE_CLK_HZ) ? 600_000 : 200_000;
+    localparam logic [15:0] CRC16_RESIDUAL_OK        = 16'h800D;
+
+    // Sideband inputs cross from core_clk into the ULPI clock domain.
+    (* ASYNC_REG = "TRUE" *) logic [1:0] payload_available_sync;
+    (* ASYNC_REG = "TRUE" *) logic [1:0] image_activated_sync;
+    wire usb_recovery_payload_available = payload_available_sync[1];
+    wire usb_recovery_image_activated   = image_activated_sync[1];
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            payload_available_sync <= 2'b00;
+            image_activated_sync   <= 2'b00;
+        end else begin
+            payload_available_sync <= {payload_available_sync[0], usb_recovery_payload_available_i};
+            image_activated_sync   <= {image_activated_sync[0],   usb_recovery_image_activated_i};
+        end
+    end
 
     // -------------------------------------------------------------------------
     // Constants & Helper Functions (matching usb_pie.m.vhdl bit ordering)
@@ -176,7 +234,11 @@ module caliptra_fpga_ulpi_host (
         LL_TX_PKT_TURN      = 5'd22,
         LL_TX_PKT_BYTE      = 5'd23,
         LL_TX_PKT_END1      = 5'd24,
-        LL_TX_PKT_END2      = 5'd25
+        LL_TX_PKT_END2      = 5'd25,
+        LL_PKT_RX_PID_WAIT  = 5'd26,
+        LL_TX_PKT_PACE      = 5'd27,
+        LL_LP_ENTER         = 5'd28,
+        LL_LOW_POWER        = 5'd29
     } ll_state_t;
 
     ll_state_t  ll_state;
@@ -184,16 +246,37 @@ module caliptra_fpga_ulpi_host (
     logic [7:0] ll_reg_wdata;
     logic [7:0] ll_reg_rdata;
     logic [2:0] ll_cnt;
+    logic [4:0] ll_pace_cnt;
+    logic       ll_auto_rxcmd;
+    logic       host_driving_ls;
 
     logic        ulpi_init_done;
     logic [7:0]  ulpi_reg_op_count;
     logic [7:0]  last_ulpi_cmd;
     logic        chirp_k_seen;
     logic        dev_pkt_received;
+    logic        dev_pkt_crc_err;
+    logic [15:0] rx_crc16;
     logic [3:0]  rx_pid;
     logic [7:0]  rx_len;
     logic [6:0]  rx_raw_cnt;
     logic [31:0] rx_buf [0:15];
+
+    // One-cycle staging of received bytes (timing: keeps the usb_pie -> host
+    // ULPI data path to a handful of flops).
+    logic        rx_cap_valid;
+    logic [7:0]  rx_cap_byte;
+    logic [5:0]  rx_cap_idx;
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            for (int i = 0; i < 16; i++) begin
+                rx_buf[i] <= 32'h0;
+            end
+        end else if (rx_cap_valid) begin
+            rx_buf[rx_cap_idx[5:2]][(rx_cap_idx[1:0] * 8) +: 8] <= rx_cap_byte;
+        end
+    end
 
     // High-level -> Low-level requests
     logic        ll_req_rxcmd;
@@ -204,7 +287,9 @@ module caliptra_fpga_ulpi_host (
     logic [6:0]  ll_tx_idx;
 
     wire link_presenting_cmd = ulpi_txenable_i && (ulpi_txdata_i != 8'h00);
-    wire [7:0] rxcmd_byte    = {2'b00, 2'b00, ctrl_vbus_valid, 1'b0, cur_linestate};
+    wire [7:0] rxcmd_byte          = {2'b00, 2'b00, ctrl_vbus_valid, 1'b0, cur_linestate};
+    wire [7:0] rxcmd_rxactive_byte = {2'b00, 2'b01, ctrl_vbus_valid, 1'b0, cur_linestate};
+    wire       ll_tx_paced         = (BYTE_PACE_WAIT_CYC > 0) && (ll_tx_len > 7'd3);
 
     // -------------------------------------------------------------------------
     // High-Level Host Sequencer State Machine
@@ -247,7 +332,7 @@ module caliptra_fpga_ulpi_host (
     logic [6:0]  crc_idx;
     logic [15:0] crc16_acc;
 
-    logic [11:0] sof_timer;
+    logic [31:0] sof_timer;
     logic [10:0] sof_frame_num;
     logic [15:0] sof_count;
 
@@ -274,8 +359,8 @@ module caliptra_fpga_ulpi_host (
         ulpi_func_ctrl,                   // [27:20]
         rx_len,                           // [19:12]
         rx_pid,                           // [11:8]
-        usb_recovery_image_activated_i,   // [7]
-        usb_recovery_payload_available_i, // [6]
+        usb_recovery_image_activated,     // [7]
+        usb_recovery_payload_available,   // [6]
         hs_active,                        // [5]
         dev_connected,                    // [4]
         ulpi_init_done,                   // [3]
@@ -344,7 +429,7 @@ module caliptra_fpga_ulpi_host (
             ctrl_vbus_valid     <= 1'b1;
             ctrl_auto_sof_en    <= 1'b0;
             soft_reset_req      <= 1'b0;
-            resp_timeout_cycles <= 32'd200_000;
+            resp_timeout_cycles <= DEFAULT_RESP_TIMEOUT_CYC;
 
             cmd_pending         <= 1'b0;
             cmd_op              <= OP_NOP;
@@ -356,8 +441,10 @@ module caliptra_fpga_ulpi_host (
 
             for (int i = 0; i < 16; i++) begin
                 tx_buf[i] <= 32'h0;
-                rx_buf[i] <= 32'h0;
             end
+            rx_cap_valid <= 1'b0;
+            rx_cap_byte  <= 8'h00;
+            rx_cap_idx   <= 6'd0;
 
             // ULPI PHY state
             ulpi_func_ctrl      <= 8'h41;
@@ -378,11 +465,16 @@ module caliptra_fpga_ulpi_host (
             ll_reg_wdata        <= 8'h00;
             ll_reg_rdata        <= 8'h00;
             ll_cnt              <= 3'd0;
+            ll_pace_cnt         <= 5'd0;
+            ll_auto_rxcmd       <= 1'b0;
+            host_driving_ls     <= 1'b0;
             ll_op_done          <= 1'b0;
             ll_tx_idx           <= 7'd0;
 
             chirp_k_seen        <= 1'b0;
             dev_pkt_received    <= 1'b0;
+            dev_pkt_crc_err     <= 1'b0;
+            rx_crc16            <= 16'hffff;
             rx_pid              <= 4'h0;
             rx_len              <= 8'd0;
             rx_raw_cnt          <= 7'd0;
@@ -402,12 +494,13 @@ module caliptra_fpga_ulpi_host (
                 ll_tx_pkt[i] <= 8'h00;
             end
 
-            sof_timer           <= 12'd0;
+            sof_timer           <= 32'd0;
             sof_frame_num       <= 11'd0;
             sof_count           <= 16'd0;
         end else begin
             ll_op_done     <= 1'b0;
             soft_reset_req <= 1'b0;
+            rx_cap_valid   <= 1'b0;
 
             // -----------------------------------------------------------------
             // AXI4-Lite Write Capture & Register Updates
@@ -484,11 +577,16 @@ module caliptra_fpga_ulpi_host (
                 cmd_pending      <= 1'b0;
                 ll_req_rxcmd     <= 1'b0;
                 ll_req_txpkt     <= 1'b0;
+                ll_auto_rxcmd    <= 1'b0;
+                host_driving_ls  <= 1'b0;
+                ll_pace_cnt      <= 5'd0;
                 hl_done          <= 1'b0;
                 hl_timeout_err   <= 1'b0;
                 hs_active        <= 1'b0;
                 chirp_k_seen     <= 1'b0;
                 dev_pkt_received <= 1'b0;
+                dev_pkt_crc_err  <= 1'b0;
+                rx_crc16         <= 16'hffff;
                 cur_linestate    <= 2'b01;
                 ulpi_func_ctrl   <= 8'h41;
                 ulpi_ifc_ctrl    <= 8'h00;
@@ -499,11 +597,11 @@ module caliptra_fpga_ulpi_host (
                 // Auto-SOF Timer
                 // -------------------------------------------------------------
                 if (ctrl_auto_sof_en && hs_active) begin
-                    if (sof_timer < 12'hFFF) begin
-                        sof_timer <= sof_timer + 12'd1;
+                    if (sof_timer != 32'hFFFF_FFFF) begin
+                        sof_timer <= sof_timer + 32'd1;
                     end
                 end else begin
-                    sof_timer <= 12'd0;
+                    sof_timer <= 32'd0;
                 end
 
                 // -------------------------------------------------------------
@@ -542,13 +640,25 @@ module caliptra_fpga_ulpi_host (
                                 ll_state   <= LL_NOPID_TX;
                             end else if (ulpi_txdata_i[7:4] == 4'b0100) begin
                                 // PID Packet TX (Handshake or DATA0/1)
-                                rx_pid     <= ulpi_txdata_i[3:0];
-                                rx_raw_cnt <= 7'd0;
-                                ulpi_nxt_o <= 1'b1;
-                                ll_state   <= LL_PKT_RX_PID_ACK;
+                                rx_pid          <= ulpi_txdata_i[3:0];
+                                rx_raw_cnt      <= 7'd0;
+                                rx_crc16        <= 16'hffff;
+                                dev_pkt_crc_err <= 1'b0;
+                                if ((ulpi_txdata_i[1:0] == 2'b11) && (RX_PID_STARTUP_CYC > 0)) begin
+                                    // Hold NXT=0 briefly on DATA0/DATA1 so usb_pie's
+                                    // epinfo_txdata_valid from 18 MHz hclk settles
+                                    // before USB_PROT_IN_TX_DATA_PID_1 sees txready=1.
+                                    ulpi_nxt_o  <= 1'b0;
+                                    ll_pace_cnt <= 5'(RX_PID_STARTUP_CYC - 1);
+                                    ll_state    <= LL_PKT_RX_PID_WAIT;
+                                end else begin
+                                    ulpi_nxt_o <= 1'b1;
+                                    ll_state   <= LL_PKT_RX_PID_ACK;
+                                end
                             end
                         end else if (ll_req_rxcmd) begin
                             ll_req_rxcmd  <= 1'b0;
+                            ll_auto_rxcmd <= 1'b0;
                             ulpi_dir_o    <= 1'b1;
                             ulpi_nxt_o    <= 1'b0;
                             ulpi_rxdata_o <= rxcmd_byte;
@@ -560,6 +670,12 @@ module caliptra_fpga_ulpi_host (
                             ulpi_nxt_o    <= 1'b1;
                             ulpi_rxdata_o <= 8'h00; // Turnaround cycle
                             ll_state      <= LL_TX_PKT_TURN;
+                        end else if (ll_auto_rxcmd && (hl_state == HL_IDLE) && !cmd_pending) begin
+                            ll_auto_rxcmd <= 1'b0;
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b0;
+                            ulpi_rxdata_o <= rxcmd_byte;
+                            ll_state      <= LL_TX_RXCMD_1;
                         end
                     end
 
@@ -592,30 +708,42 @@ module caliptra_fpga_ulpi_host (
 
                     LL_REGW_STP: begin
                         if (ulpi_stp_i) begin
-                            automatic logic is_phy_rst;
+                            automatic logic       is_phy_rst;
+                            automatic logic       fc_updated;
+                            automatic logic [7:0] next_fc;
                             is_phy_rst = 1'b0;
+                            fc_updated = 1'b0;
+                            next_fc    = ulpi_func_ctrl;
                             ulpi_reg_op_count <= ulpi_reg_op_count + 8'd1;
 
                             case (ll_reg_addr)
                                 8'h04: begin
+                                    fc_updated = 1'b1;
                                     if (ll_reg_wdata[5]) begin
-                                        is_phy_rst     = 1'b1;
-                                        ulpi_func_ctrl <= (ll_reg_wdata & 8'hDF) | 8'h40;
+                                        is_phy_rst = 1'b1;
+                                        next_fc    = (ll_reg_wdata & 8'hDF) | 8'h40;
                                     end else begin
-                                        ulpi_func_ctrl <= ll_reg_wdata;
+                                        next_fc    = ll_reg_wdata;
                                     end
+                                    ulpi_func_ctrl <= next_fc;
                                 end
                                 8'h05: begin
+                                    fc_updated = 1'b1;
                                     if (ll_reg_wdata[5]) begin
                                         is_phy_rst     = 1'b1;
-                                        ulpi_func_ctrl <= 8'h41;
+                                        next_fc        = 8'h41;
                                         ulpi_ifc_ctrl  <= 8'h00;
                                         ulpi_otg_ctrl  <= 8'h06;
                                     end else begin
-                                        ulpi_func_ctrl <= ulpi_func_ctrl | ll_reg_wdata;
+                                        next_fc        = ulpi_func_ctrl | ll_reg_wdata;
                                     end
+                                    ulpi_func_ctrl <= next_fc;
                                 end
-                                8'h06: ulpi_func_ctrl <= ulpi_func_ctrl & ~ll_reg_wdata;
+                                8'h06: begin
+                                    fc_updated     = 1'b1;
+                                    next_fc        = ulpi_func_ctrl & ~ll_reg_wdata;
+                                    ulpi_func_ctrl <= next_fc;
+                                end
                                 8'h07: ulpi_ifc_ctrl  <= ll_reg_wdata;
                                 8'h08: ulpi_ifc_ctrl  <= ulpi_ifc_ctrl | ll_reg_wdata;
                                 8'h09: ulpi_ifc_ctrl  <= ulpi_ifc_ctrl & ~ll_reg_wdata;
@@ -628,14 +756,61 @@ module caliptra_fpga_ulpi_host (
                                 default: ;
                             endcase
 
+                            // Emulated USB3320 passive bus comparator: when the
+                            // host is not actively driving reset/chirp, reflect
+                            // Full-Speed 1.5k pull-up J (2'b01) when TermSelect=1
+                            // and SE0 (2'b00) when TermSelect=0.
+                            if (fc_updated && !is_phy_rst && !host_driving_ls) begin
+                                automatic logic [1:0] idle_ls = next_fc[2] ? 2'b01 : 2'b00;
+                                if (idle_ls != cur_linestate) begin
+                                    cur_linestate <= idle_ls;
+                                    ll_auto_rxcmd <= 1'b1;
+                                end
+                                if (next_fc[2]) begin
+                                    hs_active <= 1'b0;
+                                end
+                            end
+
                             if (is_phy_rst) begin
                                 ulpi_dir_o <= 1'b1;
                                 ulpi_nxt_o <= 1'b0;
                                 ll_cnt     <= 3'd4;
                                 ll_state   <= LL_PHY_RST_DIR_HI;
+                            end else if (fc_updated && !next_fc[6]) begin
+                                // ULPI 1.1 §3.9 Low Power Mode (SuspendM=0):
+                                // let usb_pie enter ULPI_OPER_LOW_POWER, then
+                                // assert DIR=1 until Link drives STP=1 to wake.
+                                ll_cnt   <= 3'd2;
+                                ll_state <= LL_LP_ENTER;
                             end else begin
                                 ll_state <= LL_IDLE;
                             end
+                        end
+                    end
+
+                    LL_LP_ENTER: begin
+                        if (ll_cnt == 3'd0) begin
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b0;
+                            ulpi_rxdata_o <= {5'b00000, ctrl_vbus_valid, cur_linestate};
+                            ll_state      <= LL_LOW_POWER;
+                        end else begin
+                            ll_cnt <= ll_cnt - 3'd1;
+                        end
+                    end
+
+                    LL_LOW_POWER: begin
+                        if (ulpi_stp_i) begin
+                            // Link asserted STP to exit Low Power Mode
+                            ulpi_func_ctrl[6] <= 1'b1;
+                            ulpi_dir_o        <= 1'b0;
+                            ulpi_nxt_o        <= 1'b0;
+                            ulpi_rxdata_o     <= 8'h00;
+                            ll_state          <= LL_REGR_END1;
+                        end else begin
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b0;
+                            ulpi_rxdata_o <= {5'b00000, ctrl_vbus_valid, cur_linestate};
                         end
                     end
 
@@ -728,6 +903,21 @@ module caliptra_fpga_ulpi_host (
                     end
 
                     // --- Device -> Host Packet RX (Handshake or DATA0/1) ---
+                    LL_PKT_RX_PID_WAIT: begin
+                        if (ulpi_stp_i) begin
+                            ulpi_nxt_o       <= 1'b0;
+                            rx_len           <= 8'd0;
+                            dev_pkt_received <= 1'b1;
+                            ll_state         <= LL_IDLE;
+                        end else if (ll_pace_cnt == 5'd0) begin
+                            ulpi_nxt_o <= 1'b1;
+                            ll_state   <= LL_PKT_RX_PID_ACK;
+                        end else begin
+                            ulpi_nxt_o  <= 1'b0;
+                            ll_pace_cnt <= ll_pace_cnt - 5'd1;
+                        end
+                    end
+
                     LL_PKT_RX_PID_ACK: begin
                         // Cycle where usb_pie sees txready=1 on PID byte
                         if (ulpi_stp_i) begin
@@ -735,6 +925,10 @@ module caliptra_fpga_ulpi_host (
                             rx_len           <= 8'd0;
                             dev_pkt_received <= 1'b1;
                             ll_state         <= LL_IDLE;
+                        end else if (BYTE_PACE_WAIT_CYC > 0) begin
+                            ulpi_nxt_o  <= 1'b0;
+                            ll_pace_cnt <= 5'(BYTE_PACE_WAIT_CYC - 1);
+                            ll_state    <= LL_PKT_RX_DATA;
                         end else begin
                             ulpi_nxt_o <= 1'b1;
                             ll_state   <= LL_PKT_RX_DATA;
@@ -745,15 +939,34 @@ module caliptra_fpga_ulpi_host (
                         if (ulpi_stp_i) begin
                             ulpi_nxt_o       <= 1'b0;
                             rx_len           <= (rx_raw_cnt >= 7'd2) ? {1'b0, rx_raw_cnt - 7'd2} : 8'd0;
+                            dev_pkt_crc_err  <= (rx_raw_cnt < 7'd2) || (rx_crc16 != CRC16_RESIDUAL_OK);
                             dev_pkt_received <= 1'b1;
                             ll_state         <= LL_IDLE;
-                        end else begin
-                            ulpi_nxt_o <= 1'b1;
+                        end else if (ulpi_nxt_o) begin
+                            // Capture into a small staging register; the 16x32
+                            // rx_buf write happens one cycle later so the
+                            // device -> host ULPI path does not fan out into
+                            // 512 clock enables at 60 MHz.
                             if (rx_raw_cnt < 7'd64) begin
-                                rx_buf[rx_raw_cnt[5:2]][(rx_raw_cnt[1:0] * 8) +: 8] <= ulpi_txdata_i;
+                                rx_cap_valid <= 1'b1;
+                                rx_cap_byte  <= ulpi_txdata_i;
+                                rx_cap_idx   <= rx_raw_cnt[5:0];
                             end
+                            rx_crc16 <= step_crc16(ulpi_txdata_i, rx_crc16);
                             if (rx_raw_cnt < 7'd67) begin
                                 rx_raw_cnt <= rx_raw_cnt + 7'd1;
+                            end
+                            if (BYTE_PACE_WAIT_CYC > 0) begin
+                                ulpi_nxt_o  <= 1'b0;
+                                ll_pace_cnt <= 5'(BYTE_PACE_WAIT_CYC - 1);
+                            end else begin
+                                ulpi_nxt_o <= 1'b1;
+                            end
+                        end else begin
+                            if (ll_pace_cnt == 5'd0) begin
+                                ulpi_nxt_o <= 1'b1;
+                            end else begin
+                                ll_pace_cnt <= ll_pace_cnt - 5'd1;
                             end
                         end
                     end
@@ -782,7 +995,7 @@ module caliptra_fpga_ulpi_host (
                         ll_state   <= LL_IDLE;
                     end
 
-                    // --- Host -> Device Packet TX (1 turnaround + N data bytes) ---
+                    // --- Host -> Device Packet TX (1 turnaround + N data bytes, ULPI 1.1 NXT pacing) ---
                     LL_TX_PKT_TURN: begin
                         ulpi_dir_o    <= 1'b1;
                         ulpi_nxt_o    <= 1'b1;
@@ -792,16 +1005,39 @@ module caliptra_fpga_ulpi_host (
                     end
 
                     LL_TX_PKT_BYTE: begin
-                        if (ll_tx_idx < ll_tx_len) begin
-                            ulpi_dir_o    <= 1'b1;
-                            ulpi_nxt_o    <= 1'b1;
-                            ulpi_rxdata_o <= ll_tx_pkt[ll_tx_idx];
-                            ll_tx_idx     <= ll_tx_idx + 7'd1;
-                        end else begin
+                        if (ll_tx_idx >= ll_tx_len) begin
                             ulpi_dir_o    <= 1'b0;
                             ulpi_nxt_o    <= 1'b0;
                             ulpi_rxdata_o <= 8'h00;
                             ll_state      <= LL_TX_PKT_END1;
+                        end else if (ll_tx_paced) begin
+                            // ULPI 1.1 §3.8.2.2: hold DIR=1, NXT=0 with RXCMD
+                            // RxActive=1 while pacing multi-byte DATA packets.
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b0;
+                            ulpi_rxdata_o <= rxcmd_rxactive_byte;
+                            ll_pace_cnt   <= 5'(BYTE_PACE_WAIT_CYC - 1);
+                            ll_state      <= LL_TX_PKT_PACE;
+                        end else begin
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b1;
+                            ulpi_rxdata_o <= ll_tx_pkt[ll_tx_idx];
+                            ll_tx_idx     <= ll_tx_idx + 7'd1;
+                        end
+                    end
+
+                    LL_TX_PKT_PACE: begin
+                        if (ll_pace_cnt == 5'd0) begin
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b1;
+                            ulpi_rxdata_o <= ll_tx_pkt[ll_tx_idx];
+                            ll_tx_idx     <= ll_tx_idx + 7'd1;
+                            ll_state      <= LL_TX_PKT_BYTE;
+                        end else begin
+                            ulpi_dir_o    <= 1'b1;
+                            ulpi_nxt_o    <= 1'b0;
+                            ulpi_rxdata_o <= rxcmd_rxactive_byte;
+                            ll_pace_cnt   <= ll_pace_cnt - 5'd1;
                         end
                     end
 
@@ -826,11 +1062,13 @@ module caliptra_fpga_ulpi_host (
                             cmd_pending <= 1'b0;
                             case (cmd_op)
                                 OP_BUS_RESET_HS: begin
-                                    chirp_k_seen  <= 1'b0;
-                                    hs_active     <= 1'b0;
-                                    cur_linestate <= 2'b00; // SE0
-                                    ll_req_rxcmd  <= 1'b1;
-                                    hl_state      <= HL_RST_SEND_SE0;
+                                    chirp_k_seen    <= 1'b0;
+                                    hs_active       <= 1'b0;
+                                    host_driving_ls <= 1'b1;
+                                    ll_auto_rxcmd   <= 1'b0;
+                                    cur_linestate   <= 2'b00; // SE0
+                                    ll_req_rxcmd    <= 1'b1;
+                                    hl_state        <= HL_RST_SEND_SE0;
                                 end
                                 OP_SEND_RXCMD: begin
                                     cur_linestate <= cmd_rxcmd_ls;
@@ -860,10 +1098,10 @@ module caliptra_fpga_ulpi_host (
                                     hl_done <= 1'b1;
                                 end
                             endcase
-                        end else if (ctrl_auto_sof_en && hs_active && (sof_timer >= 12'd4000) &&
+                        end else if (ctrl_auto_sof_en && hs_active && (sof_timer >= SOF_INTERVAL_CYC) &&
                                      (ll_state == LL_IDLE) && !link_presenting_cmd) begin
                             automatic logic [4:0] sc5 = calc_crc5(sof_frame_num);
-                            sof_timer     <= 12'd0;
+                            sof_timer     <= 32'd0;
                             sof_frame_num <= sof_frame_num + 11'd1;
                             sof_count     <= sof_count + 16'd1;
                             ll_tx_pkt[0]  <= PID_BYTE_SOF;
@@ -878,20 +1116,28 @@ module caliptra_fpga_ulpi_host (
                     // --- High-Speed Bus Reset & K-J-K-J-K-J Chirp ---
                     HL_RST_SEND_SE0: begin
                         if (ll_op_done) begin
-                            hl_timer <= resp_timeout_cycles;
+                            hl_timer <= RST_CHIRP_WAIT_CYC;
                             hl_state <= HL_RST_WAIT_CHIRP_K;
                         end
                     end
 
                     HL_RST_WAIT_CHIRP_K: begin
+                        // chirp_k_seen is set when the device *ends* its Chirp K
+                        // (ULPI STP after the NOPID TX), i.e. at T_UCH end. The
+                        // host must then begin its K-J sequence within 100 us.
                         if (chirp_k_seen) begin
                             chirp_idx <= 3'd0;
                             hl_timer  <= 32'd32;
                             hl_state  <= HL_RST_CHIRP_WAIT;
                         end else if (hl_timer == 32'd0) begin
+                            host_driving_ls <= 1'b0;
+                            if (ulpi_func_ctrl[2]) begin
+                                cur_linestate <= 2'b01; // FS pull-up J
+                                ll_req_rxcmd  <= 1'b1;
+                            end
                             hl_timeout_err <= 1'b1;
-                            hl_done        <= 1'b1;
-                            hl_state       <= HL_IDLE;
+                            hl_timer       <= 32'd8;
+                            hl_state       <= HL_POST_GAP;
                         end else begin
                             hl_timer <= hl_timer - 32'd1;
                         end
@@ -900,7 +1146,7 @@ module caliptra_fpga_ulpi_host (
                     HL_RST_CHIRP_SEND: begin
                         if (ll_op_done) begin
                             chirp_idx <= chirp_idx + 3'd1;
-                            hl_timer  <= 32'd256; // > MAX_LINESTATE_DBC_CNT (192)
+                            hl_timer  <= CHIRP_KJ_HOLD_CYC; // 50 us; > MAX_LINESTATE_DBC_CNT (192)
                             hl_state  <= HL_RST_CHIRP_WAIT;
                         end
                     end
@@ -923,17 +1169,28 @@ module caliptra_fpga_ulpi_host (
 
                     HL_RST_END_SE0: begin
                         if (ll_op_done) begin
-                            hl_timer <= 32'd300; // > MAX_LINESTATE_DBC_CNT (192)
+                            hl_timer <= RST_END_SE0_CYC; // 200 us; spec 100..500 us
                             hl_state <= HL_RST_END_WAIT;
                         end
                     end
 
                     HL_RST_END_WAIT: begin
                         if (hl_timer == 32'd0) begin
-                            hs_active <= 1'b1;
-                            sof_timer <= 12'd0;
-                            hl_done   <= 1'b1;
-                            hl_state  <= HL_IDLE;
+                            host_driving_ls <= 1'b0;
+                            sof_timer       <= 32'd0;
+                            if (ulpi_func_ctrl[2]) begin
+                                // Device reverted to Full-Speed (TermSelect=1):
+                                // report FS idle J so usb_pie leaves WF_EOR_FS.
+                                hs_active     <= 1'b0;
+                                cur_linestate <= 2'b01;
+                                ll_req_rxcmd  <= 1'b1;
+                                hl_timer      <= 32'd8;
+                                hl_state      <= HL_POST_GAP;
+                            end else begin
+                                hs_active <= 1'b1;
+                                hl_done   <= 1'b1;
+                                hl_state  <= HL_IDLE;
+                            end
                         end else begin
                             hl_timer <= hl_timer - 32'd1;
                         end
@@ -975,7 +1232,7 @@ module caliptra_fpga_ulpi_host (
                                 ll_tx_pkt[7'd1 + cmd_tx_len] <= ~bit_rev8(crc16_acc[15:8]);
                                 ll_tx_pkt[7'd2 + cmd_tx_len] <= ~bit_rev8(crc16_acc[7:0]);
                                 ll_tx_len                    <= cmd_tx_len + 7'd3;
-                                hl_timer                     <= 32'd24; // > epinfo_valid latency (~8), < turnaround (96)
+                                hl_timer                     <= TOK_TO_DATA_GAP_CYC; // > epinfo_valid latency, < HS turnaround (96)
                                 hl_state                     <= HL_XFER_TOK_GAP;
                             end
                         end
@@ -1002,8 +1259,15 @@ module caliptra_fpga_ulpi_host (
                         if (dev_pkt_received) begin
                             if ((cmd_op == OP_IN) &&
                                 ((rx_pid == PID_NIB_DATA0) || (rx_pid == PID_NIB_DATA1))) begin
-                                hl_timer <= 32'd8;
-                                hl_state <= HL_IN_PRE_ACK_GAP;
+                                if (dev_pkt_crc_err) begin
+                                    // USB 2.0 §8.5.2: discard CRC-corrupted IN packet without ACKing
+                                    hl_timeout_err <= 1'b1;
+                                    hl_timer       <= 32'd8;
+                                    hl_state       <= HL_POST_GAP;
+                                end else begin
+                                    hl_timer <= 32'd8;
+                                    hl_state <= HL_IN_PRE_ACK_GAP;
+                                end
                             end else begin
                                 hl_timer <= 32'd8;
                                 hl_state <= HL_POST_GAP;
@@ -1037,7 +1301,7 @@ module caliptra_fpga_ulpi_host (
 
                     HL_POST_GAP: begin
                         if ((hl_timer == 32'd0) && (ll_state == LL_IDLE)) begin
-                            sof_timer <= 12'd0;
+                            sof_timer <= 32'd0;
                             hl_done   <= 1'b1;
                             hl_state  <= HL_IDLE;
                         end else if (hl_timer != 32'd0) begin

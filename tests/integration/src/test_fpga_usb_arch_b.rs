@@ -39,7 +39,7 @@ mod test {
             let addr = self.host.device_address();
             let ifc = u16::from(self.host.ocp_interface());
             let hw = &mut *self.hw;
-            self.host.control_read_raw(
+            let n = self.host.control_read_raw(
                 addr,
                 0xA1,
                 0x00,
@@ -49,7 +49,25 @@ mod test {
                 response,
                 || hw.step(),
                 timeout,
-            )
+            )?;
+            // Triage hook for the device-side data-toggle anomaly: USB 2.0 requires
+            // the first DATA packet of a control read to be DATA1.
+            if self.host.last_data_in_pid() == 0x3 {
+                println!(
+                    "[arch-b-recovery] TOGGLE ANOMALY #{}: control read {:?} (bRequest=0x{:02x}) answered with DATA0 first, len={n}, payload={}, diag={:?}, status={:?}",
+                    self.host.data0_first_count(),
+                    command,
+                    command as u16,
+                    response[..n.min(CONTROL_MAX_BYTES)]
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<Vec<_>>()
+                        .join(""),
+                    self.host.diag(),
+                    self.host.status()
+                );
+            }
+            Ok(n)
         }
 
         fn write(&mut self, command: RecoveryCommand, data: &[u8], timeout: Duration) -> Result<()> {
@@ -76,6 +94,18 @@ mod test {
             }
             Ok(())
         }
+    }
+
+    /// `CPTRA_USB_POLL_INTERVAL_US` overrides the RecoveryAgent status poll
+    /// interval (default 5 ms). `0` hammers the device with back-to-back
+    /// control reads, which is the stress mode used to reproduce the
+    /// device-side DATA0-first toggle anomaly.
+    fn poll_interval_from_env() -> Duration {
+        std::env::var("CPTRA_USB_POLL_INTERVAL_US")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_micros)
+            .unwrap_or(Duration::from_millis(5))
     }
 
     fn vendor_pk_hash_words(bytes: &[u8; 48]) -> [u32; 12] {
@@ -242,8 +272,18 @@ mod test {
             .vendor_pk_hash()
             .expect("missing vendor_pk_hash in firmware bundle");
 
-        // The HCD must own the engine from before the device attaches.
-        load_fpga_hcd_fresh();
+        // Unload `caliptra_fpga_hcd` BEFORE `ModelFpgaRealtime::new()` fires
+        // `Control::AxiReset` so the HCD's 100 ms root-hub poll timer never
+        // collides with an active AXI hardware reset, then load it fresh right
+        // after `new()` (while Caliptra ROM still has ~850 ms of KATs before
+        // MCU ROM initializes USB) and unload on exit via RAII guard.
+        struct HcdUnloadGuard;
+        impl Drop for HcdUnloadGuard {
+            fn drop(&mut self) {
+                unload_fpga_hcd();
+            }
+        }
+        unload_fpga_hcd();
 
         let mut hw = new(InitParams {
             fuses: Fuses {
@@ -265,6 +305,9 @@ mod test {
             ..Default::default()
         })
         .expect("Failed to boot ModelFpgaRealtime into USB OCP recovery mode");
+
+        load_fpga_hcd_fresh();
+        let _hcd_guard = HcdUnloadGuard;
 
         let fpga_version = unsafe { hw.base.wrapper.ptr.add(1).read_volatile() };
         println!("[arch-b-hcd] FPGA wrapper version = 0x{fpga_version:08x}");
@@ -303,7 +346,7 @@ mod test {
             transfer_timeout: Duration::from_secs(5),
             progress_timeout: Duration::from_secs(45),
             overall_timeout: Duration::from_secs(180),
-            poll_interval: Duration::from_millis(5),
+            poll_interval: poll_interval_from_env(),
         };
         let mut agent = RecoveryAgent::new(transport, options).expect("RecoveryAgent::new");
         let discovery = agent.probe().expect("OCP Recovery probe over libusb failed");
@@ -498,7 +541,7 @@ mod test {
             transfer_timeout: Duration::from_secs(5),
             progress_timeout: Duration::from_secs(45),
             overall_timeout: Duration::from_secs(180),
-            poll_interval: Duration::from_millis(5),
+            poll_interval: poll_interval_from_env(),
         };
         let transport = FpgaUlpiRecoveryTransport {
             hw: &mut hw,
@@ -528,8 +571,9 @@ mod test {
         let elapsed = start.elapsed();
         let transport = agent.into_transport();
         println!(
-            "[arch-b-recovery] RecoveryAgent outcome={outcome:?} in {elapsed:.2?}, final ULPI diag={:?}",
-            transport.host.diag()
+            "[arch-b-recovery] RecoveryAgent outcome={outcome:?} in {elapsed:.2?}, final ULPI diag={:?}, control reads answered DATA0-first={}",
+            transport.host.diag(),
+            transport.host.data0_first_count()
         );
         assert_eq!(outcome, RecoveryOutcome::Confirmed);
 

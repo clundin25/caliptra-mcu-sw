@@ -20,6 +20,23 @@ import caliptra_fpga_realtime_regs_pkg::*;
 `include "config_defines.svh"
 `include "caliptra_macros.svh"
 
+// ULPI PHY clock frequency (Hz) and usb_pie chirp-timer selection. Overridden
+// from fpga_configuration.tcl (ULPI_CLK_MHZ / USB_SIM_CHIRP_TIMERS tclargs).
+`ifndef ULPI_CLK_HZ
+`define ULPI_CLK_HZ 60000000
+`endif
+`ifndef USB_SIM_CHIRP_TIMERS
+`define USB_SIM_CHIRP_TIMERS 0
+`endif
+// ULPI clock source: ULPI_CLK_DIV > 0 -> BUFGCE_DIV of i3c_clk (120 MHz / 2 =
+// the 60 MHz ULPI spec rate); 0 -> synchronous to core_clk (original image).
+// A PL-side divider is used (rather than a new PS pl*_ref_clk) because the
+// Versal segmented-configuration flow rejects new PS->PL interfaces in the
+// runtime segment (SegConfig-Validation-10).
+`ifndef ULPI_CLK_DIV
+`define ULPI_CLK_DIV 3
+`endif
+
 module caliptra_wrapper_top (
     input bit core_clk,
     input bit i3c_clk,
@@ -2553,26 +2570,115 @@ logic       ulpi_txenable, ulpi_dir, ulpi_stp, ulpi_nxt;
 logic       usb_recovery_payload_available;
 logic       usb_recovery_image_activated;
 
-caliptra_fpga_ulpi_host u_ulpi_host (
-    .clk                             (core_clk),
-    .rst_n                           (S_AXI_WRAPPER_ARESETN),
-    .s_axil_awvalid                  (ulpi_host_awvalid),
-    .s_axil_awready                  (ulpi_host_awready),
-    .s_axil_awaddr                   (ulpi_host_awaddr),
-    .s_axil_wvalid                   (ulpi_host_wvalid),
-    .s_axil_wready                   (ulpi_host_wready),
-    .s_axil_wdata                    (ulpi_host_wdata),
-    .s_axil_wstrb                    (ulpi_host_wstrb),
-    .s_axil_bvalid                   (ulpi_host_bvalid),
-    .s_axil_bready                   (ulpi_host_bready),
-    .s_axil_bresp                    (ulpi_host_bresp),
-    .s_axil_arvalid                  (ulpi_host_arvalid),
-    .s_axil_arready                  (ulpi_host_arready),
-    .s_axil_araddr                   (ulpi_host_araddr),
-    .s_axil_rvalid                   (ulpi_host_rvalid),
-    .s_axil_rready                   (ulpi_host_rready),
-    .s_axil_rdata                    (ulpi_host_rdata),
-    .s_axil_rresp                    (ulpi_host_rresp),
+// ULPI PHY clock: 60 MHz derived in-fabric from the 120 MHz I3C clock.
+logic ulpi_clk;
+generate
+if (`ULPI_CLK_DIV > 0) begin : gen_ulpi_clk_div
+    BUFGCE_DIV #(
+        .BUFGCE_DIVIDE(`ULPI_CLK_DIV),
+        .SIM_DEVICE("VERSAL_AI_CORE")
+    ) u_ulpi_clk_div (
+        .I  (i3c_clk),
+        .CE (1'b1),
+        .CLR(1'b0),
+        .O  (ulpi_clk)
+    );
+end else begin : gen_ulpi_clk_core
+    assign ulpi_clk = core_clk;
+end
+endgenerate
+
+// Reset for the ULPI clock domain: asynchronous assert from the wrapper AXI
+// reset, deassert synchronized to ulpi_clk.
+logic ulpi_rst_n;
+xpm_cdc_async_rst #(
+    .DEST_SYNC_FF(4),
+    .INIT_SYNC_FF(0),
+    .RST_ACTIVE_HIGH(0)
+) u_ulpi_rst_sync (
+    .src_arst (S_AXI_WRAPPER_ARESETN),
+    .dest_clk (ulpi_clk),
+    .dest_arst(ulpi_rst_n)
+);
+
+// AXI4-Lite CDC: core_clk (S_AXI_WRAPPER demux, addr[14]==1) -> ulpi_clk host.
+logic        ulpi_m_awvalid, ulpi_m_awready;
+logic [11:0] ulpi_m_awaddr;
+logic        ulpi_m_wvalid,  ulpi_m_wready;
+logic [31:0] ulpi_m_wdata;
+logic [3:0]  ulpi_m_wstrb;
+logic        ulpi_m_bvalid,  ulpi_m_bready;
+logic [1:0]  ulpi_m_bresp;
+logic        ulpi_m_arvalid, ulpi_m_arready;
+logic [11:0] ulpi_m_araddr;
+logic        ulpi_m_rvalid,  ulpi_m_rready;
+logic [31:0] ulpi_m_rdata;
+logic [1:0]  ulpi_m_rresp;
+
+axil_cdc_bridge #(.ADDR_WIDTH(12)) u_ulpi_host_axil_cdc (
+    .s_clk         (core_clk),
+    .s_rst_n       (S_AXI_WRAPPER_ARESETN),
+    .s_axil_awvalid(ulpi_host_awvalid),
+    .s_axil_awready(ulpi_host_awready),
+    .s_axil_awaddr (ulpi_host_awaddr),
+    .s_axil_wvalid (ulpi_host_wvalid),
+    .s_axil_wready (ulpi_host_wready),
+    .s_axil_wdata  (ulpi_host_wdata),
+    .s_axil_wstrb  (ulpi_host_wstrb),
+    .s_axil_bvalid (ulpi_host_bvalid),
+    .s_axil_bready (ulpi_host_bready),
+    .s_axil_bresp  (ulpi_host_bresp),
+    .s_axil_arvalid(ulpi_host_arvalid),
+    .s_axil_arready(ulpi_host_arready),
+    .s_axil_araddr (ulpi_host_araddr),
+    .s_axil_rvalid (ulpi_host_rvalid),
+    .s_axil_rready (ulpi_host_rready),
+    .s_axil_rdata  (ulpi_host_rdata),
+    .s_axil_rresp  (ulpi_host_rresp),
+
+    .m_clk         (ulpi_clk),
+    .m_rst_n       (ulpi_rst_n),
+    .m_axil_awvalid(ulpi_m_awvalid),
+    .m_axil_awready(ulpi_m_awready),
+    .m_axil_awaddr (ulpi_m_awaddr),
+    .m_axil_wvalid (ulpi_m_wvalid),
+    .m_axil_wready (ulpi_m_wready),
+    .m_axil_wdata  (ulpi_m_wdata),
+    .m_axil_wstrb  (ulpi_m_wstrb),
+    .m_axil_bvalid (ulpi_m_bvalid),
+    .m_axil_bready (ulpi_m_bready),
+    .m_axil_bresp  (ulpi_m_bresp),
+    .m_axil_arvalid(ulpi_m_arvalid),
+    .m_axil_arready(ulpi_m_arready),
+    .m_axil_araddr (ulpi_m_araddr),
+    .m_axil_rvalid (ulpi_m_rvalid),
+    .m_axil_rready (ulpi_m_rready),
+    .m_axil_rdata  (ulpi_m_rdata),
+    .m_axil_rresp  (ulpi_m_rresp)
+);
+
+caliptra_fpga_ulpi_host #(
+    .CLK_HZ(`ULPI_CLK_HZ)
+) u_ulpi_host (
+    .clk                             (ulpi_clk),
+    .rst_n                           (ulpi_rst_n),
+    .s_axil_awvalid                  (ulpi_m_awvalid),
+    .s_axil_awready                  (ulpi_m_awready),
+    .s_axil_awaddr                   (ulpi_m_awaddr),
+    .s_axil_wvalid                   (ulpi_m_wvalid),
+    .s_axil_wready                   (ulpi_m_wready),
+    .s_axil_wdata                    (ulpi_m_wdata),
+    .s_axil_wstrb                    (ulpi_m_wstrb),
+    .s_axil_bvalid                   (ulpi_m_bvalid),
+    .s_axil_bready                   (ulpi_m_bready),
+    .s_axil_bresp                    (ulpi_m_bresp),
+    .s_axil_arvalid                  (ulpi_m_arvalid),
+    .s_axil_arready                  (ulpi_m_arready),
+    .s_axil_araddr                   (ulpi_m_araddr),
+    .s_axil_rvalid                   (ulpi_m_rvalid),
+    .s_axil_rready                   (ulpi_m_rready),
+    .s_axil_rdata                    (ulpi_m_rdata),
+    .s_axil_rresp                    (ulpi_m_rresp),
     .ulpi_txdata_i                   (ulpi_txdata),
     .ulpi_txenable_i                 (ulpi_txenable),
     .ulpi_stp_i                      (ulpi_stp),
@@ -2625,7 +2731,9 @@ caliptra_ss_top #(
     .CPTRA_SS_ROM_SIZE_KB(128),
     .MCU_MBOX0_SIZE_KB(16),
     .MCU_MBOX1_SIZE_KB(16),
-    .USB_G_SIM_CHIRP_TIMERS(1),
+    // ULPI PHY domain runs at the spec 60 MHz, so usb_pie's spec-timed
+    // Chirp / suspend / resume constants (written for 60 MHz) apply directly.
+    .USB_G_SIM_CHIRP_TIMERS(`USB_SIM_CHIRP_TIMERS),
     .USB_C_DEV0_RAM_ADDRWIDTH(13),
     .USB_C_DEV1_RAM_ADDRWIDTH(9),
     .SPI_HOST_ENA(0),
@@ -2878,7 +2986,7 @@ caliptra_ss_top #(
     .cptra_ss_usb_dev1_mem_bsel_o(usb_dev1_mem_bsel),
     .cptra_ss_usb_dev1_irq_o(),
     .cptra_ss_usb_dev1_fiq_o(),
-    .cptra_ss_usb_utmi_clk_i(core_clk),
+    .cptra_ss_usb_utmi_clk_i(ulpi_clk),
     .cptra_ss_usb_utmi_clk_lock_i(1'b1),
     .cptra_ss_usb_utmi_rxdata_i('0),
     .cptra_ss_usb_utmi_rxvalid_i(1'b0),
@@ -2896,7 +3004,7 @@ caliptra_ss_top #(
     .cptra_ss_usb_utmi_vcontrol_o(),
     .cptra_ss_usb_utmi_vcontrolloadm_o(),
     .cptra_ss_usb_utmi_vstatus_i('0),
-    .cptra_ss_usb_ulpi_clk_i(core_clk),
+    .cptra_ss_usb_ulpi_clk_i(ulpi_clk),
     .cptra_ss_usb_ulpi_rxdata_i(ulpi_rxdata),
     .cptra_ss_usb_ulpi_txdata_o(ulpi_txdata),
     .cptra_ss_usb_ulpi_txenable_o(ulpi_txenable),
