@@ -26,6 +26,8 @@ The ARM CPU takes the place of an SOC manager and can drive stimulus to Caliptra
   - The Caliptra Core, MCU, and OTP ROMs are implemented as dual port SRAM's to allow them to be reconfigured without rebuilding. These SRAMs are mapped into the ARM CPU to allow them to be written by the hw-model before taking SS out of reset.
 - Xilinx I3C
   - The FPGA instantiates an I3C host controller to communicate with the SS I3C. In order for the I3C controllers to reach I3C bus speeds a higher clock is needed. The FPGA modifies caliptra_ss_top to insert CDC logic and run the SS I3C at the same clock.
+- Internal ULPI USB 2.0 High-Speed Host (Architecture B)
+  - `caliptra_fpga_ulpi_host` (`0xA401_4000`) instantiates a synthesizable Microchip USB3320 ULPI PHY register responder, High-Speed (`480 Mbps`) Chirp engine, autonomous `Auto-SOF` microframe keepalive generator, and CRC5/CRC16 USB token transceiver wired internally to `caliptra_ss_top`'s ULPI interface—enabling end-to-end High-Speed USB enumeration and hardware-assisted OCP Recovery v1.1 on a stock VCK-190 with zero external daughter cards or loopback cables.
 
 ![](./images/caliptra_ss_fpga_block_diagram.svg)
 
@@ -188,6 +190,73 @@ Caliptra Subsystem toplevel. To add additional registers simply:
 | Caliptra 2.2 USB Combo + OCP Recv   | cptra_ss_rst_b       | 64 KiB       | 0xA420_0000   | 0xA420_FFFF |
 | Caliptra 2.2 USB Dev0 Block RAM     | cptra_ss_rst_b       | 64 KiB       | 0xA430_0000   | 0xA430_FFFF |
 | MCI                                 | cptra_ss_rst_b       | 16 MiB       | 0xA800_0000   | 0xA8FF_FFFF |
+
+### Caliptra 2.2 USB Architecture B (Internal ULPI PHY & High-Speed Host Loopback) ###
+
+The VCK-190 board does not populate a physical ULPI USB transceiver on its FMC/PMOD headers out of the box. **Architecture B** solves this purely inside the Versal programmable logic so that unmodified Caliptra 2.2 USB compound RTL (`ip_xxx_3511_hs_mem_compound_wrapper`), Caliptra Core AXI DMA recovery, and the MCU ROM `LpcipUsbDriver` can be validated end-to-end on any stock VCK-190 alongside XI3C recovery—with **zero external breakout cards, cables, Linux kernel module edits, or device-tree changes**.
+
+#### How It Works ####
+
+1. **Synthesizable ULPI USB3320 PHY + High-Speed Host (`src/caliptra_fpga_ulpi_host.sv`)**
+   - **ULPI Register & `RXCMD` Emulation:** Connects directly to `caliptra_ss_top`'s synchronous 8-bit SDR ULPI signals (`DATA[7:0]`, `DIR`, `NXT`, `STP`) on `core_clk` (`18 MHz`). Emulates a Microchip USB3320 PHY register file (`VID = 0x0424`, `PID = 0x0007`, `FuncCtrl`, `OtgCtrl`, `Scratch`) with set (`+0x01`) and clear (`+0x02`) aliases, and emits `RXCMD` status bytes (`VbusValid`, `HostDisconnect`, `LineState`) whenever the bus transitions.
+   - **USB 2.0 High-Speed Reset & Chirp Handshake:** Assertions of `OP_BUS_RESET_HS` drive `SE0`, detect the Device Chirp `K` transmitted by the LPCIP controller (`XcvrSelect = HS`, `TermSelect = FS`, `OpMode = DisableBitStuffing`), reply with the alternating `K-J-K-J-K-J` Host Chirp sequence, and latch `hs_active = 1` once the device switches to High-Speed terminations (`USB_G_SIM_CHIRP_TIMERS = 1` scales chirp timers for `18 MHz` FPGA operation).
+   - **Autonomous `Auto-SOF` Keepalive:** When `CTRL.AUTO_SOF_EN` is set in High-Speed mode, the RTL autonomously injects CRC5-checked `SOF` tokens between host transactions. Without continuous microframe `SOF` activity, the LPCIP USB device controller enters High-Speed suspend (`DSUS` after `3 ms` of idle) while Caliptra Core spends tens of milliseconds verifying SHA-384, ECC-384, and LMS firmware signatures.
+   - **Hardware Token & Packet Engine:** Generates bit-stuffed/CRC5 `SETUP`, `IN`, and `OUT` tokens plus CRC16 `DATA0`/`DATA1` payloads from a 64-byte TX buffer (`+0x40`), captures device `DATA0`/`DATA1` responses into a 64-byte RX buffer (`+0x80`), automatically returns host `ACK` on valid `IN` data, and reports handshake PIDs (`ACK`, `NAK`, `NYET`, `STALL`).
+
+2. **Zero-Kernel-Change AXI Demux & Subsystem Memory Wiring (`src/caliptra_wrapper_top.sv`, `src/usb_bram_64_512.sv`, `fpga_configuration.tcl`)**
+   - **1-to-2 AXI4-Lite Wrapper Demux (`M06_AXI`):** Widens `S_AXI_WRAPPER` to `32 KiB` and routes `addr[14] == 0` (`0xA401_0000..0xA401_3FFF`) to `caliptra_fpga_realtime_regs` and `addr[14] == 1` (`0xA401_4000..0xA401_7FFF`) to `caliptra_fpga_ulpi_host`. Because `/dev/uio0` `map0` already maps `64 KiB` at `0xA401_0000` in the standard CI image, `ModelFpgaRealtime` accesses the USB host at `uio0 map0 + 0x4000` with no kernel or DTB rebuild.
+   - **USB CSRs & Dual-Accessed Block RAM (`M14_AXI` & `M15_AXI`):** Maps `S_AXI_USB_COMBO` at `0xA420_0000` (with hardware OCP Recovery registers strapped at `0xA420_0800` via `cptra_ss_strap_usb_recovery_ifc_base_addr_i`) and a parameterized byte-lane synchronous Block RAM (`usb_bram_64_512`, `64 KiB` at `0xA430_0000` for `dev0_mem` plus internal `4 KiB` for `dev1_mem`) across `M_AXI_ARM`, `M_AXI_MCU_*`, `M_AXI_CALIPTRA`, and `axi_cdma_0`.
+   - **Hardware OCP Recovery Sideband Loopback:** Connects `cptra_ss_usb_recovery_payload_available_o` and `cptra_ss_usb_recovery_image_activated_o` back into `caliptra_ss_top` so Caliptra Core's AXI DMA engine drains firmware images directly from the USB OCP FIFO into ICCM/DCCM and MCU SRAM.
+
+3. **MCU ROM, Host MMIO Driver & OCP Recovery v1.1 Transport**
+   - **FPGA MCU ROM (`platforms/fpga/rom/src/usb.rs`, `rom/src/recovery/usb.rs`):** Configures `UsbParams` (`0xA420_0000` / `0xA430_0000`), initializes the emulated USB3320 PHY over ULPI, serves EP0 descriptors (Device, Configuration, Microsoft OS / WCID, and OCP Recovery functional descriptors), and enables hardware OCP Recovery on Device 0 when USB recovery is selected.
+   - **Host Driver & Recovery Agent (`hw/model/src/fpga_ulpi_usb.rs`, `tests/integration/src/test_fpga_usb_arch_b.rs`):** `FpgaUlpiUsbHost` (`ModelFpgaRealtime::ulpi_usb_host()`) drives VBUS attach, High-Speed bus reset + Chirp, `Auto-SOF`, and `SETUP`/`DATA`/`STATUS` control transfers with automatic `NAK` retry. `FpgaUlpiRecoveryTransport` implements `caliptra_mcu_usb_recovery::RecoveryTransport`, enabling the unmodified `RecoveryAgent` to discover `PROT_CAP` (`v1.1`), stream all 3 signed images (`caliptra_fw` + `soc_manifest` + `mcu_runtime`, `~396 KiB` over `>6,190` High-Speed USB packets), verify `RecoveryOutcome::Confirmed`, and warm-reset the MCU into authenticated SRAM runtime.
+
+#### `caliptra_fpga_ulpi_host` Register Map (`0xA401_4000`) ####
+
+| Offset | Name | Access | Description |
+| :----- | :--- | :----- | :---------- |
+| `0x00` | `MAGIC` | RO | Constant `0x5553_4248` (`"USBH"`) identifying Architecture B bitstream support |
+| `0x04` | `CTRL` | RW | `[0]` `VBUS_VALID`, `[1]` `AUTO_SOF_EN`, `[2]` `SOFT_RESET` (self-clearing) |
+| `0x08` | `STATUS` | RO | `[0]` `busy`, `[1]` `done`, `[2]` `timeout_err`, `[3]` `ulpi_init_done`, `[4]` `dev_connected`, `[5]` `hs_active`, `[6]` `recovery_payload_avail`, `[7]` `recovery_image_activated`, `[11:8]` `rx_pid`, `[19:12]` `rx_len`, `[27:20]` `ulpi_func_ctrl`, `[31:28]` `hl_state` |
+| `0x0C` | `CMD` | WO | `[2:0]` `op` (`1=BUS_RESET_HS`, `2=SETUP`, `3=OUT`, `4=IN`), `[9:3]` `dev_addr`, `[13:10]` `endp`, `[14]` `data_pid` (`0=DATA0`, `1=DATA1`), `[22:16]` `tx_len` |
+| `0x10` | `TIMEOUT` | RW | Per-transaction ULPI response timeout in `core_clk` cycles |
+| `0x14` | `DIAG` | RO | `[15:0]` `sof_count`, `[23:16]` `ulpi_reg_op_count`, `[31:24]` `last_ulpi_cmd` |
+| `0x40..0x7F` | `TX_BUF` | RW | 64-byte (`16 x u32`) host-to-device packet payload buffer |
+| `0x80..0xBF` | `RX_BUF` | RO | 64-byte (`16 x u32`) device-to-host packet payload buffer |
+
+#### Running Architecture B on VCK-190 (`caliptra-fpga`) ####
+
+A prebuilt segmented bitstream (`FPGA_VERSION = 0xa22b0001`, compatible with `ss_golden_segmented_routed.dcp` via `pr_verify`) is configured in [`bitstream_manifests/subsystem.toml`](bitstream_manifests/subsystem.toml) (and directly downloadable at `https://storage.googleapis.com/carl-caliptra-github-ci-bitstreams/usb_arch_b_runtime_a22b0001.pdi`, SHA-256 `ec97272525e0336e05a93bd28211bcd2a027e7e76d168672b204ac6028876e47`):
+
+```shell
+# 1. Program the Architecture B segmented PDI onto the VCK-190
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga bootstrap --target-host caliptra-fpga
+
+# 2. Build & sync FPGA firmware bundle and integration test archive
+CALIPTRA_HW_REV=latest cargo run --package caliptra-mcu-xtask \
+  --features=fpga_realtime,parallel-build -- fpga build --target-host caliptra-fpga
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga build-test --target-host caliptra-fpga \
+  --package-filter "package(caliptra-mcu-tests-integration)"
+
+# 3. Run High-Speed USB 2.0 enumeration (~0.17s) and full 3-stage OCP Recovery boot (~7.4s)
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga test --target-host caliptra-fpga --test-output \
+  --test-filter "package(caliptra-mcu-tests-integration) & test(test_fpga_usb_arch_b)"
+```
+
+Reference logs captured from Vivado 2024.2 and live VCK-190 (`caliptra-fpga`) hardware are committed under [`logs/`](logs/):
+- [`logs/vivado_build_and_pr_verify_summary.txt`](logs/vivado_build_and_pr_verify_summary.txt) — Synthesis/implementation runtime, `PR_VERIFY` compatibility, router overlap check, post-route timing summary, and resource utilization.
+- [`logs/fpga_usb_arch_b_enumeration.txt`](logs/fpga_usb_arch_b_enumeration.txt) — Live VCK-190 High-Speed USB 2.0 ULPI PHY init, Chirp handshake, `Auto-SOF`, and descriptor enumeration log.
+- [`logs/fpga_usb_arch_b_ocp_recovery_boot.txt`](logs/fpga_usb_arch_b_ocp_recovery_boot.txt) — Live VCK-190 3-stage signed OCP USB Recovery v1.1 streaming boot (`caliptra_fw` + `soc_manifest` + `mcu_runtime`) and warm-reset execution log.
+- [`logs/fpga_i3c_coexistence_rom_hooks.txt`](logs/fpga_i3c_coexistence_rom_hooks.txt) — Live VCK-190 XI3C streaming recovery + `ENTDAA` coexistence log on the same `runtime_a22b0001.pdi` bitstream.
+
+To rebuild `runtime_a22b0001.pdi` from RTL in Vivado 2024.2:
+
+```shell
+cd hw/latest/fpga
+vivado -mode batch -source fpga_configuration.tcl \
+  -tclargs BUILD=TRUE SEGMENTED=TRUE VERSION=a22b0001
+```
 
 ### Waveform Debug ###
 If built with DEBUG=TRUE common signals for debug will be connected to ILAs. In addition images may be built with additional debug signals. This is a general procedure for loading a probes file when consuming an image built by someone else. If the image was built locally, this is unnecessary because the probes file will be loaded automatically.

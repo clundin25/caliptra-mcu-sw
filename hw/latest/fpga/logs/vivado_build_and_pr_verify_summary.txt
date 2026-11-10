@@ -1,0 +1,343 @@
+================================================================================
+Caliptra 2.2 USB Architecture B — Vivado 2024.2 Segmented Bitstream Build Summary
+Part: xcvc1902-vsva2197-2MP-e-S (AMD Versal VCK-190)
+Artifact: runtime_a22b0001.pdi (SHA-256: ec97272525e0336e05a93bd28211bcd2a027e7e76d168672b204ac6028876e47)
+================================================================================
+
+--- 1. Build Wall-Clock Times (caliptra_build/build_time.txt) ---
+Built from a22b0001
+FPGA Synthesis      took 59.214866666666666 minutes
+FPGA Implementation took 155.5653 minutes
+FPGA Write HW Plat  took 14.488816666666667 minutes
+FPGA overall build  took 229.26898333333332 minutes
+
+--- 2. Segmented Bitstream PR_VERIFY Compatibility (vivado_arch_b.log) ---
+#   read_noc_solution -file $fpgaDir/saved_noc_solution.ncr
+#       pr_verify -initial $fpgaDir/ss_golden_segmented_routed.dcp -additional $outputDir/caliptra_fpga_project.runs/impl_1/caliptra_fpga_project_bd_wrapper_routed.dcp
+Command: pr_verify -initial ./ss_golden_segmented_routed.dcp -additional ./caliptra_build/caliptra_fpga_project.runs/impl_1/caliptra_fpga_project_bd_wrapper_routed.dcp
+INFO: [Vivado 12-3501] pr_verify ./ss_golden_segmented_routed.dcp ./caliptra_build/caliptra_fpga_project.runs/impl_1/caliptra_fpga_project_bd_wrapper_routed.dcp
+INFO: [Vivado 12-3253] PR_VERIFY: check points ./ss_golden_segmented_routed.dcp and ./caliptra_build/caliptra_fpga_project.runs/impl_1/caliptra_fpga_project_bd_wrapper_routed.dcp are compatible
+pr_verify: Time (s): cpu = 00:08:31 ; elapsed = 00:08:13 . Memory (MB): peak = 0.000 ; gain = 0.000 ; free physical = 641279 ; free virtual = 807800
+
+--- 3. Router Completion & Overlap Check (impl_1/runme.log) ---
+ Number of Nodes with overlaps = 5
+ Number of Nodes with overlaps = 3
+ Number of Nodes with overlaps = 1
+ Number of Nodes with overlaps = 1
+ Number of Nodes with overlaps = 0
+ Number of Nodes with overlaps = 139
+ Number of Nodes with overlaps = 24
+ Number of Nodes with overlaps = 4
+ Number of Nodes with overlaps = 1
+ Number of Nodes with overlaps = 0
+ Number of Nodes with overlaps = 84
+ Number of Nodes with overlaps = 4
+ Number of Nodes with overlaps = 0
+ Number of Nodes with overlaps = 0
+route_design completed successfully
+
+--- 4. Post-Route Design Timing Summary (route_report_timing_summary_0.rpt) ---
+| Design Timing Summary
+| ---------------------
+------------------------------------------------------------------------------------------------
+
+    WNS(ns)      TNS(ns)  TNS Failing Endpoints  TNS Total Endpoints      WHS(ns)      THS(ns)  THS Failing Endpoints  THS Total Endpoints     WPWS(ns)     TPWS(ns)  TPWS Failing Endpoints  TPWS Total Endpoints  
+    -------      -------  ---------------------  -------------------      -------      -------  ---------------------  -------------------     --------     --------  ----------------------  --------------------  
+     -8.120   -19092.342                   3347              1222607        0.003        0.000                      0              1222355        0.000        0.000                       0                421842  
+
+
+Timing constraints are not met.
+
+
+------------------------------------------------------------------------------------------------
+| Clock Summary
+
+--- 5. Post-Implementation Resource Utilization (caliptra_build/utilization.txt) ---
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.2 (lin64) Build 5239630 Fri Nov 08 22:34:34 MST 2024
+| Date         : Tue Nov 10 02:26:58 2026
+| Host         : clundin-eda-big running 64-bit Rocky Linux release 8.10 (Green Obsidian)
+| Command      : report_utilization -file ./caliptra_build/utilization.txt
+| Design       : caliptra_fpga_project_bd_wrapper
+| Device       : xcvc1902-vsva2197-2MP-e-S
+| Speed File   : -2MP
+| Design State : Routed
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++----------------------------+--------+-------+------------+-----------+-------+
+|          Site Type         |  Used  | Fixed | Prohibited | Available | Util% |
++----------------------------+--------+-------+------------+-----------+-------+
+| Registers                  | 403742 |     1 |          0 |   1799680 | 22.43 |
+|   Register as Flip Flop    | 402974 |     1 |          0 |   1799680 | 22.39 |
+|   Register as Latch        |    768 |     0 |          0 |   1799680 |  0.04 |
+| CLB LUTs                   | 680412 |     0 |          0 |    899840 | 75.61 |
+|   LUT as Logic             | 669285 |     0 |          0 |    899840 | 74.38 |
+|   LUT as Memory            |  11127 |     0 |          0 |    449920 |  2.47 |
+|     LUT as Distributed RAM |   9554 |     0 |            |           |       |
+|     LUT as Shift Register  |   1573 |     0 |            |           |       |
+|       Variable Length SRL  |   1569 |     0 |            |           |       |
+|       Fixed Length SRL     |      4 |     0 |            |           |       |
+| LOOKAHEAD8                 |   9784 |     0 |          0 |    112480 |  8.70 |
++----------------------------+--------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+2. CLB Distribution
+-------------------
+
++-----------------------------------------------+--------+-------+------------+-----------+-------+
+|                   Site Type                   |  Used  | Fixed | Prohibited | Available | Util% |
++-----------------------------------------------+--------+-------+------------+-----------+-------+
+| SLICE                                         | 111582 |     0 |          0 |    112480 | 99.20 |
+|   SLICEL                                      |  55840 |     0 |            |           |       |
+|   SLICEM                                      |  55742 |     0 |            |           |       |
+|      using Distributed RAM or Shift Registers |   1622 |     0 |            |           |       |
+| CLB LUTs                                      | 680412 |     0 |          0 |    899840 | 75.61 |
+|    using CASCADE                              |  75372 |     0 |            |           |       |
+|   LUT as Logic                                | 669285 |     0 |          0 |    899840 | 74.38 |
+|     single output                             | 436612 |       |            |           |       |
+|     dual output                               | 232673 |       |            |           |       |
+|   LUT as Memory                               |  11127 |     0 |          0 |    449920 |  2.47 |
+|     LUT as Distributed RAM                    |   9554 |     0 |            |           |       |
+|       single output                           |   2810 |       |            |           |       |
+|       dual output                             |   6744 |       |            |           |       |
+|     LUT as Shift Register                     |   1573 |     0 |            |           |       |
+|       single output                           |   1526 |       |            |           |       |
+|       dual output                             |     47 |       |            |           |       |
+| CLB Registers                                 | 403742 |     0 |          0 |   1799680 | 22.43 |
+|   Register driven from within the CLB         | 204517 |       |            |           |       |
+|   Register driven from outside the CLB        | 199225 |       |            |           |       |
+|     LUT in front of the register is unused    |  84259 |       |            |           |       |
+|     LUT in front of the register is used      | 114966 |       |            |           |       |
+| CLB Imux registers                            |      0 |     0 |            |           |       |
+|   Pipelining                                  |      0 |       |            |           |       |
+| Unique Control Sets                           |  12908 |       |          0 |    224960 |  5.74 |
++-----------------------------------------------+--------+-------+------------+-----------+-------+
+* * Note: Available Control Sets calculated as Slices * 2, Review the Control Sets Report for more information regarding control sets.
+
+
+3. BLOCKRAM
+-----------
+
++--------------------------+------+-------+------------+-----------+-------+
+|         Site Type        | Used | Fixed | Prohibited | Available | Util% |
++--------------------------+------+-------+------------+-----------+-------+
+| Block RAM Tile           |  229 |     0 |          0 |       967 | 23.68 |
+|   RAMB36E5               |  217 |     0 |          0 |       967 | 22.44 |
+|   RAMB18E5*              |   24 |     0 |          0 |      1934 |  1.24 |
+| Block RAM Imux registers |    0 |     0 |            |           |       |
+|   Pipelining             |    0 |       |            |           |       |
+| URAM                     |   48 |     0 |          0 |       463 | 10.37 |
+| URAM Imux registers      |    0 |     0 |            |           |       |
+|   Pipelining             |    0 |       |            |           |       |
++--------------------------+------+-------+------------+-----------+-------+
+* Note: Each RAMB18 is counted as 0.5 Block RAM tiles
+
+
+4. ARITHMETIC
+-------------
+
++--------------------+------+-------+------------+-----------+-------+
+|      Site Type     | Used | Fixed | Prohibited | Available | Util% |
++--------------------+------+-------+------------+-----------+-------+
+| DSP Slices         |  141 |     0 |          0 |      1968 |  7.16 |
+|   DSP58            |  141 |     0 |            |           |       |
+|   DSPCPLX          |    0 |     0 |            |           |       |
+|   DSPFP32          |    0 |     0 |            |           |       |
+|   DSP48E5          |    0 |     0 |            |           |       |
+| DSP Imux registers |    0 |     0 |            |           |       |
+|   Pipelining       |    0 |       |            |           |       |
++--------------------+------+-------+------------+-----------+-------+
+
+
+5. I/O
+------
+
++------------+------+-------+------------+-----------+-------+
+|  Site Type | Used | Fixed | Prohibited | Available | Util% |
++------------+------+-------+------------+-----------+-------+
+| Bonded IOB |  387 |   387 |          0 |       692 | 55.92 |
+|   XPIO IOB |  387 |   387 |          0 |       648 | 59.72 |
+|     INPUT  |    8 |       |            |           |       |
+|     OUTPUT |  115 |       |            |           |       |
+|     BIDIR  |  264 |       |            |           |       |
+|   HDIO IOB |    0 |     0 |          0 |        44 |  0.00 |
++------------+------+-------+------------+-----------+-------+
+* Note: Refer to report_io for information on MIO pins.
+
+
+6. CLOCK
+--------
+
++------------------------+------+-------+------------+-----------+-------+
+|        Site Type       | Used | Fixed | Prohibited | Available | Util% |
++------------------------+------+-------+------------+-----------+-------+
+| BUFGCE_DIV/MBUFGCE_DIV |    0 |     0 |          0 |        40 |  0.00 |
+| BUFG_PS/MBUFG_PS       |    2 |     0 |          0 |        12 | 16.67 |
+| BUFG_GT/MBUFG_GT       |    0 |     0 |          0 |       168 |  0.00 |
+| BUFGCE/MBUFGCE         |    0 |     0 |          0 |       296 |  0.00 |
+| BUFGCTRL/MBUFGCTRL*    |    0 |     0 |          0 |        80 |  0.00 |
+| BUFG_FABRIC            |    6 |     0 |          0 |       384 |  1.56 |
+| DPLL                   |    0 |     0 |          0 |        23 |  0.00 |
+| XPLL                   |    9 |     9 |          0 |        24 | 37.50 |
+| MMCM                   |    0 |     0 |          0 |        12 |  0.00 |
++------------------------+------+-------+------------+-----------+-------+
+* Note: Each used BUFGCTRL/MBUFGCTRL counts as two GLOBAL CLOCK BUFFERs. This table does not include global clocking resources, only buffer cell usage. See the Clock Utilization Report (report_clock_utilization) for detailed accounting of global clocking resource availability.
+
+
+7. NOC Interfaces
+-----------------
+
++--------------------+------+-------+------------+-----------+-------+
+|      Site Type     | Used | Fixed | Prohibited | Available | Util% |
++--------------------+------+-------+------------+-----------+-------+
+| NOC Master 512 bit |    0 |     0 |          0 |        28 |  0.00 |
+| NOC Slave 512 bit  |    0 |     0 |          0 |        28 |  0.00 |
+| NOC Master 128 bit |    6 |     0 |          0 |        26 | 23.08 |
+| NOC Slave 128 bit  |    0 |     0 |          0 |        22 |  0.00 |
++--------------------+------+-------+------------+-----------+-------+
+
+
+8. AI Engines
+-------------
+
++------------+------+-------+------------+-----------+-------+
+|  Site Type | Used | Fixed | Prohibited | Available | Util% |
++------------+------+-------+------------+-----------+-------+
+| AI Engines |    0 |     0 |          0 |       400 |  0.00 |
+| PL Master  |    0 |     0 |          0 |       234 |  0.00 |
+| PL Slave   |    0 |     0 |          0 |       312 |  0.00 |
+| NOC Master |    0 |     0 |          0 |        16 |  0.00 |
+| NOC Slave  |    0 |     0 |          0 |        16 |  0.00 |
++------------+------+-------+------------+-----------+-------+
+
+
+9. ADVANCED
+-----------
+
++--------------------+------+-------+------------+-----------+--------+
+|      Site Type     | Used | Fixed | Prohibited | Available |  Util% |
++--------------------+------+-------+------------+-----------+--------+
+| CPM_EXT            |    0 |     0 |          0 |         1 |   0.00 |
+| CPM_MAIN           |    0 |     0 |          0 |         1 |   0.00 |
+| DDRMC              |    3 |     3 |          0 |         4 |  75.00 |
+| DDRMC_RIU          |    3 |     3 |          0 |         4 |  75.00 |
+| GTYE5_QUAD         |    0 |     0 |          0 |        11 |   0.00 |
+| MRMAC              |    0 |     0 |          0 |         4 |   0.00 |
+| NPI_NIR            |    0 |     0 |          0 |         1 |   0.00 |
+| OBUFDS_GTE5        |    0 |     0 |          0 |        22 |   0.00 |
+| OBUFDS_GTE5_ADV    |    0 |     0 |          0 |        22 |   0.00 |
+| OBUFTDS_COMP       |    0 |     0 |          0 |       324 |   0.00 |
+| PCIE40E5           |    0 |     0 |          0 |         4 |   0.00 |
+| PS9                |    1 |     1 |          0 |         1 | 100.00 |
+| XPIPE_QUAD         |    0 |     0 |          0 |         4 |   0.00 |
+| BLI Registers      |    0 |     0 |          0 |     88264 |   0.00 |
+| BLI Imux Registers |    0 |     0 |            |           |        |
+|   Pipelining       |    0 |     0 |            |           |        |
+| ADVANCED Imux      |    0 |     0 |            |           |        |
++--------------------+------+-------+------------+-----------+--------+
+
+
+10. Primitives
+--------------
+
++--------------+--------+---------------------+
+|   Ref Name   |  Used  | Functional Category |
++--------------+--------+---------------------+
+| LUT6         | 328450 |                 CLB |
+| FDCE         | 284786 |            Register |
+| LUT5         | 142814 |                 CLB |
+| LUT4         | 130770 |                 CLB |
+| FDRE         | 104024 |            Register |
+| LUT3         |  83438 |                 CLB |
+| LUTCY2       |  76297 |                 CLB |
+| LUTCY1       |  76297 |                 CLB |
+| LUT2         |  61544 |                 CLB |
+| RAMD32       |  11994 |                 CLB |
+| LOOKAHEAD8   |   9784 |                 CLB |
+| FDPE         |   7660 |            Register |
+| FDSE         |   6504 |            Register |
+| RAMS64E5     |   2378 |                 CLB |
+| LUT1         |   2348 |                 CLB |
+| RAMS32       |   1686 |                 CLB |
+| SRL16E       |    864 |                 CLB |
+| LDCE         |    768 |            Register |
+| SRLC32E      |    756 |                 CLB |
+| RAMD64E5     |    240 |                 CLB |
+| RAMB36E5_INT |    217 |            BLOCKRAM |
+| IOBUF        |    216 |                 I/O |
+| DSP58        |    141 |          Arithmetic |
+| OBUF         |     97 |                 I/O |
+| XPHY         |     71 |                 I/O |
+| XPIO_VREF    |     48 |                 I/O |
+| URAM288E5    |     48 |            BLOCKRAM |
+| RAMB18E5_INT |     24 |            BLOCKRAM |
+| IOBUFDS_COMP |     16 |                 I/O |
+| XPLL         |      9 |               Clock |
+| OBUFDS       |      9 |                 I/O |
+| IOBUFDS      |      8 |                 I/O |
+| NOC_NMU128   |      6 |            Advanced |
+| BUFG_FABRIC  |      6 |               Clock |
+| IBUFDS       |      3 |                 I/O |
+| DDRMC_RIU    |      3 |            Advanced |
+| DDRMC        |      3 |            Advanced |
+| IBUF         |      2 |                 I/O |
+| BUFG_PS      |      2 |               Clock |
+| PS9          |      1 |            Advanced |
++--------------+--------+---------------------+
+
+
+11. Black Boxes
+---------------
+
++----------+------+
+| Ref Name | Used |
++----------+------+
+
+
+12. Instantiated Netlists
+-------------------------
+
++-------------------------------------------------------+------+
+|                        Ref Name                       | Used |
++-------------------------------------------------------+------+
+| caliptra_fpga_project_bd_xpm_cdc_gen_0_0              |    1 |
+| caliptra_fpga_project_bd_xilinx_i3c_0_0               |    1 |
+| caliptra_fpga_project_bd_staging_sram_emb_mem_gen_0_0 |    1 |
+| caliptra_fpga_project_bd_staging_sram_bram_ctrl_0_0   |    1 |
+| caliptra_fpga_project_bd_proc_sys_reset_0_0           |    1 |
+| caliptra_fpga_project_bd_otp_ram_bram_ctrl_0_0        |    1 |
+| caliptra_fpga_project_bd_mcu_rom_backdoor_bram_0_0    |    1 |
+| caliptra_fpga_project_bd_cptra_rom_backdoor_bram_0_0  |    1 |
+| caliptra_fpga_project_bd_caliptra_package_top_0_0     |    1 |
+| caliptra_fpga_project_bd_axi_noc_mc_0                 |    1 |
+| caliptra_fpga_project_bd_axi_noc_0_0                  |    1 |
+| caliptra_fpga_project_bd_axi_interconnect_0_0         |    1 |
+| caliptra_fpga_project_bd_axi_cdma_0_0                 |    1 |
+| bd_c77d_MC0_ddrc_0_phy                                |    1 |
+| bd_65f9_MC1_ddrc_0_phy                                |    1 |
+| bd_65f9_MC0_ddrc_0_phy                                |    1 |
++-------------------------------------------------------+------+
+
+

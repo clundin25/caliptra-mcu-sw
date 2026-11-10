@@ -1,0 +1,743 @@
+MCU hardware revision: latest (hw/latest/caliptra-ss)
+Checking for build image updates
+Running test suite on FPGA
+[FPGA] Running command: lsmod
+[FPGA] Running command: (sudo rm /tmp/junit.xml || true)
+Connection to 2a00:79e0:3e01:6601:d8:f4ff:fe9f:6a64 closed.
+[FPGA] Running command: cat /dev/shm/fpga-config
+[FPGA] Running command: (cd caliptra-mcu-sw && sudo CALIPTRA_HW_REV=latest CPTRA_FIRMWARE_BUNDLE=$HOME/all-fw.zip cargo-nextest nextest run --workspace-remap=. --archive-file $HOME/caliptra-test-binaries.tar.zst --no-capture --no-fail-fast --status-level=all --profile=nightly -E "package(caliptra-mcu-tests-integration) & test(test_rom_hooks_fire_in_order)" )
+  Extracting 1 binary, 1 build script output directory, and 10 linked paths to /tmp/nextest-archive-LelbL5
+   Extracted 475 files to /tmp/nextest-archive-LelbL5 in 1.99s
+warning: in config file .config/nextest.toml, ignoring unknown configuration keys: 
+  - profile.emulator.store-success-output
+  - profile.nightly-ci-spdm.inherits
+  - profile.nightly-ci.inherits
+  - profile.nightly-release.inherits
+  - profile.pr-emulator.inherits
+────────────
+ Nextest run ID 2db9cbac-dc63-4216-9fa4-d10f0b8db9a2 with nextest profile: nightly
+    Starting 1 test across 1 binary (343 tests skipped)
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_bare_metal_jtag::test::test_bare_metal_jtag_sideload
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_jtag_taps::test::test_lcc_tap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_lc_transitions::test::test_lc_walkthrough
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_lc_transitions::test::test_prod_rma_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_lc_transitions::test::test_raw_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_manuf_debug_unlock::test::test_manuf_debug_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_prod_debug_unlock::test::test_prod_debug_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_provisioning::test::test_provisioning_manuf_fw
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_provisioning::test::test_provisioning_test_unlocked_fw
+        SKIP [         ] (───────) caliptra-mcu-tests-integration jtag::test_uds::test::test_uds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_lwip_dhcp_tftp::test::test_lwip_dhcp_tftp_example
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_lwip_dhcp_tftp::test::test_lwip_server_lifecycle
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_lwip_dhcpv6_tftp::test::test_lwip_dhcpv6_tftp_example
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_flash_boot_falls_back_to_user_selected_network
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_dhcp_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_recovers_from_dhcp_and_tftp_packet_faults
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_rejects_corrupted_runtime_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_rejects_malformed_toc
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_rejects_unbounded_runtime_size
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_tftp_image_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot::test::test_network_boot_tftp_toc_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot_ipv6::test::test_network_boot_ipv6
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot_ipv6::test::test_network_boot_ipv6_dhcp_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot_ipv6::test::test_network_boot_ipv6_recovers_from_dhcp_and_tftp_packet_faults
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot_ipv6::test::test_network_boot_ipv6_tftp_image_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_boot_ipv6::test::test_network_boot_ipv6_tftp_toc_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_cmd_write_read
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_dlen_write_read
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_full_flow
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_lock_acquire
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_mcu_to_network_comm
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_sram_write_read
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_mbox::test::test_network_mbox_target_user_write_read
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_cpu_rom_start
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_rom_dhcp_with_server
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_rom_lwip_dhcp_with_server
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_rom_lwip_dhcpv6_with_server
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_rom_lwip_tftp_download
+        SKIP [         ] (───────) caliptra-mcu-tests-integration network::test_network_rom::test::test_network_rom_lwip_tftpv6_download
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_bootfsm_timeout::test::test_bootfsm_timeout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_ecc_errors::test_rom_dccm_ecc_unc
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_ecc_errors::test_rom_iccm_ecc_unc
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_hitless_update::test_hitless_update_flow
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_dot_error_then_continue
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_dot_override_full_flow
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_dot_override_without_challenge
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_dot_recovery_invalid_payload
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_dot_status
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_error_mid_packet_then_recover
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_ping
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_i3c_services::test::test_i3c_services_unknown_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_dev_to_prod
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_dev_to_rma
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_dev_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_invalid_transition_error
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_prod_end_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_prod_to_prod_end
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_prod_to_rma
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_prod_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_raw_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_raw_to_test_unlocked0
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_rma_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_scrap_is_terminal
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_test_locked0_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_test_locked0_to_test_unlocked1
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_test_unlocked0_to_scrap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_test_unlocked0_to_test_locked0
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_test_unlocked7_to_dev
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_lc_ctrl::test::test_lc_wrong_token_error
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_otp_blank_check::test::test_otp_blank_check
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_otp_scramble_check::test::test_otp_scramble_check
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_sw_digest_lock::test::test_sw_digest_lock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_all_invalid_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_all_revoked_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_key_rotation_strap
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_last_slot_selection
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_lms_threshold
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_middle_slot_selection
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_select_first_functional
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_skip_revoked_ecc
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_skip_revoked_pqc
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_vendor_pk_lock_applied
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_vendor_key_policy::test::test_vendor_pk_lock_not_applied
+        SKIP [         ] (───────) caliptra-mcu-tests-integration rom::test_warm_reset::test_warm_reset_success
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_command_authorized_runtime_installs_owner_key
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_fe_prog_mailbox_validation_and_repetition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_provision_owner_pk_hash_mailbox
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_raw_fuse_read_write_and_lock_mailbox
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_revoke_vendor_pub_key_mailbox_validation_and_repetition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_fuse_mailbox::test_vendor_pk_hash_provision_and_revoke_mailbox
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_increase_caliptra_svn::test_increase_caliptra_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_increase_caliptra_svn::test_increase_caliptra_svn_max
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_increase_caliptra_svn::test_increase_soc_manifest_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_cert_chain_and_all_role_attestation_cmds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_cert_chain_and_attestation_vendor_certs_oob
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_core_log_and_debug_request_failures
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_device_capabilities_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_dpe_signer_context_cert_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_export_attested_csr_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_fe_prog_authorized_req
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_fe_status_cmd_does_not_require_authorization
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_feature_gated_command_is_rejected_when_disabled
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_fips_periodic_complete_responses_and_repeated_operations
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_fips_self_test_start_complete_response
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_firmware_version_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_get_and_clear_log_cmds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_get_attestation_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_get_auth_cmd_challenge_invalid_fields
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_get_auth_cmd_challenge_successive_generation
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_hek_status_cmd_does_not_require_authorization
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_invalid_mailbox_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_invalid_mailbox_cmd_with_valid_checksum
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_legacy_direct_authorized_command_is_rejected
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mailbox_transport_rejects_request_shorter_than_header
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mcu_mbox_ecdh_commands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mcu_mbox_ecdsa384_sig_verify
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mcu_mbox_ecdsa_cmk_commands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mcu_mbox_lms_sig_verify
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_mcu_mbox_mldsa_cmk_commands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_prod_debug_unlock_complete_responses
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_rejects_missing_dot_subcommands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_rejects_unknown_dot_subcommands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_succesful_response_checksum
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_valid_mailbox_cmd_with_invalid_checksum
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_mcu_mailbox::test_vendor_pk_hash_status_cmd_does_not_require_authorization
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_ocp_lock::test_get_ocp_lock_endorsement_cert_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_ocp_lock::test_get_ocp_lock_endorsement_cert_mldsa_cmd
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_ocp_lock::test_otp_perma_hek_mailbox
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_revoke_vendor_pub_key::test_revoke_vendor_pub_key0_ecdsa
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_revoke_vendor_pub_key::test_revoke_vendor_pub_key0_lms
+        SKIP [         ] (───────) caliptra-mcu-tests-integration runtime::test_revoke_vendor_pub_key::test_rotate_vendor_pk_hash
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::runtime_seeded_flash_image_preserves_existing_partition_contents
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::runtime_seeded_flash_image_wraps_unpartitioned_image_under_active_partition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_active_mode_recovery_with_caliptra
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_caliptra_certs
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_caliptra_crypto
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_caliptra_mailbox
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_dma
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_doe_discovery
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_doe_spdm_responder_conformance
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_doe_spdm_tdisp_ide_validator
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_doe_transport_loopback
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_doe_user_loopback
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_external_otp
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_ctrl_erase_page
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_ctrl_init
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_ctrl_read_write_page
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_storage_erase
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_storage_read_write
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_flash_usermode
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_get_caliptra_idev_csr
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_get_device_state
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_log_flash_circular
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_log_flash_linear
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mbox_sram
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mci
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mctp_ctrl_cmds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mctp_user_loopback
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mcu_mbox_driver
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mcu_mbox_soc_requester_loopback
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mcu_rom_flash_access
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mcu_svn_gt_fuse
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_mcu_svn_lt_fuse
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_ocp_lock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_pldm_discovery
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_pldm_fw_update
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test::test_warm_reset
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_active_i3c::test::test_boot_with_i3c1_active
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_runtime_svn_burn::test::test_header_burns_caliptra_runtime_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_runtime_svn_burn::test::test_header_burns_soc_manifest_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_runtime_svn_burn::test::test_header_caliptra_runtime_cross_check_rejected
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_mcu_mailbox_validator::test::test_caliptra_util_host_validator
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_authorization
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_commands
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_dot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_fuse_lock_partition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_increase_min_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_ocp_lock_rotate_hek
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_ocp_lock_set_perma_hek
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_program_field_entropy
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_provision_owner_pk_hash
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_provision_vendor_pk_hash
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_revoke_vendor_pk_hash
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_caliptra_util_host_spdm_vdm_validator::test::test_caliptra_util_host_spdm_vdm_validator_revoke_vendor_pub_key
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_defmt_logging_vdm::test::test_defmt_logging_vdm
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_blob_corrupt
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_blob_valid
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_corrupt_blob_locked_state_no_recovery_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_empty_blob
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_empty_blob_dot_disabled
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_empty_blob_dot_enabled_even_state_skips
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_empty_blob_locked_state_no_recovery_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_force_fuse_owner_bypasses_blob
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_force_fuse_owner_unprovisioned_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_fuse_array_counting
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_fuse_burn_and_warm_reset
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_locked_state_boots_with_owner_cak
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_locked_state_wrong_cak_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_override_challenge_success
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_override_invalid_signatures_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_override_uses_owner_pk_hash_fuse_layout
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_override_wrong_pk_hash_fails
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_recovery_backup_blob_invalid_hmac
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_recovery_backup_blob_success
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_recovery_reset_flow_reports_device_status
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_recovery_reset_flow_restores_backup_and_continues_boot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_unlocked_state_cak_only
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_unlocked_state_custom_owner_keys
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_dot_unlocked_state_valid_blob
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_bad_version
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_disable
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_hitless_lock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_lock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_lock_idempotent
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_no_magic_skipped
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_rotate
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_rotate_idempotent
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_runtime_boots
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_unknown_command
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_unlock_idempotent
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_fw_manifest_dot_unlock_second_boot_succeeds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_disable_commits_transition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_enable_commits_initialization_gate
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_enable_rejects_preburned_fuse_state
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_get_backup_blob
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_get_backup_blob_rejects_even_state
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_lock_commits_transition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_override
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_override_challenge
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_recovery
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_rejects_invalid_command_states
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_rejects_malformed_family_payloads
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_rotate_commits_transition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_status
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dot::test::test_runtime_dot_unlock_challenge
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_dpe_handle_store::test::test_dpe_handle_store
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_exception_handler::test::test_exception_handler
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_external_otp::test::test_external_otp
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_fips_zeroization::test::test_fips_zeroization_cold_boot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_activate_fpga
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_benchmark_64k
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_invalid_caliptra_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_invalid_manifest
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_invalid_mcu_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_invalid_soc_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_missing_caliptra_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_reject
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_rejects_truncated_download
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_flash_successful
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_rejects_v1_with_v3_rom
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_rejects_v2_with_v3_rom
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_firmware_update_streaming_fpga
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_firmware_update::test::test_repackage_flash_image_to_v2_preserves_payloads
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_fpga_flash_ctrl::test::test_imaginary_flash_controller
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_fpga_usb_arch_b::test::test_fpga_usb_arch_b_enumeration
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_fpga_usb_arch_b::test::test_fpga_usb_arch_b_ocp_recovery_boot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_handoff::test::test_handoff_integrity
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_available_from_perma_bit
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_available_from_report
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_digest_mismatch
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_perma_bit
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_slot_selection
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_slot_selection_for_stable_owner_key
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_hek::test::test_hek_unavailable
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_i3c_constant_writes::test::test_i3c_constant_writes
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_i3c_dcr::test::test_rom_programs_main_i3c_target_mctp_dcr
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_i3c_simple::test::test_i3c_simple
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_log_flash_usermode::test::test_log_flash_usermode
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_capsule_loopback::test::test_mctp_capsule_loopback
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_capsule_loopback::test::test_mctp_capsule_loopback_after_hitless_update_reset
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_capsule_loopback::test::test_mctp_capsule_loopback_after_warm_reset
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation_hitless
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation_hitless_mixed
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation_hitless_tcb
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation_mixed
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation::test::test_mctp_spdm_attestation_tcb
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_attestation_pcr_quote::test::test_mctp_spdm_attestation_pcr_quote
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_spdm_responder_conformance::test::test_mctp_spdm_responder_conformance
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_vdm_cmds::test::test_mctp_vdm_cmds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_vdm_cmds::test::test_mctp_vdm_production_backend
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mctp_vdm_validator::test::test_caliptra_util_host_mctp_vdm_validator
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_aes_command_validation
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_cmds
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_fips_periodic
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_fips_self_test
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_prod_debug_unlock
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_mcu_mbox::test::test_mcu_mbox_usermode
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_ocp_dev_identity_provision_tool::test::test_mctp_spdm_dip_export_csr_with_ocp_provision_tool
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_ocp_dev_identity_provision_tool::test::test_mctp_spdm_set_certificate_with_ocp_provision_tool
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_owner_stable_key::test::test_stable_owner_key_derivation
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_pldm_fw_update::test::test_fw_update_e2e
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_raw_lifecycle_boot::test::test_raw_lifecycle_boot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_does_not_use_invalid_rollback_partition
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_invalid_image_id
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_invalid_load_address
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_one_component_id_for_all
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_partition_table_invalid_checksum
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_rolls_back_from_partition_a_to_b
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_rolls_back_from_partition_b_to_a
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_secondary_flash
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_successful
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_flash_soc_boot_unauthorized_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_measurement_api_initial_load_smoke
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_boot_flash_write_back
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_corrupted_pldm_fw_package
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_incorrect_pldm_component_id
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_incorrect_pldm_descriptor
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_invalid_image_id
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_invalid_load_address
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_lower_version_pldm_fw_package
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_manifest_good_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_manifest_svn_gt_max_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_manifest_svn_lt_fuse
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_one_component_id_for_all
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_successful
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_successful_non_identical
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_streaming_soc_boot_unauthorized_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_soc_boot::test::test_successful_boot_hw_model
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_at_fuse_boundary_accepted
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_burn_min_svn
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_burns_per_component_slot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_invalid_header
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_magic_absent_skipped
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_many_to_one_slot
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_no_burn_before_fatal
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_per_component_rolled_back_rejected
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_rolled_back_rejected
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_unmapped_component_id_skipped
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_svn_manifest::test::test_svn_manifest_valid_skipped
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_sw_pcr_store::test::test_sw_pcr_store
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_timer_alarm::test::test_get_alarm_expired_fpga
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_awaiting_image
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_invalid_cms_recovers
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_load_image_fifo
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_load_image_indirect
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_malformed_indirect_ctrl_recovers
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_prot_cap_and_status
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_unsupported_command_sets_error
+        SKIP [         ] (───────) caliptra-mcu-tests-integration test_usb_ocp_recovery::test::test_usb_ocp_recovery_write_to_readonly_recovers
+       START (1/1) caliptra-mcu-tests-integration rom::test_rom_hooks::test::test_rom_hooks_fire_in_order
+
+running 1 test
+ModelFpgaRealtime::new_unbooted
+Starting base model
+AXI reset
+Writing Caliptra ROM
+Writing MCU ROM
+new_unbooted
+Setting input wires 0 0
+Set itrng divider
+Set deobf key
+Putting subsystem into reset
+Provisioning lifecycle partition (State: test_unlocked0).
+Provisioning SECRET_LC_TRANSITION partition.
+Provisioning SW_TEST_UNLOCK partition.
+Provisioning SW_MANUF partition.
+Provisioning UDS seed in FPGA test fuse slots.
+Setting UDS seed to [0x03, 0x02, 0x01, 0x00, 0x07, 0x06, 0x05, 0x04, 0x0b, 0x0a, 0x09, 0x08, 0x0f, 0x0e, 0x0d, 0x0c, 0x13, 0x12, 0x11, 0x10, 0x17, 0x16, 0x15, 0x14, 0x1b, 0x1a, 0x19, 0x18, 0x1f, 0x1e, 0x1d, 0x1c, 0x23, 0x22, 0x21, 0x20, 0x27, 0x26, 0x25, 0x24, 0x2b, 0x2a, 0x29, 0x28, 0x2f, 0x2e, 0x2d, 0x2c, 0x33, 0x32, 0x31, 0x30, 0x37, 0x36, 0x35, 0x34, 0x3b, 0x3a, 0x39, 0x38, 0x3f, 0x3e, 0x3d, 0x3c]
+Provisioning field entropy in FPGA test fuse slot.
+Setting field entropy to [0x83, 0x82, 0x81, 0x80, 0x87, 0x86, 0x85, 0x84, 0x8b, 0x8a, 0x89, 0x88, 0x8f, 0x8e, 0x8d, 0x8c, 0x93, 0x92, 0x91, 0x90, 0x97, 0x96, 0x95, 0x94, 0x9b, 0x9a, 0x99, 0x98, 0x9f, 0x9e, 0x9d, 0x9c]
+Setting vendor public key hash to [0x77, 0xa8, 0x7c, 0xb1, 0xcc, 0x57, 0x66, 0x66, 0x92, 0xe6, 0x00, 0xd1, 0xb6, 0x06, 0x72, 0x6c, 0xb6, 0x5c, 0x99, 0x0c, 0xc9, 0xc6, 0x92, 0x89, 0x72, 0xce, 0xef, 0xba, 0x41, 0x54, 0xf0, 0x8a, 0x41, 0xff, 0xe1, 0xde, 0x87, 0xc1, 0xdf, 0x5a, 0xb4, 0xed, 0xe4, 0xe1, 0x09, 0xd9, 0xb2, 0xd3]
+Setting vendor public key pqc type to LMS
+Setting owner public key hash to [0x00; 48]
+Setting owner revocations ecc=0x0 lms=0x0 mldsa=0x0
+Setting runtime FW SVN to [0x00; 16]
+Setting SoC manifest SVN to [0x00; 16]
+Provisioning CPTRA_SS_LOCK_HEK_PROD_0 partition.
+Burning fuse for SOC MAX SVN 128
+Clearing fifo
+Clearing Caliptra logs
+Clearing MCU logs
+Clearing output and exit status
+AXI user written 1
+Writing MCU reset vector
+Taking subsystem out of reset
+Using hardware-model ModelFpgaRealtime
+InitParamsSummary {
+    rom_sha384: "b2bf9facf620e9969e04d753d16c93529167be059a3f198b074fe52e811a3606ea10a6188f24f5c8f50c2fb071d09a6e",
+    obf_key: [0xa0a1a2a3, 0xb0b1b2b3, 0xc0c1c2c3, 0xd0d1d2d3, 0xe0e1e2e3, 0xf0f1f2f3, 0xa4a5a6a7, 0xb4b5b6b7],
+}
+Setting: MCI generic input wires: [00000000, c0000000]
+Loading firmware for I3C streaming boot
+Setting recovery images to BMC
+     16,878 UART: FPGA MCU ROM
+     19,624 UART: [mcu-rom] Starting FPGA MCU ROM
+     25,176 UART: [mcu-rom] Hello from ROM
+     29,232 UART: [mcu-rom] Device lifecycle: Unprovisioned
+     35,812 UART: [mcu-rom] MCI generic input wires[0]: 00000000
+     43,172 UART: [mcu-rom] MCI generic input wires[1]: C0000000
+     50,495 UART: [mcu-rom] MCI RESET_REASON: 0x00000000
+     56,609 UART: [mcu-rom] Cold boot detected
+     61,225 UART: [mcu-rom-hook] pre_cold_boot
+     65,820 UART: [mcu-rom] Starting cold boot flow at time 16372
+     73,272 UART: [mcu-rom] Active I3C core for recovery: 0
+     79,807 UART: [mcu-rom] Caliptra recovery interface: I3c
+     86,513 UART: [mcu-rom] Setting Caliptra boot go
+     92,019 UART: [mcu-rom-hook] pre_caliptra_boot
+     97,615 UART: [mcu-lcc] Initializing Lifecycle controller...
+    104,979 UART: [mcu-lcc] Lifecycle state: 00000001 (count 1)
+    112,169 UART: Lifecycle controller initialization done
+    118,575 UART: [mcu-rom-otp] Initializing OTP controller...
+    125,589 UART: [mcu-rom-otp] Setting check timeout to 1048576
+    132,903 UART: [mcu-rom-otp] Enabling consistency check period
+    140,376 UART: [mcu-rom-otp] Enabling integrity check period
+    147,535 UART: [mcu-rom-otp] Disabling check modifications
+    154,390 UART: [mcu-rom-otp] Done init
+    158,227 UART: [mcu-rom] OTP initialized
+Done starting MCU
+I3C controller initializing
+XI3C HW version = 1000100
+XI3C: enabling IBI
+Control register after enabling IBI: 8
+XI3C: Enable set to 9
+XI3C: Broadcast CCC DISEC
+XI3C: Acknowledge received
+XI3C: Broadcast CCC ENEC
+XI3C: Acknowledge received
+XI3C: Broadcast CCC RSTDAA
+XI3C: Acknowledge received
+XI3C: Broadcast CCC ENTDAA
+XI3C: Acknowledged
+XI3C: Controller: Assigning dynamic address 0x8
+XI3C: cur_device_count = 0
+XI3C: Controller received BCR: 36
+XI3C: Controller received DCR: cc
+XI3C: Updating BCR (index 0) for device 3608
+I3C controller finished initializing
+Starting recovery flow (BMC)
+    162,360 UART: [mcu-rom] Configurating Caliptra watchdog timers for streaming boot: 800000000 800000000
+    193,519 UART: [mcu-rom] Initializing I3C
+    197,874 UART: [mcu-rom-i3c] HCI version: 120
+    202,773 UART: [mcu-rom-i3c] Set TTI RESET_CONTROL: 0000003F
+    209,927 UART: [mcu-rom-i3c] Initialize timing registers
+    216,490 UART: [mcu-rom-i3c] Timing registers t_r: 0, t_f: 0, t_hd_dat: 0, t_su_dat: 0, t_high: 0, t_low: 0, t_hd_sta: 0, t_su_sta: 0, t_su_sto: 0, t_free: 200
+    238,842 UART: [mcu-rom-i3c] Setup HCI queue thresholds
+    245,252 UART: [mcu-rom-i3c] Setting main target DCR to cc
+    252,113 UART: [mcu-rom-i3c] Enable the target transaction interface
+    260,477 UART: [mcu-rom-i3c] STBY_CR_CONTROL: 8000d010
+    266,726 UART: [mcu-rom-i3c] STBY_CR_CAPABILITIES: 7000
+    273,127 UART: [mcu-rom-i3c] Setting static address to 3a
+    279,829 UART: [mcu-rom-i3c] Setting virtual device static address to 3b
+    288,804 UART: [mcu-rom-i3c] Set TTI queue thresholds
+    294,898 UART: [mcu-rom-i3c] TTI queue thresholds: 01000101
+    301,906 UART: [mcu-rom-i3c] TTI data buffer thresholds ctrl: 01010101
+    310,729 UART: [mcu-rom-i3c] Reset indirect fifo ctrl
+    316,827 UART: [mcu-rom-i3c] Enable PHY to the bus
+    322,472 UART: [mcu-rom] Waiting for Caliptra to be ready for fuses: true
+    331,602 UART: [mcu-rom] Writing fuses to Caliptra
+    337,245 UART: [mcu-rom] Setting Caliptra mailbox user 0 to 00000001
+Finished booting
+    345,617 UART: [mcu-rom] Locking Caliptra mailbox user 0
+    352,732 UART: [mcu-rom] Setting Caliptra mailbox user 1 to 00000002
+    361,179 UART: [mcu-rom] Locking Caliptra mailbox user 1
+    367,740 UART: [mcu-rom] Setting fuse user
+    372,175 UART: [mcu-rom] Locking fuse user
+    376,606 UART: [mcu-rom] Setting TRNG user
+    381,037 UART: [mcu-rom] Locking TRNG user
+    385,609 UART: [mcu-rom] Setting DMA user to 00000001
+    391,708 UART: [mcu-rom] Populating fuses
+    395,992 UART: [mcu-rom-hook] pre_populate_fuses_to_caliptra
+    403,156 UART: [mcu-fuse-write] Setting UDS/FE base address to 48
+    411,064 UART: [mcu-fuse-write] Setting UDS/FE DAI idle bit offset to 30, OTP status reg offset to 16, and direct access cmd reg offset to 128
+    430,628 UART: [mcu-fuse-write] Selected vendor PK slot 0
+    437,329 UART: [mcu-fuse-write] Setting vendor PQC type to 3
+    444,487 UART: [mcu-fuse-write] Setting prod debug unlock PK hash bank offset to 480, count 8
+    456,751 UART: [mcu-rom] Writing handoff table (size 260) to DCCM at 0x50003c00
+    466,789 UART: [mcu-rom] Configuring MCU mailbox AXI users
+    473,643 UART: [mcu-rom] Setting MCI mailbox 0 user 0 to 00000001
+    481,553 UART: [mcu-rom] Setting MCI mailbox 0 user 1 to 00000002
+    489,463 UART: [mcu-rom] Setting MCI mailbox 1 user 0 to 00000001
+    497,373 UART: [mcu-rom] Setting MCI mailbox 1 user 1 to 00000002
+    505,766 UART: [mcu-rom] Setting SS_CONFIG_DONE_STICKY to lock configuration
+    515,343 UART: [mcu-rom] Setting SS_CONFIG_DONE
+    520,532 UART: [mcu-rom] Verifying production debug unlock PK hashes
+    529,088 UART: [mcu-rom] Prod debug unlock PK hash verification passed
+    537,779 UART: [mcu-rom] Verifying MCU mailbox AXI users
+    544,325 UART: [mcu-rom] MCU mailbox AXI user verification passed
+    552,238 UART: [mcu-rom] Setting Caliptra fuse write done
+    558,940 UART: [mcu-rom-hook] post_populate_fuses_to_caliptra
+    566,243 UART: [mcu-rom] Waiting for Caliptra Core boot FSM to be DONE
+    574,924 UART: [mcu-rom] Waiting for Caliptra to be ready for mbox
+    660,343 UART: 
+    660,746 UART: Running Caliptra ROM ...
+    664,736 UART: 
+  1,892,785 UART: [state] WD Timer not started. Device not locked for debugging
+  1,902,452 UART: [kat] AES-GCM
+  1,919,728 UART: [kat] KDF-CMAC
+  1,949,010 UART: [state] LifecycleState = Unprovisioned
+  1,955,133 UART: [state] DebugLocked = No
+  1,959,405 UART: [state] WD Timer not started. Device not locked for debugging
+  1,969,004 UART: [kat] SHA2-256
+  2,281,705 UART: ROM Digest: 274CA3256635D9BFA08F2965E059F7310EA193AEF6038989C0B1562AFF13C606
+  2,293,609 UART: [kat] ++
+  2,295,168 UART: [kat] sha1
+  2,300,561 UART: [kat] SHA2-256
+  2,303,505 UART: [kat] SHA2-384
+  2,310,396 UART: [kat] SHA2-512
+  2,318,252 UART: [kat] SHA2-512-ACC
+  2,321,386 UART: [kat] SHAKE-256
+  2,325,343 UART: [kat] CSRNG
+  2,337,931 UART: [kat] ECC-384
+  4,791,385 UART: [kat] ECDH
+  5,513,971 UART: [kat] HMAC-384Kdf
+  5,527,947 UART: [kat] HMAC-512Kdf
+  5,541,972 UART: [kat] HKDF-384
+  5,573,036 UART: [kat] HKDF-512
+  5,608,463 UART: [kat] AES-GCM
+  5,631,974 UART: [kat] KDF-CMAC
+  5,646,358 UART: [kat] LMS
+  6,145,233 UART: [kat] MLDSA87
+  6,929,937 UART: [kat] --
+  6,934,283 UART: [cold-reset] ++
+  6,946,593 UART: [idev] ++
+  6,948,331 UART: [idev] CDI.KEYID = 6
+  6,951,722 UART: [idev] ECC SUBJECT.KEYID = 7, MLDSA SUBJECT.KEYID = 8
+  6,960,101 UART: [idev] UDS.KEYID = 0
+  6,963,567 UART: [mcu-rom-hook] post_caliptra_boot
+  6,968,919 UART: [mcu-rom] Caliptra is ready for mailbox commands
+  6,977,107 UART: [idev] Erasing UDS.KEYID = 0
+  9,853,637 UART: [idev] Sha1 KeyId Algorithm
+  9,890,207 UART: [idev] Sha1 KeyId Algorithm
+ 10,225,187 UART: [idev] --
+ 10,248,046 UART: [ldev] ++
+ 10,249,790 UART: [ldev] CDI.KEYID = 6
+ 10,253,182 UART: [ldev] ECC SUBJECT.KEYID = 5, MLDSA SUBJECT.KEYID = 4
+ 10,261,561 UART: [ldev] ECC AUTHORITY.KEYID = 7, MLDSA AUTHORITY.KEYID = 8
+ 10,270,673 UART: [ldev] FE.KEYID = 1
+ 10,273,914 UART: [ldev] Deriving DOT_STABLE_IDEV.KEYID = 0
+ 10,283,993 UART: [ldev] Erasing FE.KEYID = 1
+ 10,289,332 UART: [ldev] Deriving DOT_STABLE_LDEV.KEYID = 1
+ 13,219,701 UART: [ldev] Signing Cert ECC AUTHORITY.KEYID = 7
+ 14,996,556 UART: [ldev] Signing Cert MLDSA AUTHORITY.KEYID = 8
+ 15,237,975 UART: [ldev] --
+ 15,276,631 UART: [fwproc] Wait for Commands...
+ 15,282,277 UART: [fwproc] Recv command 0x434d5247
+ 15,326,252 UART: [fwproc] Recv command 0x434d5247
+ 15,368,911 UART: [fwproc] Recv command 0x434d5247
+ 15,422,972 UART: [mcu-rom] Sending RI_DOWNLOAD_FIRMWARE command
+ 15,430,421 UART: [mcu-rom-hook] pre_load_firmware
+ 15,436,000 UART: [fwproc] Recv command 0x52494644
+ 15,441,219 UART: [fwproc] Completing RI_DOWNLOAD_FIRMWARE command
+ 15,448,840 UART: [fwproc] Downloading image from RRI to MCU SRAM
+ 15,456,308 UART: [dma-recovery] Requesting recovery image 0
+ 15,463,023 UART: [dma-recovery] Set device status 3
+ 15,468,597 UART: [mcu-rom] Waiting for MCU firmware to be ready
+[emulator bmc recovery] Recovery state transition: ReadProtCap -> ReadDeviceStatus
+[emulator bmc recovery] Recovery state transition: ReadDeviceStatus -> WaitForRecoveryStatus
+[emulator bmc recovery] Sending recovery image 0
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryStatus -> WaitForRecoveryPending
+Recovery image available; writing blocks
+Writing Indirect fifo ctrl: [0, 1, 40, de, 0, 0]
+I3C core reported length: 56896
+ 66,813,617 UART: [dma-recovery] Payload available, 227584 bytes
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryPending -> Activate
+114,316,720 UART: [fwproc] Received image from the Recovery Interface of size 227584 bytes
+142,610,516 UART: [fwproc] Setting device recovery status to 0x1, image index 0x1, device status 0x3
+142,623,431 UART: [fwproc] Img verified ecc=0 LMS=0 svn=0 fuse_svn=0
+142,699,973 UART: [fwproc] Load FMC at address 0x40000000 len 31072
+142,921,033 UART: [fwproc] Load Runtime at address 0x40008000 len 179316
+144,183,757 UART: [fwproc] Initializing chain, length 128 (max 128)
+145,367,124 UART: [fwproc] Chain initialized
+145,371,506 UART: [afmc] ++
+148,471,455 UART: [afmc] Signing Cert ECC AUTHORITY.KEYID = 5
+[emulator bmc recovery] Recovery state transition: Activate -> WaitForRecoveryStatus
+150,337,573 UART: [afmc] Signing Cert MLDSA AUTHORITY.KEYID = 4
+150,713,528 UART: [afmc] --
+150,727,161 UART: [cold-reset] --
+150,731,128 UART: [state] Locking Datavault
+150,740,556 UART: [exit] Launching FMC @ 0x40000000
+150,796,497 UART: 
+150,796,903 UART: Running Caliptra FMC ...
+150,800,809 UART: 
+150,801,043 UART: [state] CFI Enabled
+150,852,975 UART: [fht] FMC Alias ECC Private Key: 7
+150,858,537 UART: [fht] FMC Alias MLDSA Key Pair Seed KV Slot: 8
+152,836,185 UART: [alias rt] Extend RT PCRs
+152,840,859 UART: [alias rt] Extend RT PCRs Done
+152,845,773 UART: [alias rt] Lock RT PCRs
+152,849,611 UART: [alias rt] Lock RT PCRs Done
+152,854,200 UART: [fht] FMC Alias ECC Private Key: 7
+152,859,694 UART: [fht] FMC Alias MLDSA Key Pair Seed KV Slot: 8
+152,900,377 UART: [alias rt] Derive CDI
+152,903,834 UART: [alias rt] Store it in slot 0x4
+152,909,020 UART: [alias rt] Derive Key Pair
+152,913,234 UART: [alias rt] Store ECC priv key in slot 0x5 and MLDSA key pair seed in slot 0x9
+155,715,163 UART: [alias rt] Derive Key Pair - Done
+155,770,145 UART: [alias rt] Signing ECC Cert with AUTHORITY.KEYID = 7
+157,477,227 UART: [alias rt] Locking ECC AUTHORITY.KEYID = 7 & FMC CDI = 6
+157,486,025 UART: [alias rt] ECC PUB.X = F542A44A003E960A6DDEB5AA4E48C370BCAEDFFE8A29B0AB23D956C5F838DD817DAE266FAEAB3F6179584A5A9A0556BA
+157,504,516 UART: [alias rt] ECC PUB.Y = ABD7F2921885A928ECA4A87C843E6C467D4153B255A4D4C1D5DDC638F6270016A42FD143855C09D9A2ADE85123377F91
+157,522,792 UART: [alias rt] ECC SIG.R = F9AD67221765E4854966DB44C6653731B8F55CF942AF52F740655638734D7F460DF8DE6C762254CDF07C04CF8BF78A08
+157,541,141 UART: [alias rt] ECC SIG.S = 220D5D1699C2B8F79EC6B3F31A887F96EAB2C24FB51BD60B90D573B032D61668E2BC9A76AA3E16BB3FC9DE92ECF99E1A
+158,490,963 UART: [alias rt] Signing MLDSA Cert with AUTHORITY.KEYID = 8
+158,696,281 UART: [alias rt] Locking MLDSA AUTHORITY.KEYID = 8 & FMC CDI = 6
+158,744,982 UART: Caliptra RT
+158,747,072 UART: [kat] AES-ECB
+158,752,496 UART: [kat] AES-CBC
+158,759,670 UART: [kat] AES-CTR
+158,768,604 UART: [kat] AES-CMAC
+158,775,487 UART: [kat] MLKEM1024
+158,961,838 UART: [rt] OCP LOCK Unsupported
+159,366,349 UART: [dma-recovery] Requesting recovery image 1
+159,373,117 UART: [dma-recovery] Set device status 3
+[emulator bmc recovery] Sending recovery image 1
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryStatus -> WaitForRecoveryPending
+Recovery image available; writing blocks
+Writing Indirect fifo ctrl: [0, 1, fa, 1d, 0, 0]
+I3C core reported length: 7674
+180,616,832 UART: [dma-recovery] Payload available, 30696 bytes
+182,901,027 UART: [dma-recovery] Waiting for activation
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryPending -> Activate
+212,966,272 UART: [dma-recovery] Requesting recovery image 2
+212,973,275 UART: [dma-recovery] Set device status 3
+[emulator bmc recovery] Recovery state transition: Activate -> WaitForRecoveryStatus
+[emulator bmc recovery] Sending recovery image 2
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryStatus -> WaitForRecoveryPending
+Recovery image available; writing blocks
+Writing Indirect fifo ctrl: [0, 1, c0, 86, 0, 0]
+I3C core reported length: 34496
+269,495,463 UART: [dma-recovery] Payload available, 137984 bytes
+[emulator bmc recovery] Recovery state transition: WaitForRecoveryPending -> Activate
+329,700,779 UART: [rt] Verifying MCU digest: 70555FC89E5C30D2BA38B14970704F4308403C8C7EF715AF0DDEB9838819B61427EFEB9080D2C95E83836D78A05797CC
+329,725,734 UART: [mcu-rom] Firmware is ready
+329,730,071 UART: [mcu-rom] Firmware load detected
+329,735,214 UART: [mcu-rom-hook] post_load_firmware
+329,740,607 UART: [mcu-rom] Waiting for Caliptra RT to be ready for runtime mailbox commands
+329,752,166 UART: [mcu-fuse-write] Locking vendor PK hash slots from index 0
+329,761,588 UART: [rt] Disable entropy source
+329,765,909 UART: [rt] RT listening for mailbox commands...
+329,908,883 UART: [rt] Received command=0x434d5349 (CMSI), len=4108
+330,238,748 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+330,587,164 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+330,952,961 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+331,335,330 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+331,735,785 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+332,153,638 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+332,588,470 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+333,040,817 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+333,510,796 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+333,997,718 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+334,502,080 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+335,024,376 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+335,564,012 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+336,121,298 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+336,695,473 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+337,287,364 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+337,896,327 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+338,522,647 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+339,166,327 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+339,827,072 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+340,505,956 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+341,202,009 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+341,915,362 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+342,646,323 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+343,394,961 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+344,160,679 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+344,943,737 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+345,744,593 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+346,562,694 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+347,397,747 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+348,249,495 UART: [rt] Received command=0x434d5355 (CMSU), len=4304
+348,457,775 UART: [rt] Received command=0x434d5346 (CMSF), len=4304
+348,501,240 UART: [mcu-rom] MCU ROM digest: 4C1D35EA3601DCC06F800C70FD082A6920820B89963E1CE54ABA22F3BE8D4BB21EE7F545BD3045829A328E1836EC908A
+348,519,987 UART: [mcu-rom] MCU ROM expected digest: 4C1D35EA3601DCC06F800C70FD082A6920820B89963E1CE54ABA22F3BE8D4BB21EE7F545BD3045829A328E1836EC908A
+348,540,056 UART: [mcu-rom] Finished boot-mode-specific initialization
+348,590,788 UART: [rt] Received command=0x434d5349 (CMSI), len=4108
+348,713,212 UART: [rt] Received command=0x434d5346 (CMSF), len=4304
+348,759,595 UART: [rt] Received command=0x4d454153 (MEAS), len=108
+348,798,901 UART: [mcu-rom] Disabling recovery interface
+348,804,946 UART: [mcu-rom] Resetting to boot firmware
+348,810,660 UART: [mcu-rom-hook] post_cold_boot
+348,815,278 UART: FPGA MCU ROM
+348,817,318 UART: [mcu-rom] Starting FPGA MCU ROM
+348,822,226 UART: [mcu-rom] Hello from ROM
+348,826,116 UART: [mcu-rom] Device lifecycle: Unprovisioned
+348,832,578 UART: [mcu-rom] MCI generic input wires[0]: 00000000
+348,839,769 UART: [mcu-rom] MCI generic input wires[1]: C0000000
+348,847,085 UART: [mcu-rom] MCI RESET_REASON: 0x00000002
+348,853,071 UART: [mcu-rom] Firmware boot reset detected
+348,859,040 UART: [mcu-rom-hook] pre_fw_boot
+348,863,240 UART: [mcu-rom] Starting fw boot reset flow
+348,869,214 UART: [mcu-rom] Jumping to firmware
+348,873,967 UART: [mcu-rom-hook] post_fw_boot
+Recovery complete; device recovery status: 0x3
+Boot completed at cycle count 348878688, flow status 11469253
+Resetting I3C controller
+I3C controller initializing
+XI3C HW version = 1000100
+XI3C: enabling IBI
+Control register after enabling IBI: 8
+XI3C: Enable set to 9
+XI3C: Broadcast CCC DISEC
+XI3C: Acknowledge received
+XI3C: Broadcast CCC ENEC
+XI3C: Acknowledge received
+XI3C: Broadcast CCC RSTDAA
+XI3C: Acknowledge received
+XI3C: Broadcast CCC ENTDAA
+XI3C: Acknowledged
+XI3C: Controller: Assigning dynamic address 0x8
+XI3C: cur_device_count = 0
+XI3C: Controller received BCR: 36
+XI3C: Controller received DCR: cc
+XI3C: Updating BCR (index 0) for device 3608
+I3C controller finished initializing
+ROM hook bitmask = 0x00003f33 (expected bits: 0x00003f33)
+test rom::test_rom_hooks::test::test_rom_hooks_fire_in_order ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 343 filtered out; finished in 19.63s
+
+        PASS [  19.640s] (1/1) caliptra-mcu-tests-integration rom::test_rom_hooks::test::test_rom_hooks_fire_in_order
+────────────
+     Summary [  19.660s] 1 test run: 1 passed, 343 skipped
+Connection to 2a00:79e0:3e01:6601:d8:f4ff:fe9f:6a64 closed.
+Copying test log from FPGA to junit.xml
+receiving incremental file list
+junit.xml
+
+sent 49 bytes  received 394 bytes  295.33 bytes/sec
+total size is 538  speedup is 1.21
