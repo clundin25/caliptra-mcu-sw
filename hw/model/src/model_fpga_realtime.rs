@@ -150,6 +150,10 @@ impl ModelFpgaRealtime {
         self.base.set_subsystem_reset(reset);
     }
 
+    pub fn ulpi_usb_host(&self) -> Result<crate::fpga_ulpi_usb::FpgaUlpiUsbHost> {
+        unsafe { crate::fpga_ulpi_usb::FpgaUlpiUsbHost::from_wrapper_ptr(self.base.wrapper.ptr) }
+    }
+
     pub fn i3c_target_configured(&mut self) -> bool {
         self.base.i3c_target_configured()
     }

@@ -217,6 +217,12 @@ The VCK-190 board does not populate a physical ULPI USB transceiver on its FMC/P
    - **USB CSRs & Dual-Accessed Block RAM (`M14_AXI` & `M15_AXI`):** Maps `S_AXI_USB_COMBO` at `0xA420_0000` (with hardware OCP Recovery registers strapped at `0xA420_0800` via `cptra_ss_strap_usb_recovery_ifc_base_addr_i`) and a parameterized byte-lane synchronous Block RAM (`usb_bram_64_512`, `64 KiB` at `0xA430_0000` for `dev0_mem` plus internal `4 KiB` for `dev1_mem`) across `M_AXI_ARM`, `M_AXI_MCU_*`, `M_AXI_CALIPTRA`, and `axi_cdma_0`.
    - **Hardware OCP Recovery Sideband Loopback:** Connects `cptra_ss_usb_recovery_payload_available_o` and `cptra_ss_usb_recovery_image_activated_o` back into `caliptra_ss_top` so Caliptra Core's AXI DMA engine drains firmware images directly from the USB OCP FIFO into ICCM/DCCM and MCU SRAM.
 
+3. **MCU ROM, Host MMIO Driver & OCP Recovery v1.1 Transport**
+   - **FPGA MCU ROM (`platforms/fpga/rom/src/usb.rs`, `rom/src/recovery/usb.rs`):** Configures `UsbParams` (`0xA420_0000` / `0xA430_0000`), initializes the emulated USB3320 PHY over ULPI, serves EP0 descriptors (Device, Configuration, Microsoft OS / WCID, and OCP Recovery functional descriptors), and enables hardware OCP Recovery on Device 0 when USB recovery is selected.
+   - **Host Drivers — Raw MMIO & Standard Linux `usbcore` HCD (`hw/model/src/fpga_ulpi_usb.rs`, [`kernel-modules/caliptra_fpga_hcd.c`](kernel-modules/caliptra_fpga_hcd.c), `tests/integration/src/test_fpga_usb_arch_b.rs`):** Two host stacks are supported against the same `0xA401_4000` hardware engine:
+     1. **`FpgaUlpiUsbHost` (`ModelFpgaRealtime::ulpi_usb_host()`):** Zero-module userspace MMIO driver + `FpgaUlpiRecoveryTransport`, driving VBUS attach, High-Speed reset + Chirp, `Auto-SOF`, and `SETUP`/`DATA`/`STATUS` transfers directly through `/dev/uio0`.
+     2. **`caliptra_fpga_hcd.ko` ([`kernel-modules/README.md`](kernel-modules/README.md)):** Standard Linux `struct hc_driver` registering a USB 2.0 High-Speed root hub under `usbcore`, so unmodified Linux tools (`lsusb`, `libusb`, `usbmon`, and the stock `caliptra-mcu-usb-recovery` libusb transport exercised by `test_fpga_usb_arch_b_linux_hcd_recovery_boot`) enumerate and boot Caliptra over USB natively.
+
 #### `caliptra_fpga_ulpi_host` Register Map (`0xA401_4000`) ####
 
 | Offset | Name | Access | Description |
@@ -230,9 +236,25 @@ The VCK-190 board does not populate a physical ULPI USB transceiver on its FMC/P
 | `0x40..0x7F` | `TX_BUF` | RW | 64-byte (`16 x u32`) host-to-device packet payload buffer |
 | `0x80..0xBF` | `RX_BUF` | RO | 64-byte (`16 x u32`) device-to-host packet payload buffer |
 
-#### Building the 60 MHz Architecture B Bitstream ####
+#### Running Architecture B on VCK-190 (`caliptra-fpga`) ####
 
-To build a 60 MHz segmented Architecture B bitstream (`ULPI_CLK_DIV=2`, `USB_SIM_CHIRP_TIMERS=0`, default in `fpga_configuration.tcl`) from RTL in Vivado 2024.2:
+A prebuilt 60 MHz ULPI segmented bitstream (`FPGA_VERSION = 0xa22b0005`, `ulpi_clk = 60.0 MHz` with `WNS = +6.550 ns`, `core_clk = 18.0 MHz`, `USB_SIM_CHIRP_TIMERS = 0`, compatible with `ss_golden_segmented_routed.dcp` via `pr_verify`) is configured in [`bitstream_manifests/subsystem.toml`](bitstream_manifests/subsystem.toml) (`https://storage.googleapis.com/carl-caliptra-github-ci-bitstreams/v2/usb_arch_b_60mhz_a22b0005/runtime_a22b0005.pdi`, SHA-256 `8646eb0e68ccd5f0dbbbfc6f094d1e5ea86d636e0d28d9962cdcc22be303029d`):
+
+```shell
+# 1. Program the Architecture B segmented PDI onto the VCK-190
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga bootstrap --target-host caliptra-fpga
+
+# 2. Build & sync FPGA firmware bundle and integration test archive
+CALIPTRA_HW_REV=latest cargo run --package caliptra-mcu-xtask \
+  --features=fpga_realtime,parallel-build -- fpga build --target-host caliptra-fpga
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga build-test --target-host caliptra-fpga \
+  --package-filter "package(caliptra-mcu-tests-integration)"
+
+# 3. Run High-Speed USB 2.0 enumeration (~0.17s) and full 3-stage OCP Recovery boot (~7.4s)
+CALIPTRA_HW_REV=latest cargo xtask-fpga fpga test --target-host caliptra-fpga --test-output \
+  --test-filter "package(caliptra-mcu-tests-integration) & test(test_fpga_usb_arch_b)"
+
+To rebuild a 60 MHz segmented Architecture B bitstream (`ULPI_CLK_DIV=2`, `USB_SIM_CHIRP_TIMERS=0`, default in `fpga_configuration.tcl`) from RTL in Vivado 2024.2:
 
 ```shell
 cd hw/latest/fpga
